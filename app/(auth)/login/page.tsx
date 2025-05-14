@@ -10,11 +10,12 @@ import { SubmitButton } from '@/components/submit-button';
 
 import { login, type LoginActionState } from '../actions';
 
-export default function Page() {
+export default function Page(): JSX.Element {
   const router = useRouter();
 
-  const [email, setEmail] = useState('');
-  const [isSuccessful, setIsSuccessful] = useState(false);
+  const [email, setEmail] = useState<string>('');
+  const [isSuccessful, setIsSuccessful] = useState<boolean>(false);
+  const [mounted, setMounted] = useState<boolean>(false);
 
   const [state, formAction] = useActionState<LoginActionState, FormData>(
     login,
@@ -23,7 +24,14 @@ export default function Page() {
     },
   );
 
+  // Handle mounting to avoid hydration issues
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
     if (state.status === 'failed') {
       toast({
         type: 'error',
@@ -38,12 +46,17 @@ export default function Page() {
       setIsSuccessful(true);
       router.refresh();
     }
-  }, [state.status]);
+  }, [state.status, mounted, router]);
 
-  const handleSubmit = (formData: FormData) => {
+  const handleSubmit = (formData: FormData): void => {
     setEmail(formData.get('email') as string);
     formAction(formData);
   };
+
+  // Don't render until client-side hydration is complete
+  if (!mounted) {
+    return <div className="min-h-dvh bg-background" />;
+  }
 
   return (
     <div className="flex h-dvh w-screen items-start pt-12 md:pt-0 md:items-center justify-center bg-background">
@@ -55,7 +68,9 @@ export default function Page() {
           </p>
         </div>
         <AuthForm action={handleSubmit} defaultEmail={email}>
-          <SubmitButton isSuccessful={isSuccessful}>Sign in</SubmitButton>
+          <SubmitButton isSuccessful={isSuccessful}>
+            Sign in
+          </SubmitButton>
           <p className="text-center text-sm text-gray-600 mt-4 dark:text-zinc-400">
             {"Don't have an account? "}
             <Link

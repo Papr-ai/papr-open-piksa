@@ -66,6 +66,21 @@ interface Metadata {
   outputs: Array<ConsoleOutput>;
 }
 
+// Add language detection helper
+function detectLanguage(code: string): 'python' | 'html' | 'jsx' | 'unknown' {
+  // Simple detection based on code content
+  if (code.includes('import React') || code.includes('export default')) {
+    return 'jsx';
+  }
+  if (code.includes('<!DOCTYPE html') || code.includes('<html')) {
+    return 'html';
+  }
+  if (code.includes('import matplotlib') || code.includes('def ')) {
+    return 'python';
+  }
+  return 'unknown';
+}
+
 export const codeArtifact = new Artifact<'code', Metadata>({
   kind: 'code',
   description:
@@ -91,11 +106,31 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     }
   },
   content: ({ metadata, setMetadata, ...props }) => {
+    const language = detectLanguage(props.content);
+    
     return (
       <>
         <div className="px-1">
           <CodeEditor {...props} />
         </div>
+
+        {language === 'html' && (
+          <div className="mt-4 border rounded-lg">
+            <iframe
+              srcDoc={props.content}
+              className="w-full h-[400px]"
+              title="HTML Preview"
+            />
+          </div>
+        )}
+
+        {language === 'jsx' && (
+          <div className="mt-4 p-4 border rounded-lg">
+            <div className="text-sm text-gray-500">
+              Preview not available - JSX/Next.js code requires a build environment
+            </div>
+          </div>
+        )}
 
         {metadata?.outputs && (
           <Console
@@ -117,6 +152,18 @@ export const codeArtifact = new Artifact<'code', Metadata>({
       label: 'Run',
       description: 'Execute code',
       onClick: async ({ content, setMetadata }) => {
+        const language = detectLanguage(content);
+        
+        if (language === 'html') {
+          // For HTML, we just update the iframe
+          return;
+        }
+        
+        if (language === 'jsx') {
+          toast.error('JSX/Next.js code cannot be executed in the browser');
+          return;
+        }
+
         const runId = generateUUID();
         const outputContent: Array<ConsoleOutputContent> = [];
 
