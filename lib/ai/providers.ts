@@ -4,6 +4,7 @@ import {
   wrapLanguageModel,
 } from 'ai';
 import { xai } from '@ai-sdk/xai';
+import { groq } from '@ai-sdk/groq';
 import { isTestEnvironment } from '../constants';
 import {
   artifactModel,
@@ -28,7 +29,7 @@ export const myProvider = isTestEnvironment
           model: xai('grok-3-mini-beta'),
           middleware: extractReasoningMiddleware({ tagName: 'think' }),
         }),
-        'title-model': xai('grok-2-1212'),
+        'title-model': groq('llama3-70b-8192'),
         'artifact-model': xai('grok-2-1212'),
       },
       imageModels: {

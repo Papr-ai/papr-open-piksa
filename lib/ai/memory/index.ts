@@ -67,8 +67,10 @@ export const initPaprMemory = (
     apiKey,
     // Set empty bearer token to avoid environment var check
     bearerToken: '',
-    // Set the correct base URL
-    baseURL: 'https://4e4fc3b78291.ngrok.app/',
+    // Set the correct base URL from environment
+    baseURL:
+      process.env.PAPR_MEMORY_API_URL ||
+      'http://memoryserver-development.azurewebsites.net',
     ...options,
   };
 

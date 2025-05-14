@@ -1,12 +1,11 @@
 import {
-  UIMessage,
+  type UIMessage,
   appendResponseMessages,
   createDataStreamResponse,
   smoothStream,
   streamText,
 } from 'ai';
 import { auth } from '@/app/(auth)/auth';
-import { systemPrompt } from '@/lib/ai/prompts';
 import {
   deleteChatById,
   getChatById,
@@ -25,8 +24,20 @@ import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
+import {
+  createMemoryEnabledSystemPrompt,
+  storeMessageInMemory,
+} from '@/lib/ai/memory/middleware';
 
 export const maxDuration = 60;
+
+// Get Papr Memory API key from environment
+const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY || '';
+
+// Create memory-enabled system prompt
+const memoryEnabledSystemPrompt = createMemoryEnabledSystemPrompt({
+  apiKey: PAPR_MEMORY_API_KEY,
+});
 
 export async function POST(request: Request) {
   try {
@@ -66,6 +77,24 @@ export async function POST(request: Request) {
       }
     }
 
+    // Store the user message in memory
+    if (PAPR_MEMORY_API_KEY && session.user?.id) {
+      console.log('Attempting to store message in memory');
+      try {
+        await storeMessageInMemory({
+          userId: session.user.id,
+          chatId: id,
+          message: userMessage,
+          apiKey: PAPR_MEMORY_API_KEY,
+        });
+        console.log('Message stored in memory successfully');
+      } catch (error) {
+        console.error('Error storing message in memory:', error);
+      }
+    } else {
+      console.log('Skipping memory storage - no API key or user ID');
+    }
+
     await saveMessages({
       messages: [
         {
@@ -80,10 +109,17 @@ export async function POST(request: Request) {
     });
 
     return createDataStreamResponse({
-      execute: (dataStream) => {
+      execute: async (dataStream) => {
+        // Generate a system prompt enhanced with memories
+        const enhancedSystemPrompt = await memoryEnabledSystemPrompt({
+          selectedChatModel,
+          userId: session.user?.id || '',
+          messages,
+        });
+
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel }),
+          system: enhancedSystemPrompt,
           messages,
           maxSteps: 5,
           experimental_activeTools:

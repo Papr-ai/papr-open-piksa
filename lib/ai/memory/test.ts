@@ -7,11 +7,7 @@
  * Note: You must set the PAPR_MEMORY_API_KEY environment variable before running.
  */
 
-import {
-  createAuthenticatedFetch,
-  initPaprMemory,
-  type MemoryAddParams,
-} from './index';
+import { createAuthenticatedFetch, initPaprMemory } from './index';
 import dotenv from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
