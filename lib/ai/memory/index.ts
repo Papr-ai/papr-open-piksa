@@ -3,6 +3,10 @@
  *
  * This module provides a simplified interface to the @papr/memory SDK
  * for storing, retrieving, and managing memory in AI applications.
+ *
+ * IMPLEMENTATION NOTES:
+ * - Always use HTTPS for the API URL (a key requirement for Azure endpoints)
+ * - The SDK handles authentication with the provided API key
  */
 
 import { Papr, type ClientOptions } from '@papr/memory';
@@ -60,43 +64,76 @@ export type {
  */
 export const initPaprMemory = (
   apiKey: string,
-  options?: Omit<ClientOptions, 'apiKey'>,
+  options?: Omit<ClientOptions, 'apiKey' | 'bearerToken'>,
 ) => {
-  // Create a properly typed options object without any type issues
+  // Make sure baseURL has https:// prefix - force to https
+  const baseURL = options?.baseURL || process.env.PAPR_MEMORY_API_URL;
+  const secureBaseURL = baseURL
+    ? baseURL.startsWith('https://')
+      ? baseURL
+      : `https://${baseURL.replace('http://', '')}`
+    : 'https://memoryserver-development.azurewebsites.net';
+
+  // Log the API key status and configuration
+  console.log('[Memory] Initializing SDK with:');
+  console.log(
+    `[Memory] API Key: ${apiKey ? `********${apiKey.slice(-4)}` : 'missing'}`,
+  );
+  console.log(`[Memory] Base URL: ${secureBaseURL}`);
+  console.log('[Memory] SDK endpoints:');
+  console.log(`[Memory] - Add Memory: ${secureBaseURL}/v1/memory`);
+  console.log(`[Memory] - Search Memory: ${secureBaseURL}/v1/memory/search`);
+
+  // Custom client class that properly handles authentication
+  class CustomPapr extends Papr {
+    protected authHeaders(opts: any): any {
+      // Common headers - the SDK expects specifically lowercase 'x-api-key'
+      const commonHeaders = {
+        'content-type': 'application/json',
+        'accept-encoding': 'gzip',
+      };
+
+      if (this.apiKey) {
+        const headers = {
+          ...commonHeaders,
+          'x-api-key': this.apiKey,
+        };
+
+        console.log(
+          '[Memory] Using SDK standard headers:',
+          JSON.stringify({
+            'content-type': 'application/json',
+            'x-api-key': `********${this.apiKey.slice(-4)}`,
+            'accept-encoding': 'gzip',
+          }),
+        );
+        return headers;
+      } else if (this.bearerToken) {
+        const headers = {
+          ...commonHeaders,
+          authorization: `Bearer ${this.bearerToken}`,
+        };
+        console.log('[Memory] Using Bearer token authentication');
+        return headers;
+      }
+
+      // If neither is available, return basic headers
+      console.log('[Memory] Warning: No authentication credentials available');
+      return commonHeaders;
+    }
+  }
+
+  // Create a properly typed options object
   const clientOptions: ClientOptions = {
     apiKey,
-    // Set empty bearer token to avoid environment var check
-    bearerToken: '',
-    // Set the correct base URL from environment
-    baseURL:
-      process.env.PAPR_MEMORY_API_URL ||
-      'http://memoryserver-development.azurewebsites.net',
-    ...options,
+    // Set dummy bearer token to avoid environment var check
+    // This won't be used if apiKey is provided due to our authHeaders override
+    bearerToken: 'dummy-token',
+    // Set the correct base URL using the secure version
+    baseURL: secureBaseURL,
   };
 
-  return new Papr(clientOptions);
-};
-
-/**
- * Create an authenticated fetch function for direct API access
- * @param apiKey - Papr Memory API key
- * @returns Authenticated fetch function
- */
-export const createAuthenticatedFetch = (apiKey: string) => {
-  // Return an authenticated fetch function
-  return async (url: string, options: RequestInit = {}): Promise<Response> => {
-    const headers = {
-      'X-API-Key': apiKey,
-      'Content-Type': 'application/json',
-      'X-Client-Type': 'v0-sdk',
-      ...options.headers,
-    };
-
-    return fetch(url, {
-      ...options,
-      headers,
-    });
-  };
+  return new CustomPapr(clientOptions);
 };
 
 // Export the Papr class

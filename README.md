@@ -1,10 +1,10 @@
 <a href="https://chat.vercel.ai/">
-  <img alt="Next.js 14 and App Router-ready AI chatbot." src="app/(chat)/opengraph-image.png">
+  <img alt="Next.js 14 and App Router-ready AI chatbot personalized with papr memory." src="app/(chat)/opengraph-image.png">
   <h1 align="center">Chat SDK</h1>
 </a>
 
 <p align="center">
-    Chat SDK is a free, open-source template built with Next.js and the AI SDK that helps you quickly build powerful chatbot applications.
+    Chat SDK is a free, open-source template built with Next.js and the AI SDK that helps you quickly build powerful chatbot applications. This is a fork of Vercel's V0 open source project, enhanced by Papr with memory capabilities.
 </p>
 
 <p align="center">
@@ -25,6 +25,12 @@
   - Unified API for generating text, structured objects, and tool calls with LLMs
   - Hooks for building dynamic chat and generative user interfaces
   - Supports xAI (default), OpenAI, Fireworks, and other model providers
+- Enhanced with [Papr Memory SDK](https://platform.papr.ai/)
+  - Long-term memory for personalized chat experiences
+  - Automatically stores and retrieves relevant user conversations
+  - RAG (Retrieval-Augmented Generation) capabilities for enhanced responses
+  - Semantic search across conversation history
+  - Persistent memory storage in the cloud
 - [shadcn/ui](https://ui.shadcn.com)
   - Styling with [Tailwind CSS](https://tailwindcss.com)
   - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
@@ -33,6 +39,10 @@
   - [Vercel Blob](https://vercel.com/storage/blob) for efficient file storage
 - [Auth.js](https://authjs.dev)
   - Simple and secure authentication
+
+## About This Fork
+
+This project is a fork of [Vercel's V0 open source chatbot](https://github.com/vercel/ai-chatbot), enhanced by [Papr](https://papr.ai) to incorporate advanced memory capabilities. The Papr Memory SDK allows chatbots to remember past conversations and provide more personalized responses over time.
 
 ## Model Providers
 
@@ -49,6 +59,38 @@ You can deploy your own version of the Next.js AI Chatbot to Vercel with one cli
 You will need to use the environment variables [defined in `.env.example`](.env.example) to run Next.js AI Chatbot. It's recommended you use [Vercel Environment Variables](https://vercel.com/docs/projects/environment-variables) for this, but a `.env` file is all that is necessary.
 
 > Note: You should not commit your `.env` file or it will expose secrets that will allow others to control access to your various AI and authentication provider accounts.
+
+### Environment Setup
+
+Your `.env.local` file should include the following variables:
+
+```bash
+# Authentication (required)
+AUTH_SECRET=your_auth_secret_key
+
+# Database (required)
+POSTGRES_URL=your_neon_postgres_url
+
+# File Storage (required)
+BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
+
+# AI Provider (one is required)
+XAI_API_KEY=your_xai_api_key
+# OR
+OPENAI_API_KEY=your_openai_api_key
+# OR another provider
+
+# Memory (optional but recommended)
+PAPR_MEMORY_API_KEY=your_papr_memory_api_key
+PAPR_MEMORY_UserID_Testing=your_papr_test_userId
+```
+
+To set up Papr Memory:
+1. Sign up at [app.papr.ai](https://app.papr.ai/)
+2. Go to settings -> API key to get your API key
+3. Add the API key to your environment variables
+
+### Installation and Running
 
 1. Install Vercel CLI: `npm i -g vercel`
 2. Link local instance with Vercel and GitHub accounts (creates `.vercel` directory): `vercel link`

@@ -1,61 +1,146 @@
-# Papr Memory SDK Integration
+# Papr Memory Integration for v0chat
 
-This module provides a convenient wrapper for the [@papr/memory](https://memory.papr.ai/) SDK, allowing easy integration of memory capabilities into v0chat.
+This module provides a comprehensive memory system for v0chat powered by the [@papr/memory](https://memory.papr.ai/) SDK. It enables storing and retrieving user messages to enhance AI responses with relevant context from past conversations.
+
+## Table of Contents
+- [Overview](#overview)
+- [Setup](#setup)
+- [How It Works](#how-it-works)
+- [Integration with Chat](#integration-with-chat)
+- [Technical Implementation](#technical-implementation)
+- [API Usage](#api-usage)
+- [Advanced Configuration](#advanced-configuration)
+- [Troubleshooting](#troubleshooting)
 
 ## Overview
 
-Papr Memory is an end-to-end RAG (Retrieval-Augmented Generation) solution combining vector embeddings and knowledge graphs in one simple API call. This integration makes it easy to:
+Papr Memory is an end-to-end RAG (Retrieval-Augmented Generation) solution that combines vector embeddings and knowledge graphs. This integration enables v0chat to:
 
-- Store memories from chat conversations
-- Retrieve relevant memories for context
-- Update and manage stored memories
-- Connect memories using knowledge graphs
+- Store user messages automatically
+- Retrieve relevant past conversations
+- Provide the AI with context across different chat sessions
+- Personalize responses based on user history
 
-## Installation
+When a new user signs up to the chat app, a unique Papr user ID is automatically generated and associated with their account. This is done by calling the Papr Memory SDK's user creation API, which returns a dedicated Papr user ID. This ID is stored in the application's database and used for all memory operations for that user, ensuring privacy and proper memory organization.
 
-The @papr/memory package should already be installed as a dependency of v0chat. If not, you can install it using:
+## Setup
+
+### Environment Configuration
+
+Add your Papr Memory API key to your environment:
+
+```bash
+# In .env.local (or your environment file)
+PAPR_MEMORY_API_KEY=your_papr_memory_api_key
+```
+
+Without this key, memory features will be automatically disabled.
+
+### Installation
+
+The @papr/memory package should already be installed as a dependency. If not, install it with:
 
 ```bash
 npm install @papr/memory --legacy-peer-deps
 ```
 
-## Usage
+### Verification
 
-### Approach 1: Direct API Access (Recommended)
+To verify the integration is working:
 
-The authenticated fetch function provides a simple way to make direct API calls with proper authentication:
+1. Start a conversation with the chatbot
+2. Check server logs for messages like:
+   - "Storing user message in memory"
+   - "Enhanced system prompt with user memories"
+   - "Found X relevant memories"
 
-```typescript
-import { createAuthenticatedFetch } from '@/lib/ai/memory';
+## How It Works
 
-// Create an authenticated fetch function with your API key
-const authenticatedFetch = createAuthenticatedFetch(process.env.PAPR_MEMORY_API_KEY);
+### Memory Storage
 
-// Use it just like regular fetch but with automatic authentication
-const response = await authenticatedFetch('https://your-papr-endpoint.com/v1/memory', {
-  method: 'POST',
-  body: JSON.stringify({
-    content: 'This is a memory to save',
-    type: 'text',
-    metadata: {
-      source: 'v0-app',
-      tags: ['important', 'information']
-    }
-  })
-});
+When a user sends a message, it's automatically stored in Papr Memory with metadata including:
+- Papr-generated User ID (not the application's user ID)
+- Chat ID
+- Message ID  
+- Timestamp
 
-const data = await response.json();
+### Memory Retrieval
+
+When generating a response:
+1. The system searches for relevant past memories based on the current message
+2. The search is filtered to only retrieve memories from the current user
+3. Found memories are formatted and added to the system prompt
+4. The AI uses these memories to generate a more contextually relevant response
+
+### Memory Format in Prompts
+
+Memories are added to the system prompt in this format:
+
+```
+The user has the following relevant memories you should consider when responding:
+
+Memory 1 [timestamp]: Content of memory
+
+Memory 2 [timestamp]: Content of memory
+
+...
+
+Consider these memories when responding to the user's current request.
 ```
 
-### Approach 2: Using the SDK (For SDK features)
+## Integration with Chat
 
-If you need specific SDK features, you can use the SDK wrapper:
+The memory system is integrated directly into the chat flow:
+
+1. **Automatic Storage**: All user messages are stored automatically
+2. **Context Enhancement**: Relevant memories are retrieved for each new message
+3. **System Prompt Augmentation**: Memories are added to the system prompt
+4. **Personalized Responses**: The AI considers past interactions when generating responses
+
+## Technical Implementation
+
+- `lib/ai/memory/service.ts`: Core memory service for storing and retrieving memories
+- `lib/ai/memory/middleware.ts`: Middleware to integrate memory into the chat flow
+- `app/(chat)/api/chat/route.ts`: Integration with the chat API endpoint
+- `lib/ai/memory/index.ts`: SDK initialization and type exports
+
+## API Usage
+
+### Initializing the SDK
 
 ```typescript
 import { initPaprMemory } from '@/lib/ai/memory';
 
-// Initialize with API key
+const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY, {
+  baseURL: 'https://memoryserver-development.azurewebsites.net', // Optional
+});
+```
+
+### Creating a Papr User
+
+When a new user signs up for your application, you should create a corresponding Papr user:
+
+```typescript
+import { initPaprMemory } from '@/lib/ai/memory';
+
 const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY);
+
+// Create a Papr user for your application user
+const userResponse = await paprClient.user.create({
+  external_id: `v0chat-user-${appUserId}`, // Use a consistent external ID based on your app's user ID
+  email: userEmail, // Optional - user's email
+  metadata: {
+    source: 'v0chat',
+    app_user_id: appUserId, // Optional store the application's user ID in metadata
+  },
+});
+
+// Extract and store the Papr user ID
+if (userResponse?.user_id) {
+  const paprUserId = userResponse.user_id;
+  // Store this ID in your user database associated with the app user
+  await db.update(user).set({ paprUserId }).where(eq(user.id, appUserId));
+}
 ```
 
 ### Adding Memories
@@ -70,7 +155,7 @@ const memoryParams: MemoryAddParams = {
   type: 'text',
   metadata: {
     source: 'v0-app',
-    userId: 'user-123',
+    userId: 'papr-user-123', // Papr-generated user ID, not the application's user ID
     tags: ['important', 'information']
   }
 };
@@ -86,64 +171,66 @@ import { initPaprMemory, type MemorySearchParams } from '@/lib/ai/memory';
 const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY);
 
 const searchParams: MemorySearchParams = {
-  query: 'Find information about important topics from yesterday',
-  max_memories: 5
+  query: 'Find information about important topics',
+  max_memories: 5,
+  user_id: 'papr-user-123' // Filter by Papr-generated user ID, not the application's user ID
 };
 
 const response = await paprClient.memory.search(searchParams);
 ```
 
-### Updating Memories
+### Using the Memory Service
 
 ```typescript
-import { initPaprMemory } from '@/lib/ai/memory';
+import { createMemoryService } from '@/lib/ai/memory/service';
 
-const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY);
+// Create the memory service
+const memoryService = createMemoryService(process.env.PAPR_MEMORY_API_KEY || '');
 
-const response = await paprClient.memory.update('memory-id', {
-  content: 'Updated information',
-  metadata: {
-    tags: ['updated', 'information']
-  }
-});
+// Store a message
+await memoryService.storeMessage(paprUserId, chatId, message); // paprUserId is generated by Papr, not the application's user ID
+
+// Search memories
+const memories = await memoryService.searchMemories(paprUserId, query); // paprUserId is generated by Papr
+
+// Format memories for prompts
+const formattedMemories = memoryService.formatMemoriesForPrompt(memories);
 ```
-
-### Deleting Memories
-
-```typescript
-import { initPaprMemory } from '@/lib/ai/memory';
-
-const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY);
-
-const response = await paprClient.memory.delete('memory-id');
-```
-
-## Environment Variables
-
-The SDK requires the following environment variable:
-
-- `PAPR_MEMORY_API_KEY`: Your Papr Memory API key
 
 ## Advanced Configuration
 
-For advanced configuration options, you can pass additional parameters to the `initPaprMemory` function:
+You can customize the memory integration by modifying:
+
+1. `formatMemoriesForPrompt()` in `service.ts` to change how memories appear in prompts
+2. `enhancePromptWithMemories()` in `middleware.ts` to modify search parameters
+3. The metadata saved with memories in `storeMessage()` in `service.ts`
+
+For SDK configuration options:
 
 ```typescript
 import { initPaprMemory, type ClientOptions } from '@/lib/ai/memory';
 
 const options: Omit<ClientOptions, 'apiKey'> = {
-  baseURL: 'https://custom-endpoint.example.com',
+  baseURL: 'https://memoryserver-development.azurewebsites.net',
   timeout: 30000, // 30 seconds
-  // Additional options...
 };
 
 const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY, options);
 ```
 
-## Examples
+## Troubleshooting
 
-See the `example.ts` file for complete usage examples.
+### No Memories Being Found
 
-## Documentation
+1. Verify `PAPR_MEMORY_API_KEY` is set correctly in your environment
+2. Check that users have had previous conversations to build up memories
+3. Verify the memory service is connecting properly by checking logs
+
+### Memory Not Affecting Responses
+
+If memories are being found but not impacting responses:
+1. Verify the memory formatting is correct in the system prompt
+2. Ensure retrieved memories are relevant to the current conversation
+3. Consider adjusting search parameters in `enhancePromptWithMemories()`
 
 For more detailed information, see the [Papr Memory API documentation](https://platform.papr.ai/). 

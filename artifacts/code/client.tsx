@@ -10,11 +10,8 @@ import {
 } from '@/components/icons';
 import { toast } from 'sonner';
 import { generateUUID } from '@/lib/utils';
-import {
-  Console,
-  ConsoleOutput,
-  ConsoleOutputContent,
-} from '@/components/console';
+import { Console } from '@/components/console';
+import type { ConsoleOutput, ConsoleOutputContent } from '@/components/console';
 
 const OUTPUT_HANDLERS = {
   matplotlib: `
@@ -107,7 +104,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
   },
   content: ({ metadata, setMetadata, ...props }) => {
     const language = detectLanguage(props.content);
-    
+
     return (
       <>
         <div className="px-1">
@@ -127,7 +124,8 @@ export const codeArtifact = new Artifact<'code', Metadata>({
         {language === 'jsx' && (
           <div className="mt-4 p-4 border rounded-lg">
             <div className="text-sm text-gray-500">
-              Preview not available - JSX/Next.js code requires a build environment
+              Preview not available - JSX/Next.js code requires a build
+              environment
             </div>
           </div>
         )}
@@ -153,12 +151,12 @@ export const codeArtifact = new Artifact<'code', Metadata>({
       description: 'Execute code',
       onClick: async ({ content, setMetadata }) => {
         const language = detectLanguage(content);
-        
+
         if (language === 'html') {
           // For HTML, we just update the iframe
           return;
         }
-        
+
         if (language === 'jsx') {
           toast.error('JSX/Next.js code cannot be executed in the browser');
           return;

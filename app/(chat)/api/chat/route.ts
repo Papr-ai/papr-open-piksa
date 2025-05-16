@@ -77,24 +77,8 @@ export async function POST(request: Request) {
       }
     }
 
-    // Store the user message in memory
-    if (PAPR_MEMORY_API_KEY && session.user?.id) {
-      console.log('Attempting to store message in memory');
-      try {
-        await storeMessageInMemory({
-          userId: session.user.id,
-          chatId: id,
-          message: userMessage,
-          apiKey: PAPR_MEMORY_API_KEY,
-        });
-        console.log('Message stored in memory successfully');
-      } catch (error) {
-        console.error('Error storing message in memory:', error);
-      }
-    } else {
-      console.log('Skipping memory storage - no API key or user ID');
-    }
-
+    // STEP 1: First, save the message to our database
+    console.log('[Memory] Saving user message to database...');
     await saveMessages({
       messages: [
         {
@@ -107,15 +91,21 @@ export async function POST(request: Request) {
         },
       ],
     });
+    console.log('[Memory] User message saved to database');
 
+    // STEP 2: Process AI response with memory search (memory search happens during prompt generation)
     return createDataStreamResponse({
       execute: async (dataStream) => {
         // Generate a system prompt enhanced with memories
+        console.log(
+          '[Memory] Generating enhanced system prompt with memories...',
+        );
         const enhancedSystemPrompt = await memoryEnabledSystemPrompt({
           selectedChatModel,
           userId: session.user?.id || '',
           messages,
         });
+        console.log('[Memory] System prompt enhancement complete');
 
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
@@ -160,6 +150,7 @@ export async function POST(request: Request) {
                   responseMessages: response.messages,
                 });
 
+                // Save the AI response to database
                 await saveMessages({
                   messages: [
                     {
@@ -173,6 +164,41 @@ export async function POST(request: Request) {
                     },
                   ],
                 });
+
+                // STEP 3: NOW store the user message in memory AFTER AI has responded
+                // This ensures the memory search doesn't include this current message
+                if (PAPR_MEMORY_API_KEY && session.user?.id) {
+                  console.log('-------------------------------------');
+                  console.log(
+                    `[Memory] Processing memory storage for user ${session.user.id} AFTER AI response`,
+                  );
+                  console.log(`[Memory] Chat ID: ${id}`);
+                  console.log(`[Memory] Message ID: ${userMessage.id}`);
+
+                  try {
+                    console.log('[Memory] Calling storeMessageInMemory...');
+                    const success = await storeMessageInMemory({
+                      userId: session.user.id,
+                      chatId: id,
+                      message: userMessage,
+                      apiKey: PAPR_MEMORY_API_KEY,
+                    });
+
+                    if (success) {
+                      console.log(
+                        '[Memory] Successfully stored message in memory',
+                      );
+                    } else {
+                      console.log('[Memory] Failed to store message in memory');
+                    }
+                  } catch (error) {
+                    console.error(
+                      '[Memory] Error storing message in memory:',
+                      error,
+                    );
+                  }
+                  console.log('-------------------------------------');
+                }
               } catch (_) {
                 console.error('Failed to save chat');
               }

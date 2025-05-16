@@ -1,23 +1,15 @@
 import 'server-only';
 
 import { genSaltSync, hashSync } from 'bcrypt-ts';
-import { and, asc, desc, eq, gt, gte, inArray, lt, SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, lt } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import {
-  user,
-  chat,
-  type User,
-  document,
-  type Suggestion,
-  suggestion,
-  message,
-  vote,
-  type DBMessage,
-  Chat,
-} from './schema';
-import { ArtifactKind } from '@/components/artifact';
+import { user, chat, document, suggestion, message, vote } from './schema';
+import type { User, Suggestion, DBMessage, Chat } from './schema';
+import type { ArtifactKind } from '@/components/artifact';
+import { initPaprMemory } from '../ai/memory/index';
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -41,7 +33,66 @@ export async function createUser(email: string, password: string) {
   const hash = hashSync(password, salt);
 
   try {
-    return await db.insert(user).values({ email, password: hash });
+    // Create the user in the local database first
+    const userResult = await db
+      .insert(user)
+      .values({ email, password: hash })
+      .returning();
+
+    // If we have a Papr Memory API key, create a user in Papr Memory
+    const paprApiKey = process.env.PAPR_MEMORY_API_KEY;
+    if (paprApiKey && userResult.length > 0) {
+      try {
+        const userId = userResult[0].id;
+        console.log(
+          `[Memory] Creating Papr Memory user for ${email} (App user ID: ${userId})`,
+        );
+
+        // Initialize the Papr SDK
+        const API_BASE_URL =
+          process.env.PAPR_MEMORY_API_URL ||
+          'https://memoryserver-development.azurewebsites.net';
+        const paprClient = initPaprMemory(paprApiKey, {
+          baseURL: API_BASE_URL,
+        });
+
+        // Create a user in Papr Memory
+        const testId = `v0chat-${Date.now()}`;
+        const paprUserResponse = await paprClient.user.create({
+          external_id: `v0chat-user-${userId}`,
+          email: email,
+          metadata: {
+            source: 'v0chat',
+            app_user_id: userId,
+          },
+        });
+
+        // If successful, store the Papr user ID in our database
+        if (paprUserResponse?.user_id) {
+          const paprUserId = paprUserResponse.user_id;
+          console.log(
+            `[Memory] Created Papr Memory user with ID: ${paprUserId}`,
+          );
+
+          // Update the user record with the Papr user ID
+          await db
+            .update(user)
+            .set({ paprUserId: paprUserId })
+            .where(eq(user.id, userId));
+
+          console.log(`[Memory] Updated local user record with Papr user ID`);
+        } else {
+          console.error(
+            `[Memory] Failed to create Papr Memory user - no user_id in response`,
+          );
+        }
+      } catch (paprError) {
+        // Don't fail signup if Papr user creation fails - just log the error
+        console.error('[Memory] Error creating Papr Memory user:', paprError);
+      }
+    }
+
+    return userResult;
   } catch (error) {
     console.error('Failed to create user in database');
     throw error;
