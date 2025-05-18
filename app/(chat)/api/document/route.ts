@@ -1,5 +1,5 @@
 import { auth } from '@/app/(auth)/auth';
-import { ArtifactKind } from '@/components/artifact';
+import type { ArtifactKind } from '@/components/artifact';
 import {
   deleteDocumentsByIdAfterTimestamp,
   getDocumentsById,
@@ -32,7 +32,15 @@ export async function GET(request: Request) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  return Response.json(documents, { status: 200 });
+  // Add cache headers for better performance
+  // Cache for 1 day on client, but revalidate every hour on server
+  return Response.json(documents, {
+    status: 200,
+    headers: {
+      'Cache-Control': 'public, max-age=3600, s-maxage=86400',
+      ETag: `"document-${id}-${document.createdAt}"`,
+    },
+  });
 }
 
 export async function POST(request: Request) {

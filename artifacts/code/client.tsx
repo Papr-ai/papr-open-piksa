@@ -6,6 +6,7 @@ import {
   MessageIcon,
   PlayIcon,
   RedoIcon,
+  SaveIcon,
   UndoIcon,
 } from '@/components/icons';
 import { toast } from 'sonner';
@@ -250,6 +251,82 @@ export const codeArtifact = new Artifact<'code', Metadata>({
               },
             ],
           }));
+        }
+      },
+    },
+    {
+      icon: <SaveIcon size={18} />,
+      description: 'Save to memory',
+      onClick: async ({ content }) => {
+        try {
+          const response = await fetch('/api/memory/save', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              content,
+              type: 'document',
+              metadata: {
+                kind: 'code',
+                language: detectLanguage(content),
+              },
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to save to memory');
+          }
+
+          // Use DOM to find and update the save button's icon
+          const saveButtons = document.querySelectorAll(
+            '[data-tooltip-content="Save to memory"]',
+          );
+          saveButtons.forEach((btn) => {
+            // Find the SaveIcon within this button
+            const svgElement = btn.querySelector('svg');
+            if (svgElement) {
+              // Update a data attribute that can be used in CSS to show filled state
+              svgElement.setAttribute('data-saved', 'true');
+              // Try to find the path element to directly update fill
+              const pathElement = svgElement.querySelector('path');
+              if (pathElement) {
+                const gradientId =
+                  svgElement.querySelector('linearGradient')?.id;
+                if (gradientId) {
+                  pathElement.setAttribute('fill', `url(#${gradientId})`);
+                }
+              }
+            }
+
+            // Update tooltip content
+            const tooltipContent = btn
+              .closest('[role="tooltip"]')
+              ?.querySelector('[data-tooltip-content="Save to memory"]');
+            if (tooltipContent) {
+              tooltipContent.setAttribute(
+                'data-tooltip-content',
+                'Already saved to memory',
+              );
+            }
+
+            // Find parent TooltipProvider and update content
+            const tooltipTrigger = btn.closest('[role="button"]');
+            if (tooltipTrigger) {
+              const tooltipPopup = tooltipTrigger.nextElementSibling;
+              if (
+                tooltipPopup &&
+                tooltipPopup.textContent === 'Save to memory'
+              ) {
+                tooltipPopup.textContent = 'Already saved to memory';
+              }
+            }
+          });
+
+          toast.success('Saved to memory!');
+        } catch (error) {
+          console.error('Error saving to memory:', error);
+          toast.error('Failed to save to memory');
         }
       },
     },

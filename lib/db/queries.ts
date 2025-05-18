@@ -6,7 +6,16 @@ import type { SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
-import { user, chat, document, suggestion, message, vote } from './schema';
+import {
+  user,
+  chat,
+  document,
+  suggestion,
+  message,
+  vote,
+  collection,
+  chatCollection,
+} from './schema';
 import type { User, Suggestion, DBMessage, Chat } from './schema';
 import type { ArtifactKind } from '@/components/artifact';
 import { initPaprMemory } from '../ai/memory/index';
@@ -253,15 +262,21 @@ export async function voteMessage({
       .where(and(eq(vote.messageId, messageId)));
 
     if (existingVote) {
+      // Preserve the isSaved property when updating
       return await db
         .update(vote)
-        .set({ isUpvoted: type === 'up' })
+        .set({
+          isUpvoted: type === 'up',
+          // Preserve isSaved if it exists, otherwise default to false
+          isSaved: existingVote.isSaved ?? false,
+        })
         .where(and(eq(vote.messageId, messageId), eq(vote.chatId, chatId)));
     }
     return await db.insert(vote).values({
       chatId,
       messageId,
       isUpvoted: type === 'up',
+      isSaved: false, // Default to false for new votes
     });
   } catch (error) {
     console.error('Failed to upvote message in database', error);
@@ -453,6 +468,283 @@ export async function updateChatVisiblityById({
     return await db.update(chat).set({ visibility }).where(eq(chat.id, chatId));
   } catch (error) {
     console.error('Failed to update chat visibility in database');
+    throw error;
+  }
+}
+
+export async function getSavedMessagesByUserId({ userId }: { userId: string }) {
+  try {
+    return await db
+      .select({
+        messageId: vote.messageId,
+        chatId: vote.chatId,
+        savedAt: message.createdAt, // Use message creation date as a proxy for saved date
+      })
+      .from(vote)
+      .innerJoin(message, eq(vote.messageId, message.id))
+      .innerJoin(chat, eq(vote.chatId, chat.id))
+      .where(and(eq(chat.userId, userId), eq(vote.isSaved, true)))
+      .orderBy(desc(message.createdAt))
+      .limit(100); // Limit to recent saved messages
+  } catch (error) {
+    console.error('Failed to get saved messages by user from database', error);
+    throw error;
+  }
+}
+
+export async function getSavedDocumentsByUserId({
+  userId,
+}: { userId: string }) {
+  try {
+    // For documents, we need a different approach as they're not stored in votes
+    // Get only the most recent version of each document (by ID)
+    // First get distinct document IDs
+    const distinctDocumentIds = await db
+      .selectDistinct({ id: document.id })
+      .from(document)
+      .where(eq(document.userId, userId))
+      .limit(100);
+
+    // If we have document IDs, get their latest versions
+    if (distinctDocumentIds.length > 0) {
+      const docs = [];
+
+      for (const { id } of distinctDocumentIds) {
+        const [latestDoc] = await db
+          .select({
+            id: document.id,
+            title: document.title,
+            kind: document.kind,
+            createdAt: document.createdAt,
+          })
+          .from(document)
+          .where(and(eq(document.id, id), eq(document.userId, userId)))
+          .orderBy(desc(document.createdAt))
+          .limit(1);
+
+        if (latestDoc) {
+          docs.push(latestDoc);
+        }
+      }
+
+      // Sort by creation date, newest first
+      return docs.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
+    }
+
+    return [];
+  } catch (error) {
+    console.error('Failed to get saved documents by user from database', error);
+    throw error;
+  }
+}
+
+export async function getAllSavedItemsByUserId({ userId }: { userId: string }) {
+  try {
+    // Get both saved messages and documents
+    const [savedMessages, savedDocuments] = await Promise.all([
+      getSavedMessagesByUserId({ userId }),
+      getSavedDocumentsByUserId({ userId }),
+    ]);
+
+    return {
+      messages: savedMessages,
+      documents: savedDocuments,
+    };
+  } catch (error) {
+    console.error('Failed to get all saved items by user from database', error);
+    throw error;
+  }
+}
+
+// Collection functions
+export async function getCollectionsByUserId({ userId }: { userId: string }) {
+  try {
+    return await db
+      .select()
+      .from(collection)
+      .where(eq(collection.userId, userId));
+  } catch (error) {
+    console.error('Failed to get collections by user from database');
+    throw error;
+  }
+}
+
+export async function createCollection({
+  title,
+  description,
+  userId,
+  isSystem = false,
+  systemType = null,
+}: {
+  title: string;
+  description?: string;
+  userId: string;
+  isSystem?: boolean;
+  systemType?: string | null;
+}) {
+  try {
+    const result = await db
+      .insert(collection)
+      .values({
+        title,
+        description,
+        userId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        isSystem,
+        systemType,
+      })
+      .returning();
+
+    return result[0];
+  } catch (error) {
+    console.error('Failed to create collection in database');
+    throw error;
+  }
+}
+
+export async function getOrCreateSavedChatsCollection({
+  userId,
+}: { userId: string }) {
+  try {
+    // Try to find existing Saved Chats collection
+    const savedChatsCollections = await db
+      .select()
+      .from(collection)
+      .where(
+        and(
+          eq(collection.userId, userId),
+          eq(collection.isSystem, true),
+          eq(collection.systemType, 'saved_chats'),
+        ),
+      );
+
+    // If it exists, return it
+    if (savedChatsCollections.length > 0) {
+      return savedChatsCollections[0];
+    }
+
+    // Otherwise create it
+    return await createCollection({
+      title: 'Saved Chats',
+      description: 'Chats you have explicitly saved for later reference',
+      userId,
+      isSystem: true,
+      systemType: 'saved_chats',
+    });
+  } catch (error) {
+    console.error('Failed to get or create saved chats collection');
+    throw error;
+  }
+}
+
+export async function addChatToCollection({
+  chatId,
+  collectionId,
+}: {
+  chatId: string;
+  collectionId: string;
+}) {
+  try {
+    // Check if association already exists
+    const existing = await db
+      .select()
+      .from(chatCollection)
+      .where(
+        and(
+          eq(chatCollection.chatId, chatId),
+          eq(chatCollection.collectionId, collectionId),
+        ),
+      );
+
+    if (existing.length === 0) {
+      // Add new association
+      return await db
+        .insert(chatCollection)
+        .values({
+          chatId,
+          collectionId,
+          addedAt: new Date(),
+        })
+        .returning();
+    }
+
+    return existing;
+  } catch (error) {
+    console.error('Failed to add chat to collection');
+    throw error;
+  }
+}
+
+export async function removeChatFromCollection({
+  chatId,
+  collectionId,
+}: {
+  chatId: string;
+  collectionId: string;
+}) {
+  try {
+    return await db
+      .delete(chatCollection)
+      .where(
+        and(
+          eq(chatCollection.chatId, chatId),
+          eq(chatCollection.collectionId, collectionId),
+        ),
+      );
+  } catch (error) {
+    console.error('Failed to remove chat from collection');
+    throw error;
+  }
+}
+
+export async function getCollectionChats({
+  collectionId,
+}: { collectionId: string }) {
+  try {
+    // Get all chats in this collection
+    const result = await db
+      .select({
+        chat: chat,
+        chatCollection: chatCollection,
+      })
+      .from(chatCollection)
+      .innerJoin(chat, eq(chatCollection.chatId, chat.id))
+      .where(eq(chatCollection.collectionId, collectionId));
+
+    return result.map((row) => row.chat);
+  } catch (error) {
+    console.error('Failed to get collection chats');
+    throw error;
+  }
+}
+
+export async function getUncategorizedChats({ userId }: { userId: string }) {
+  try {
+    // Get all chats by user
+    const allChats = await db
+      .select()
+      .from(chat)
+      .where(eq(chat.userId, userId));
+
+    // Get all chat IDs that are in any collection
+    const categorizedChatIds = await db
+      .select({ chatId: chatCollection.chatId })
+      .from(chatCollection)
+      .innerJoin(collection, eq(chatCollection.collectionId, collection.id))
+      .where(eq(collection.userId, userId));
+
+    const categorizedChatIdSet = new Set(
+      categorizedChatIds.map((row) => row.chatId),
+    );
+
+    // Return only uncategorized chats
+    return allChats.filter((chat) => !categorizedChatIdSet.has(chat.id));
+  } catch (error) {
+    console.error('Failed to get uncategorized chats');
     throw error;
   }
 }

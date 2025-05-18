@@ -34,6 +34,43 @@ export const chat = pgTable('Chat', {
 
 export type Chat = InferSelectModel<typeof chat>;
 
+// Collection table to store chat collections
+export const collection = pgTable('Collection', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  title: text('title').notNull(),
+  description: text('description'),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+  isSystem: boolean('isSystem').notNull().default(false),
+  systemType: varchar('systemType', { length: 32 }),
+});
+
+export type Collection = InferSelectModel<typeof collection>;
+
+// Chat-collection association table
+export const chatCollection = pgTable(
+  'ChatCollection',
+  {
+    chatId: uuid('chatId')
+      .notNull()
+      .references(() => chat.id),
+    collectionId: uuid('collectionId')
+      .notNull()
+      .references(() => collection.id),
+    addedAt: timestamp('addedAt').notNull().defaultNow(),
+  },
+  (table) => {
+    return {
+      pk: primaryKey({ columns: [table.chatId, table.collectionId] }),
+    };
+  },
+);
+
+export type ChatCollection = InferSelectModel<typeof chatCollection>;
+
 // DEPRECATED: The following schema is deprecated and will be removed in the future.
 // Read the migration guide at https://github.com/vercel/ai-chatbot/blob/main/docs/04-migrate-to-parts.md
 export const messageDeprecated = pgTable('Message', {
@@ -73,6 +110,7 @@ export const voteDeprecated = pgTable(
       .notNull()
       .references(() => messageDeprecated.id),
     isUpvoted: boolean('isUpvoted').notNull(),
+    isSaved: boolean('isSaved').notNull().default(false),
   },
   (table) => {
     return {
@@ -93,6 +131,7 @@ export const vote = pgTable(
       .notNull()
       .references(() => message.id),
     isUpvoted: boolean('isUpvoted').notNull(),
+    isSaved: boolean('isSaved').notNull().default(false),
   },
   (table) => {
     return {

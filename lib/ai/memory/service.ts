@@ -159,6 +159,90 @@ export function createMemoryService(apiKey: string) {
   };
 
   /**
+   * Store any content in memory
+   * @param userId - User ID
+   * @param content - The content to store
+   * @param type - Type of memory (e.g., 'text', 'document', 'assistant_message')
+   * @param metadata - Additional metadata for the memory
+   * @returns true if stored successfully, false otherwise
+   */
+  const storeContent = async (
+    userId: string,
+    content: string,
+    type = 'text',
+    metadata: Record<string, any> = {},
+  ): Promise<boolean> => {
+    try {
+      console.log(
+        `[Memory DEBUG] Storing content for user ${userId} with type ${type}`,
+      );
+
+      if (!content) {
+        console.log('[Memory DEBUG] Skipping empty content');
+        return false;
+      }
+
+      // Validate and ensure type is one of the allowed values
+      const validTypes = ['text', 'code_snippet', 'document'];
+      const validatedType = validTypes.includes(type as string) ? type : 'text';
+
+      // Create a new metadata object instead of modifying the parameter
+      const enhancedMetadata: Record<string, any> = {
+        ...metadata,
+      };
+
+      // If we had to change the type, preserve the original in metadata
+      if (validatedType !== type) {
+        console.log(
+          `[Memory DEBUG] Converting type '${type}' to '${validatedType}' for API compatibility`,
+        );
+        enhancedMetadata.originalType = type;
+      }
+
+      // Prepare the memory data
+      const memoryData = {
+        content,
+        type: validatedType as MemoryType,
+        metadata: {
+          source: 'v0chat',
+          user_id: userId,
+          timestamp: new Date().toISOString(),
+          ...enhancedMetadata,
+        },
+      };
+
+      console.log(
+        `[Memory DEBUG] Memory data:`,
+        JSON.stringify(memoryData, null, 2),
+      );
+
+      // Use SDK to store memory
+      console.log(
+        `[Memory DEBUG] Using SDK to store memory at ${baseURL}/v1/memory`,
+      );
+      const sdkResponse = await paprClient.memory.add(memoryData);
+      console.log(
+        '[Memory DEBUG] SDK response:',
+        JSON.stringify(sdkResponse, null, 2),
+      );
+
+      if (sdkResponse && sdkResponse.code === 200 && !sdkResponse.error) {
+        console.log('[Memory DEBUG] Memory stored successfully with SDK');
+        return true;
+      } else {
+        console.error(
+          '[Memory DEBUG] SDK method returned an error:',
+          sdkResponse,
+        );
+        return false;
+      }
+    } catch (error) {
+      console.error('[Memory DEBUG] Error storing content in memory:', error);
+      return false;
+    }
+  };
+
+  /**
    * Search for relevant memories
    * @param userId - User ID
    * @param query - Search query
@@ -410,6 +494,7 @@ Consider these memories when responding to the user's current request. If the me
 
   return {
     storeMessage,
+    storeContent,
     searchMemories,
     formatMemoriesForPrompt,
     getSearchRawResponse,

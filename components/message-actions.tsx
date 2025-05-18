@@ -4,7 +4,7 @@ import { useCopyToClipboard } from 'usehooks-ts';
 
 import type { Vote } from '@/lib/db/schema';
 
-import { CopyIcon, ThumbDownIcon, ThumbUpIcon } from './icons';
+import { CopyIcon, SaveIcon, ThumbDownIcon, ThumbUpIcon } from './icons';
 import { Button } from './ui/button';
 import {
   Tooltip,
@@ -12,7 +12,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from './ui/tooltip';
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import equal from 'fast-deep-equal';
 import { toast } from 'sonner';
 
@@ -29,9 +29,71 @@ export function PureMessageActions({
 }) {
   const { mutate } = useSWRConfig();
   const [_, copyToClipboard] = useCopyToClipboard();
+  const [isSaved, setIsSaved] = useState(false);
+  const [savingStatus, setSavingStatus] = useState<
+    'saving' | 'saved' | 'error'
+  >('saving');
+
+  // Check if the message is already saved based on the vote record
+  useEffect(() => {
+    if (vote?.isSaved) {
+      setIsSaved(true);
+    }
+  }, [vote]);
 
   if (isLoading) return null;
   if (message.role === 'user') return null;
+
+  const extractTextFromMessage = () => {
+    return message.parts
+      ?.filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n')
+      .trim();
+  };
+
+  const handleSave = async () => {
+    try {
+      setSavingStatus('saving');
+
+      const body = new FormData();
+      body.append('messageId', message.id);
+      body.append('chatId', chatId);
+
+      const saveResponse = await fetch('/api/vote', {
+        method: 'POST',
+        body,
+      });
+
+      if (!saveResponse.ok) {
+        throw new Error('Failed to save message');
+      }
+
+      // Also add the chat to the Saved Chats collection
+      try {
+        await fetch('/api/collections/saved', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ chatId }),
+        });
+      } catch (collectionError) {
+        console.error(
+          'Error adding to Saved Chats collection:',
+          collectionError,
+        );
+        // Don't fail the save operation if this fails
+      }
+
+      setSavingStatus('saved');
+      toast.success('Message saved');
+    } catch (error) {
+      console.error('Error saving message:', error);
+      setSavingStatus('error');
+      toast.error('Failed to save message');
+    }
+  };
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -42,18 +104,14 @@ export function PureMessageActions({
               className="py-1 px-2 h-fit text-muted-foreground"
               variant="outline"
               onClick={async () => {
-                const textFromParts = message.parts
-                  ?.filter((part) => part.type === 'text')
-                  .map((part) => part.text)
-                  .join('\n')
-                  .trim();
+                const textContent = extractTextFromMessage();
 
-                if (!textFromParts) {
+                if (!textContent) {
                   toast.error("There's no text to copy!");
                   return;
                 }
 
-                await copyToClipboard(textFromParts);
+                await copyToClipboard(textContent);
                 toast.success('Copied to clipboard!');
               }}
             >
@@ -61,6 +119,22 @@ export function PureMessageActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent>Copy</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              className="py-1 px-2 h-fit text-muted-foreground"
+              variant="outline"
+              onClick={handleSave}
+              disabled={isSaved}
+            >
+              <SaveIcon isSaved={isSaved} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isSaved ? 'Already saved to memory' : 'Save to memory'}
+          </TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -92,12 +166,17 @@ export function PureMessageActions({
                           (vote) => vote.messageId !== message.id,
                         );
 
+                        const updatedVote = currentVotes.find(
+                          (vote) => vote.messageId === message.id,
+                        );
+
                         return [
                           ...votesWithoutCurrent,
                           {
                             chatId,
                             messageId: message.id,
                             isUpvoted: true,
+                            isSaved: updatedVote ? updatedVote.isSaved : false,
                           },
                         ];
                       },
@@ -145,12 +224,17 @@ export function PureMessageActions({
                           (vote) => vote.messageId !== message.id,
                         );
 
+                        const updatedVote = currentVotes.find(
+                          (vote) => vote.messageId === message.id,
+                        );
+
                         return [
                           ...votesWithoutCurrent,
                           {
                             chatId,
                             messageId: message.id,
                             isUpvoted: false,
+                            isSaved: updatedVote ? updatedVote.isSaved : false,
                           },
                         ];
                       },

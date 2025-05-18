@@ -376,3 +376,71 @@ export async function searchUserMemories({
     return [];
   }
 }
+
+/**
+ * Store any content in memory
+ */
+export async function storeContentInMemory({
+  userId,
+  content,
+  type = 'text',
+  metadata = {},
+  apiKey,
+}: {
+  userId: string;
+  content: string;
+  type?: string;
+  metadata?: Record<string, any>;
+  apiKey: string;
+}): Promise<boolean> {
+  if (!apiKey) {
+    console.log('[Memory] No API key provided');
+    return false; // If no API key, return false
+  }
+
+  try {
+    // Import the db-related code inside the function to avoid circular dependencies
+    const { db, user, eq } = await import('@/lib/db/queries-minimal');
+
+    // Fetch the user to check if they have a Papr user ID
+    let paprUserId: string | undefined;
+    try {
+      const userResult = await db
+        .select({ paprUserId: user.paprUserId })
+        .from(user)
+        .where(eq(user.id, userId))
+        .limit(1);
+
+      if (userResult.length > 0 && userResult[0].paprUserId) {
+        paprUserId = userResult[0].paprUserId;
+        console.log(
+          `[Memory] Using Papr user ID: ${paprUserId} for app user ${userId}`,
+        );
+      } else {
+        console.log(
+          `[Memory] No Papr user ID found for app user ${userId}, using app user ID`,
+        );
+      }
+    } catch (dbError) {
+      console.error(
+        '[Memory] Error fetching Papr user ID from database:',
+        dbError,
+      );
+      // Continue with the app user ID if there's an error
+    }
+
+    // Use the Papr user ID if available, otherwise fall back to the app user ID
+    const memoryUserId = paprUserId || userId;
+
+    const memoryService = createMemoryService(apiKey);
+    return await memoryService.storeContent(
+      memoryUserId,
+      content,
+      type,
+      metadata,
+    );
+  } catch (error) {
+    console.error('[Memory] Error storing content in memory:', error);
+    return false;
+  }
+}

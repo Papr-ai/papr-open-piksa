@@ -2,7 +2,7 @@
 
 import type { Attachment, UIMessage } from 'ai';
 import { useChat } from '@ai-sdk/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -15,6 +15,7 @@ import { useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
+import { DocumentOpener } from './document-opener';
 
 export function Chat({
   id,
@@ -22,14 +23,22 @@ export function Chat({
   selectedChatModel,
   selectedVisibilityType,
   isReadonly,
+  documentId,
 }: {
   id: string;
   initialMessages: Array<UIMessage>;
   selectedChatModel: string;
   selectedVisibilityType: VisibilityType;
   isReadonly: boolean;
+  documentId?: string;
 }) {
   const { mutate } = useSWRConfig();
+  const [isClient, setIsClient] = useState(false);
+
+  // Use effect to mark when client-side rendering is active
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const {
     messages,
@@ -66,6 +75,8 @@ export function Chat({
 
   return (
     <>
+      {isClient && documentId && <DocumentOpener documentId={documentId} />}
+
       <div className="flex flex-col min-w-0 h-dvh bg-background">
         <ChatHeader
           chatId={id}

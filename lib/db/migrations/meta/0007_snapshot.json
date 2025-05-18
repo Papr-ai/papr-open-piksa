@@ -1,0 +1,138 @@
+{
+  "version": "5",
+  "dialect": "pg",
+  "id": "f78ca2ef-0095-49c5-be70-f7f4e81b0dc7",
+  "prevId": "eaecfb50-6e09-44c2-92ed-ec8c9d9ec2fb",
+  "tables": {
+    "ChatCollection": {
+      "name": "ChatCollection",
+      "schema": "",
+      "columns": {
+        "chatId": {
+          "name": "chatId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "collectionId": {
+          "name": "collectionId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "addedAt": {
+          "name": "addedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_chatcollection_collectionId": {
+          "name": "idx_chatcollection_collectionId",
+          "columns": [
+            "collectionId"
+          ],
+          "isUnique": false
+        },
+        "idx_chatcollection_chatId": {
+          "name": "idx_chatcollection_chatId",
+          "columns": [
+            "chatId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "ChatCollection_chatId_collectionId_pk": {
+          "name": "ChatCollection_chatId_collectionId_pk",
+          "columns": [
+            "chatId",
+            "collectionId"
+          ]
+        }
+      },
+      "uniqueConstraints": {}
+    },
+    "Collection": {
+      "name": "Collection",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "userId": {
+          "name": "userId",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "references": {
+            "table": "User",
+            "columns": [
+              "id"
+            ]
+          }
+        },
+        "createdAt": {
+          "name": "createdAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updatedAt": {
+          "name": "updatedAt",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "isSystem": {
+          "name": "isSystem",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "systemType": {
+          "name": "systemType",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_collection_userId": {
+          "name": "idx_collection_userId",
+          "columns": [
+            "userId"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {}
+    }
+  },
+  "enums": {},
+  "schemas": {}
+} 

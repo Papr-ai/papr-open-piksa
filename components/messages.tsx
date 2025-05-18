@@ -26,6 +26,7 @@ function PureMessages({
   setMessages,
   reload,
   isReadonly,
+  isArtifactVisible,
 }: MessagesProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
@@ -33,7 +34,9 @@ function PureMessages({
   return (
     <div
       ref={messagesContainerRef}
-      className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
+      className={`flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 ${
+        isArtifactVisible ? 'md:max-w-[400px]' : ''
+      }`}
     >
       {messages.length === 0 && <Greeting />}
 
@@ -67,7 +70,7 @@ function PureMessages({
 }
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
-  if (prevProps.isArtifactVisible && nextProps.isArtifactVisible) return true;
+  if (prevProps.isArtifactVisible !== nextProps.isArtifactVisible) return false;
 
   if (prevProps.status !== nextProps.status) return false;
   if (prevProps.status && nextProps.status) return false;
