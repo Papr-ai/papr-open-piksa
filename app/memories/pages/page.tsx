@@ -96,14 +96,14 @@ export default function SavedPagesPage() {
       <header className="flex sticky top-0 bg-background py-1.5 items-center px-2 md:px-2 gap-2">
         <SidebarToggle />
         <div className="flex-1 overflow-hidden">
-          <h1 className="text-lg font-semibold truncate">Saved Pages</h1>
+          <h1 className="text-lg font-semibold truncate">Artifacts</h1>
         </div>
       </header>
 
       <div className="flex-1 overflow-auto p-2">
         {isLoading && savedPages.length === 0 && (
           <div className="flex justify-center items-center py-12">
-            <p>Loading saved pages...</p>
+            <p>Loading artifacts...</p>
           </div>
         )}
 

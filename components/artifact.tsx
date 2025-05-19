@@ -26,7 +26,7 @@ import { codeArtifact } from '@/artifacts/code/client';
 import { sheetArtifact } from '@/artifacts/sheet/client';
 import { textArtifact } from '@/artifacts/text/client';
 import equal from 'fast-deep-equal';
-import { UseChatHelpers } from '@ai-sdk/react';
+import type { UseChatHelpers } from '@ai-sdk/react';
 
 export const artifactDefinitions = [
   textArtifact,
@@ -49,6 +49,7 @@ export interface UIArtifact {
     width: number;
     height: number;
   };
+  language?: string;
 }
 
 function PureArtifact({
@@ -108,10 +109,19 @@ function PureArtifact({
       if (mostRecentDocument) {
         setDocument(mostRecentDocument);
         setCurrentVersionIndex(documents.length - 1);
-        setArtifact((currentArtifact) => ({
-          ...currentArtifact,
-          content: mostRecentDocument.content ?? '',
-        }));
+        setArtifact((currentArtifact) => {
+          console.log('[ARTIFACT COMPONENT] Setting content from document:', {
+            documentId: mostRecentDocument.id,
+            contentLength: mostRecentDocument.content?.length || 0,
+            preview: mostRecentDocument.content?.substring(0, 30) || 'empty',
+            currentArtifactKind: currentArtifact.kind,
+            currentArtifactVisible: currentArtifact.isVisible,
+          });
+          return {
+            ...currentArtifact,
+            content: mostRecentDocument.content ?? '',
+          };
+        });
       }
     }
   }, [documents, setArtifact]);
@@ -125,7 +135,16 @@ function PureArtifact({
 
   const handleContentChange = useCallback(
     (updatedContent: string) => {
-      if (!artifact) return;
+      if (!artifact || !artifact.documentId || artifact.documentId === 'init') {
+        console.log('Cannot update document: invalid artifact state');
+        return;
+      }
+
+      console.log('Handling content change:', {
+        documentId: artifact.documentId,
+        contentLength: updatedContent?.length || 0,
+        preview: updatedContent?.substring?.(0, 30) || '',
+      });
 
       mutate<Array<Document>>(
         `/api/document?id=${artifact.documentId}`,
@@ -134,34 +153,53 @@ function PureArtifact({
 
           const currentDocument = currentDocuments.at(-1);
 
-          if (!currentDocument || !currentDocument.content) {
+          if (!currentDocument) {
+            console.log('No current document found, creating new one');
             setIsContentDirty(false);
             return currentDocuments;
           }
 
+          // Only update if content has actually changed
           if (currentDocument.content !== updatedContent) {
-            await fetch(`/api/document?id=${artifact.documentId}`, {
-              method: 'POST',
-              body: JSON.stringify({
-                title: artifact.title,
-                content: updatedContent,
-                kind: artifact.kind,
-              }),
-            });
+            console.log('Content changed, sending update request');
+
+            const response = await fetch(
+              `/api/document?id=${artifact.documentId}`,
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  title: artifact.title,
+                  content: updatedContent,
+                  kind: artifact.kind,
+                }),
+              },
+            );
+
+            if (!response.ok) {
+              console.error(
+                'Failed to update document:',
+                await response.text(),
+              );
+              return currentDocuments;
+            }
 
             setIsContentDirty(false);
+            console.log('Document updated successfully');
 
-            const newDocument = {
-              ...currentDocument,
-              content: updatedContent,
-              createdAt: new Date(),
-            };
-
-            return [...currentDocuments, newDocument];
+            // Fetch the updated documents instead of using getDocumentsById
+            const updatedResponse = await fetch(
+              `/api/document?id=${artifact.documentId}`,
+            );
+            if (updatedResponse.ok) {
+              return await updatedResponse.json();
+            }
+            return currentDocuments;
+          } else {
+            console.log('Content unchanged, skipping update');
+            return currentDocuments;
           }
-          return currentDocuments;
         },
-        { revalidate: false },
+        { revalidate: true },
       );
     },
     [artifact, mutate],
@@ -194,25 +232,119 @@ function PureArtifact({
   }
 
   const handleVersionChange = (type: 'next' | 'prev' | 'toggle' | 'latest') => {
-    if (!documents) return;
-
-    if (type === 'latest') {
-      setCurrentVersionIndex(documents.length - 1);
-      setMode('edit');
+    if (!documents) {
+      console.log('[ARTIFACT] No documents available for version control');
+      return;
     }
 
-    if (type === 'toggle') {
-      setMode((mode) => (mode === 'edit' ? 'diff' : 'edit'));
-    }
+    console.log('[ARTIFACT] Version change requested:', {
+      type,
+      documentId: artifact.documentId,
+      currentIndex: currentVersionIndex,
+      totalVersions: documents.length,
+    });
 
-    if (type === 'prev') {
-      if (currentVersionIndex > 0) {
-        setCurrentVersionIndex((index) => index - 1);
+    try {
+      if (type === 'latest') {
+        if (documents.length === 0) {
+          console.log('[ARTIFACT] No versions available to navigate to');
+          return;
+        }
+
+        const latestIndex = documents.length - 1;
+        console.log('[ARTIFACT] Setting to latest version:', latestIndex);
+        setCurrentVersionIndex(latestIndex);
+        setMode('edit');
+
+        // Update artifact content with the latest document
+        const latestDoc = documents[latestIndex];
+        if (latestDoc?.content) {
+          console.log('[ARTIFACT] Updating content with latest version', {
+            contentLength: latestDoc.content.length,
+            timestamp: latestDoc.createdAt,
+          });
+
+          setArtifact((current) => ({
+            ...current,
+            content: latestDoc.content || '',
+            status: 'idle',
+          }));
+        } else {
+          console.error('[ARTIFACT] Latest document has no content');
+        }
+        return;
       }
-    } else if (type === 'next') {
-      if (currentVersionIndex < documents.length - 1) {
-        setCurrentVersionIndex((index) => index + 1);
+
+      if (type === 'toggle') {
+        const newMode = mode === 'edit' ? 'diff' : 'edit';
+        console.log('[ARTIFACT] Toggling mode from', mode, 'to', newMode);
+        setMode(newMode);
+        return;
       }
+
+      if (type === 'prev') {
+        if (currentVersionIndex > 0) {
+          const newIndex = currentVersionIndex - 1;
+          console.log('[ARTIFACT] Moving to previous version:', newIndex);
+          setCurrentVersionIndex(newIndex);
+
+          // Update artifact content with the selected document
+          const selectedDoc = documents[newIndex];
+          if (selectedDoc?.content) {
+            console.log('[ARTIFACT] Updated content with previous version', {
+              index: newIndex,
+              contentLength: selectedDoc.content.length,
+              timestamp: selectedDoc.createdAt,
+            });
+
+            setArtifact((current) => ({
+              ...current,
+              content: selectedDoc.content || '',
+              status: 'idle',
+            }));
+          } else {
+            console.error('[ARTIFACT] Selected document has no content');
+          }
+        } else {
+          console.log(
+            '[ARTIFACT] Already at oldest version, cannot go back further',
+          );
+        }
+        return;
+      }
+
+      if (type === 'next') {
+        if (currentVersionIndex < documents.length - 1) {
+          const newIndex = currentVersionIndex + 1;
+          console.log('[ARTIFACT] Moving to next version:', newIndex);
+          setCurrentVersionIndex(newIndex);
+
+          // Update artifact content with the selected document
+          const selectedDoc = documents[newIndex];
+          if (selectedDoc?.content) {
+            console.log('[ARTIFACT] Updated content with next version', {
+              index: newIndex,
+              contentLength: selectedDoc.content.length,
+              timestamp: selectedDoc.createdAt,
+            });
+
+            setArtifact((current) => ({
+              ...current,
+              content: selectedDoc.content || '',
+              status: 'idle',
+            }));
+          } else {
+            console.error('[ARTIFACT] Selected document has no content');
+          }
+        } else {
+          console.log(
+            '[ARTIFACT] Already at latest version, cannot go forward',
+          );
+        }
+        return;
+      }
+    } catch (error) {
+      console.error('[ARTIFACT] Error during version change:', error);
     }
   };
 
@@ -246,6 +378,7 @@ function PureArtifact({
         artifactDefinition.initialize({
           documentId: artifact.documentId,
           setMetadata,
+          setArtifact,
         });
       }
     }
@@ -465,6 +598,7 @@ function PureArtifact({
                 isLoading={isDocumentsFetching && !artifact.content}
                 metadata={metadata}
                 setMetadata={setMetadata}
+                language={artifact.language}
               />
 
               <AnimatePresence>

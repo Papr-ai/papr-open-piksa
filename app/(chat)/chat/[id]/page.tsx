@@ -11,13 +11,14 @@ import type { Attachment, UIMessage } from 'ai';
 
 type PageProps = {
   params: Promise<{ id: string }>;
-  searchParams: { documentId?: string };
+  searchParams: Promise<{ documentId?: string }>;
 };
 
 export default async function Page({ params, searchParams }: PageProps) {
   const resolvedParams = await params;
   const { id } = resolvedParams;
-  const { documentId } = searchParams;
+  const resolvedSearchParams = await searchParams;
+  const { documentId } = resolvedSearchParams;
   const chat = await getChatById({ id });
 
   if (!chat) {

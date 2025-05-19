@@ -31,30 +31,52 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
   },
   onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
     if (streamPart.type === 'suggestion') {
-      setMetadata((metadata) => {
-        return {
-          suggestions: [
-            ...metadata.suggestions,
-            streamPart.content as Suggestion,
-          ],
-        };
-      });
+      try {
+        setMetadata((metadata) => {
+          const existingSuggestions = metadata?.suggestions || [];
+          const newSuggestion = streamPart.content as Suggestion;
+
+          // Check if this suggestion already exists by ID to prevent duplicates
+          const suggestionExists = existingSuggestions.some(
+            (suggestion) => suggestion.id === newSuggestion.id,
+          );
+
+          if (suggestionExists) {
+            return metadata;
+          }
+
+          return {
+            suggestions: [...existingSuggestions, newSuggestion],
+          };
+        });
+      } catch (error) {
+        console.error('Error handling suggestion:', error);
+      }
     }
 
     if (streamPart.type === 'text-delta') {
-      setArtifact((draftArtifact) => {
-        return {
-          ...draftArtifact,
-          content: draftArtifact.content + (streamPart.content as string),
-          isVisible:
-            draftArtifact.status === 'streaming' &&
-            draftArtifact.content.length > 400 &&
-            draftArtifact.content.length < 450
-              ? true
-              : draftArtifact.isVisible,
-          status: 'streaming',
-        };
-      });
+      try {
+        setArtifact((draftArtifact) => {
+          if (!draftArtifact) return draftArtifact;
+
+          const newContent =
+            draftArtifact.content + (streamPart.content as string);
+
+          return {
+            ...draftArtifact,
+            content: newContent,
+            isVisible:
+              draftArtifact.status === 'streaming' &&
+              newContent.length > 400 &&
+              newContent.length < 450
+                ? true
+                : draftArtifact.isVisible,
+            status: 'streaming',
+          };
+        });
+      } catch (error) {
+        console.error('Error handling text delta:', error);
+      }
     }
   },
   content: ({

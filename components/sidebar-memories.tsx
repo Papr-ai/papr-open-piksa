@@ -34,7 +34,7 @@ export function SidebarMemories({ user }: { user: User | undefined }) {
             onClick={() => setOpenMobile(false)}
           >
             <FileIcon size={16} />
-            <span>Pages</span>
+            <span>Artifacts</span>
           </Link>
         </div>
       </SidebarGroupContent>

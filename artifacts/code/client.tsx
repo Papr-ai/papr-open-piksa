@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { generateUUID } from '@/lib/utils';
 import { Console } from '@/components/console';
 import type { ConsoleOutput, ConsoleOutputContent } from '@/components/console';
+import React, { useEffect } from 'react';
 
 const OUTPUT_HANDLERS = {
   matplotlib: `
@@ -62,18 +63,49 @@ function detectRequiredHandlers(code: string): string[] {
 
 interface Metadata {
   outputs: Array<ConsoleOutput>;
+  previewMode: boolean;
 }
 
-// Add language detection helper
-function detectLanguage(code: string): 'python' | 'html' | 'jsx' | 'unknown' {
+// Improve language detection helper
+function detectLanguage(
+  code: string,
+): 'python' | 'html' | 'jsx' | 'svg' | 'javascript' | 'unknown' {
   // Simple detection based on code content
-  if (code.includes('import React') || code.includes('export default')) {
+  if (
+    code.includes('import React') ||
+    code.includes('export default') ||
+    code.includes('React.') ||
+    code.includes('<div') ||
+    code.includes('</div>') ||
+    code.includes('function Component')
+  ) {
     return 'jsx';
   }
-  if (code.includes('<!DOCTYPE html') || code.includes('<html')) {
+  if (
+    code.includes('<!DOCTYPE html') ||
+    code.includes('<html') ||
+    code.includes('</html>')
+  ) {
     return 'html';
   }
-  if (code.includes('import matplotlib') || code.includes('def ')) {
+  if (code.includes('<svg') || code.includes('</svg>')) {
+    return 'svg';
+  }
+  if (
+    code.includes('document.getElementById') ||
+    code.includes('function(') ||
+    code.includes('() =>') ||
+    code.includes('addEventListener') ||
+    (code.includes('const ') && !code.includes('import '))
+  ) {
+    return 'javascript';
+  }
+  if (
+    code.includes('import matplotlib') ||
+    code.includes('def ') ||
+    code.includes('print(') ||
+    code.includes('if __name__')
+  ) {
     return 'python';
   }
   return 'unknown';
@@ -83,62 +115,322 @@ export const codeArtifact = new Artifact<'code', Metadata>({
   kind: 'code',
   description:
     'Useful for code generation; Code execution is only available for python code.',
-  initialize: async ({ setMetadata }) => {
-    setMetadata({
+  initialize: async ({
+    setMetadata,
+    documentId,
+    setArtifact,
+  }: {
+    setMetadata: (metadata: Metadata | ((prev: Metadata) => Metadata)) => void;
+    documentId: string;
+    setArtifact: (artifact: any) => void;
+  }) => {
+    console.log('[CODE ARTIFACT] Initializing with document ID:', documentId);
+
+    // Initialize metadata with empty state
+    const initialMetadata: Metadata = {
       outputs: [],
-    });
+      previewMode: false,
+    };
+    setMetadata(initialMetadata);
+
+    // Make sure artifact is visible from the start
+    setArtifact((draft: any) => ({
+      ...draft,
+      isVisible: true,
+    }));
+
+    // Pre-set content if needed to ensure visibility
+    if (documentId !== 'init') {
+      try {
+        const response = await fetch(`/api/document?id=${documentId}`);
+        if (response.ok) {
+          console.log('[CODE ARTIFACT] Successfully fetched initial document');
+
+          try {
+            const data = await response.json();
+            if (Array.isArray(data) && data.length > 0) {
+              const lastDocument = data[data.length - 1];
+              if (lastDocument?.content) {
+                console.log(
+                  '[CODE ARTIFACT] Setting initial content from document:',
+                  {
+                    contentLength: lastDocument.content?.length || 0,
+                    preview: lastDocument.content?.substring(0, 50) || '',
+                  },
+                );
+
+                // Update artifact with content from document
+                setArtifact((draft: any) => ({
+                  ...draft,
+                  content: lastDocument.content || '',
+                  isVisible: true,
+                }));
+
+                // Check if we should enable preview mode based on content
+                const language = detectLanguage(lastDocument.content || '');
+                if (['html', 'svg', 'javascript', 'jsx'].includes(language)) {
+                  // Force update metadata with preview mode
+                  setMetadata((prev: Metadata) => ({
+                    ...prev,
+                    previewMode: true,
+                  }));
+                }
+              }
+            }
+          } catch (parseError) {
+            console.error(
+              '[CODE ARTIFACT] Error parsing document:',
+              parseError,
+            );
+          }
+        } else {
+          console.error(
+            '[CODE ARTIFACT] Failed to fetch initial document:',
+            await response.text(),
+          );
+          // Continue showing UI even on error
+        }
+      } catch (error) {
+        console.error(
+          '[CODE ARTIFACT] Error fetching initial document:',
+          error,
+        );
+        // Continue showing UI even on error
+      }
+    }
   },
-  onStreamPart: ({ streamPart, setArtifact }) => {
+  onStreamPart: ({ streamPart, setArtifact, setMetadata }) => {
+    console.log('[CODE ARTIFACT] Stream part received:', {
+      type: streamPart.type,
+      fullStreamPart: JSON.stringify(streamPart),
+      timestamp: new Date().toISOString(),
+    });
+
+    // Process code deltas
     if (streamPart.type === 'code-delta') {
-      setArtifact((draftArtifact) => ({
-        ...draftArtifact,
-        content: streamPart.content as string,
-        isVisible:
-          draftArtifact.status === 'streaming' &&
-          draftArtifact.content.length > 300 &&
-          draftArtifact.content.length < 310
-            ? true
-            : draftArtifact.isVisible,
-        status: 'streaming',
-      }));
+      try {
+        setArtifact((draftArtifact) => {
+          if (!draftArtifact) {
+            return draftArtifact;
+          }
+
+          // Accumulate content instead of replacing it
+          const deltaContent =
+            typeof streamPart.content === 'string' ? streamPart.content : '';
+          const currentContent = draftArtifact.content || '';
+
+          // Use full replacement if content already starts with the current content
+          const newContent = deltaContent.startsWith(currentContent)
+            ? deltaContent // Full replacement with updated content
+            : currentContent + deltaContent; // Append delta to existing content
+
+          // Store language if present
+          const newLanguage =
+            streamPart.language || draftArtifact.language || undefined;
+
+          // Check if we should enable preview mode based on content
+          const language = detectLanguage(newContent);
+          if (['html', 'svg', 'javascript', 'jsx'].includes(language)) {
+            setMetadata((prev) => ({
+              ...prev,
+              previewMode: true,
+            }));
+          }
+
+          // Force visibility to true and ensure content is set
+          return {
+            ...draftArtifact,
+            content: newContent,
+            isVisible: true,
+            status: 'streaming' as const,
+            language: newLanguage,
+          };
+        });
+      } catch (error) {
+        console.error(
+          '[CODE ARTIFACT] Error handling code delta:',
+          error,
+          streamPart,
+        );
+      }
     }
   },
   content: ({ metadata, setMetadata, ...props }) => {
-    const language = detectLanguage(props.content);
+    // Use streamed language if available, fallback to detection
+    let detectedLanguage =
+      props.language || detectLanguage(props.content || '');
+
+    // Get preview mode from metadata
+    const previewMode = metadata?.previewMode || false;
+
+    // Show preview automatically for HTML/SVG/React/JavaScript
+    useEffect(() => {
+      const lang = props.language || detectLanguage(props.content || '');
+      if (
+        lang === 'html' ||
+        lang === 'svg' ||
+        lang === 'jsx' ||
+        lang === 'javascript'
+      ) {
+        console.log('[CODE ARTIFACT] Auto-enabling preview mode for:', lang);
+        setMetadata((prev: Metadata) => ({
+          ...prev,
+          previewMode: true,
+        }));
+      }
+    }, [props.language, props.content, setMetadata]);
+
+    // Ensure content is a string and handle empty values
+    const safeContent = typeof props.content === 'string' ? props.content : '';
+
+    // Clean up the content by removing the JSON wrapper if present
+    let displayContent = safeContent;
+    try {
+      // First try to parse as JSON
+      const parsed = JSON.parse(safeContent);
+      if (parsed.code) {
+        displayContent = parsed.code;
+      } else if (parsed.html) {
+        // If we have HTML content, extract it from the template literal if needed
+        let htmlContent = parsed.html;
+        // Check if the HTML is wrapped in template literals
+        if (htmlContent.startsWith('`') && htmlContent.endsWith('`')) {
+          htmlContent = htmlContent.slice(1, -1);
+        }
+        displayContent = htmlContent;
+        detectedLanguage = 'html';
+      }
+    } catch (e) {
+      // If parsing fails, check if the content itself is wrapped in template literals
+      if (safeContent.startsWith('`') && safeContent.endsWith('`')) {
+        displayContent = safeContent.slice(1, -1);
+      } else {
+        displayContent = safeContent;
+      }
+    }
+
+    // --- Preview Renderers ---
+    let previewElement: React.ReactNode = null;
+    if (previewMode) {
+      console.log('[CODE ARTIFACT] Rendering preview for:', {
+        language: detectedLanguage,
+        contentLength: displayContent?.length || 0,
+        previewMode,
+        contentPreview: `${displayContent.substring(0, 100)}...`, // Log first 100 chars for debugging
+      });
+
+      const previewContainerClass = props.isInline
+        ? 'h-full w-full min-h-[200px] flex items-center justify-center overflow-hidden'
+        : 'h-full w-full min-h-[600px] flex items-center justify-center';
+
+      if (detectedLanguage === 'html') {
+        previewElement = (
+          <div className={`${previewContainerClass} border rounded-lg`}>
+            <iframe
+              srcDoc={displayContent}
+              className="w-full h-full"
+              title="HTML Preview"
+              style={{ minHeight: props.isInline ? '200px' : '600px' }}
+              sandbox="allow-scripts allow-same-origin"
+            />
+          </div>
+        );
+      } else if (['javascript', 'jsx'].includes(detectedLanguage)) {
+        try {
+          const iframeSrc = `
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+                <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+                <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+                <style>
+                  body { margin: 0; padding: 20px; }
+                </style>
+              </head>
+              <body>
+                <div id="root"></div>
+                <script type="text/babel">
+                  const content = ${JSON.stringify(displayContent)};
+                  try {
+                    if (typeof Component !== 'undefined') {
+                      ReactDOM.render(<Component />, document.getElementById('root'));
+                    } else if (typeof App !== 'undefined') {
+                      ReactDOM.render(<App />, document.getElementById('root'));
+                    } else {
+                      document.getElementById('root').innerHTML = content;
+                    }
+                  } catch (err) {
+                    document.getElementById('root').innerHTML = \`<pre style="color: red;">Error: \${err.message}</pre>\`;
+                    console.error('Preview render error:', err);
+                  }
+                </script>
+              </body>
+            </html>
+          `;
+          previewElement = (
+            <div className={`${previewContainerClass} border rounded-lg`}>
+              <iframe
+                srcDoc={iframeSrc}
+                className="w-full h-full"
+                title="JSX/JavaScript Preview"
+                style={{ minHeight: props.isInline ? '200px' : '600px' }}
+                sandbox="allow-scripts allow-same-origin"
+              />
+            </div>
+          );
+        } catch (error) {
+          console.error('Error setting up preview:', error);
+          previewElement = (
+            <div
+              className={`${previewContainerClass} border rounded-lg p-4 overflow-auto`}
+            >
+              <pre className="text-sm font-mono whitespace-pre-wrap">
+                {displayContent}
+                {`\n\nError: Failed to setup preview - ${error instanceof Error ? error.message : 'Unknown error'}`}
+              </pre>
+            </div>
+          );
+        }
+      } else if (detectedLanguage === 'svg') {
+        previewElement = (
+          <div
+            className={`${previewContainerClass} border rounded-lg bg-white p-4`}
+          >
+            <div
+              dangerouslySetInnerHTML={{ __html: displayContent }}
+              className="w-full h-full flex items-center justify-center"
+              style={{
+                minHeight: props.isInline ? '200px' : '400px',
+                maxHeight: props.isInline ? '300px' : '800px',
+              }}
+            />
+          </div>
+        );
+      }
+    }
 
     return (
       <>
-        <div className="px-1">
-          <CodeEditor {...props} />
-        </div>
-
-        {language === 'html' && (
-          <div className="mt-4 border rounded-lg">
-            <iframe
-              srcDoc={props.content}
-              className="w-full h-[400px]"
-              title="HTML Preview"
-            />
-          </div>
-        )}
-
-        {language === 'jsx' && (
-          <div className="mt-4 p-4 border rounded-lg">
-            <div className="text-sm text-gray-500">
-              Preview not available - JSX/Next.js code requires a build
-              environment
+        <div className="px-1 relative h-full">
+          {props.status === 'streaming' && (
+            <div className="absolute top-2 right-2 z-10 text-xs px-2 py-1 bg-blue-500 text-white rounded-md animate-pulse">
+              Generating...
             </div>
-          </div>
-        )}
+          )}
+
+          {!previewMode && <CodeEditor {...props} content={displayContent} />}
+          {previewMode && previewElement}
+        </div>
 
         {metadata?.outputs && (
           <Console
             consoleOutputs={metadata.outputs}
             setConsoleOutputs={() => {
-              setMetadata({
-                ...metadata,
+              setMetadata((prev: Metadata) => ({
+                ...prev,
                 outputs: [],
-              });
+              }));
             }}
           />
         )}
@@ -149,27 +441,42 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     {
       icon: <PlayIcon size={18} />,
       label: 'Run',
-      description: 'Execute code',
-      onClick: async ({ content, setMetadata }) => {
-        const language = detectLanguage(content);
+      description: 'Execute or preview code',
+      onClick: async (context) => {
+        const language = detectLanguage(context.content || '') as string;
 
-        if (language === 'html') {
-          // For HTML, we just update the iframe
+        // For previewable languages, toggle preview mode
+        if (['html', 'svg', 'javascript', 'jsx'].includes(language)) {
+          const currentPreviewMode = context.metadata?.previewMode || false;
+          const newPreviewMode = !currentPreviewMode;
+
+          console.log('[CODE ARTIFACT] Toggling preview mode:', {
+            from: currentPreviewMode,
+            to: newPreviewMode,
+            language,
+          });
+
+          // Force update metadata with preview mode
+          context.setMetadata((prev: Metadata) => {
+            const updated = {
+              ...prev,
+              previewMode: newPreviewMode,
+              outputs: prev.outputs || [], // Ensure outputs array exists
+            };
+            console.log('[CODE ARTIFACT] Updated metadata:', updated);
+            return updated;
+          });
           return;
         }
 
-        if (language === 'jsx') {
-          toast.error('JSX/Next.js code cannot be executed in the browser');
-          return;
-        }
-
+        // For Python, execute the code as before
         const runId = generateUUID();
         const outputContent: Array<ConsoleOutputContent> = [];
 
-        setMetadata((metadata) => ({
-          ...metadata,
+        context.setMetadata((prev) => ({
+          ...prev,
           outputs: [
-            ...metadata.outputs,
+            ...prev.outputs,
             {
               id: runId,
               contents: [],
@@ -195,23 +502,28 @@ export const codeArtifact = new Artifact<'code', Metadata>({
             },
           });
 
-          await currentPyodideInstance.loadPackagesFromImports(content, {
-            messageCallback: (message: string) => {
-              setMetadata((metadata) => ({
-                ...metadata,
-                outputs: [
-                  ...metadata.outputs.filter((output) => output.id !== runId),
-                  {
-                    id: runId,
-                    contents: [{ type: 'text', value: message }],
-                    status: 'loading_packages',
-                  },
-                ],
-              }));
+          await currentPyodideInstance.loadPackagesFromImports(
+            context.content || '',
+            {
+              messageCallback: (message: string) => {
+                context.setMetadata((metadata) => ({
+                  ...metadata,
+                  outputs: [
+                    ...metadata.outputs.filter((output) => output.id !== runId),
+                    {
+                      id: runId,
+                      contents: [{ type: 'text', value: message }],
+                      status: 'loading_packages',
+                    },
+                  ],
+                }));
+              },
             },
-          });
+          );
 
-          const requiredHandlers = detectRequiredHandlers(content);
+          const requiredHandlers = detectRequiredHandlers(
+            context.content || '',
+          );
           for (const handler of requiredHandlers) {
             if (OUTPUT_HANDLERS[handler as keyof typeof OUTPUT_HANDLERS]) {
               await currentPyodideInstance.runPythonAsync(
@@ -226,9 +538,9 @@ export const codeArtifact = new Artifact<'code', Metadata>({
             }
           }
 
-          await currentPyodideInstance.runPythonAsync(content);
+          await currentPyodideInstance.runPythonAsync(context.content || '');
 
-          setMetadata((metadata) => ({
+          context.setMetadata((metadata) => ({
             ...metadata,
             outputs: [
               ...metadata.outputs.filter((output) => output.id !== runId),
@@ -240,7 +552,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
             ],
           }));
         } catch (error: any) {
-          setMetadata((metadata) => ({
+          context.setMetadata((metadata) => ({
             ...metadata,
             outputs: [
               ...metadata.outputs.filter((output) => output.id !== runId),
@@ -252,6 +564,23 @@ export const codeArtifact = new Artifact<'code', Metadata>({
             ],
           }));
         }
+      },
+      isDisabled: (context) => {
+        const language = detectLanguage(context.content || '');
+
+        // Update button text based on language
+        if (
+          language === 'html' ||
+          language === 'svg' ||
+          language === 'javascript' ||
+          language === 'jsx'
+        ) {
+          // We'd want to change the label to 'Preview' here, but we can't directly modify the button
+          // Instead, we'll handle the UI change in the artifact-actions.tsx component
+          return false;
+        }
+
+        return false;
       },
     },
     {

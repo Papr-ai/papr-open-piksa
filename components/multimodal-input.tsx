@@ -23,6 +23,7 @@ import { Textarea } from './ui/textarea';
 import { SuggestedActions } from './suggested-actions';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import { MemoryToggle } from './memory-toggle';
 
 function PureMultimodalInput({
   chatId,
@@ -79,6 +80,17 @@ function PureMultimodalInput({
     '',
   );
 
+  // Track memory enabled state
+  const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
+
+  // Initialize from localStorage after mount
+  useEffect(() => {
+    const storedValue = localStorage.getItem('memory-enabled');
+    if (storedValue !== null) {
+      setIsMemoryEnabled(storedValue === 'true');
+    }
+  }, []);
+
   useEffect(() => {
     if (textareaRef.current) {
       const domValue = textareaRef.current.value;
@@ -106,8 +118,12 @@ function PureMultimodalInput({
   const submitForm = useCallback(() => {
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
+    // Get the memory-enabled state from the hook
     handleSubmit(undefined, {
       experimental_attachments: attachments,
+      headers: {
+        'X-Memory-Enabled': isMemoryEnabled ? 'true' : 'false',
+      },
     });
 
     setAttachments([]);
@@ -124,6 +140,7 @@ function PureMultimodalInput({
     setLocalStorageInput,
     width,
     chatId,
+    isMemoryEnabled,
   ]);
 
   const uploadFile = async (file: File) => {
@@ -250,6 +267,7 @@ function PureMultimodalInput({
 
       <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
         <AttachmentsButton fileInputRef={fileInputRef} status={status} />
+        <MemoryToggle />
       </div>
 
       <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">

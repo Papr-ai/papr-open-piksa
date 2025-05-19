@@ -1,6 +1,5 @@
 'use client';
 
-import { isAfter } from 'date-fns';
 import { motion } from 'framer-motion';
 import { useState } from 'react';
 import { useSWRConfig } from 'swr';
@@ -31,8 +30,71 @@ export const VersionFooter = ({
 
   const { mutate } = useSWRConfig();
   const [isMutating, setIsMutating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!documents) return;
+  if (!documents) return null;
+
+  const handleRestoreVersion = async () => {
+    try {
+      setError(null);
+      setIsMutating(true);
+      console.log('[VERSION FOOTER] Restoring version', {
+        documentId: artifact.documentId,
+        currentVersionIndex,
+        totalVersions: documents.length,
+      });
+
+      const timestamp = getDocumentTimestampByIndex(
+        documents,
+        currentVersionIndex,
+      );
+
+      if (!timestamp) {
+        throw new Error('Invalid timestamp for selected version');
+      }
+
+      const response = await fetch(`/api/document?id=${artifact.documentId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          timestamp,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to restore version: ${errorText}`);
+      }
+
+      // Update local cache with the optimistic result
+      await mutate(
+        `/api/document?id=${artifact.documentId}`,
+        async () => {
+          // Filter to keep only documents up to current version
+          const filteredDocuments = documents.filter(
+            (doc, index) => index <= currentVersionIndex,
+          );
+
+          console.log('[VERSION FOOTER] Version restored successfully', {
+            documentId: artifact.documentId,
+            remainingVersions: filteredDocuments.length,
+          });
+
+          return filteredDocuments;
+        },
+        { revalidate: true },
+      );
+
+      // Navigate to latest version after restore
+      handleVersionChange('latest');
+    } catch (err) {
+      console.error('[VERSION FOOTER] Error restoring version:', err);
+      setError(
+        err instanceof Error ? err.message : 'Failed to restore version',
+      );
+    } finally {
+      setIsMutating(false);
+    }
+  };
 
   return (
     <motion.div
@@ -45,50 +107,22 @@ export const VersionFooter = ({
       <div>
         <div>You are viewing a previous version</div>
         <div className="text-muted-foreground text-sm">
-          Restore this version to make edits
+          {error ? (
+            <span className="text-red-500">{error}</span>
+          ) : (
+            <span>
+              Version {currentVersionIndex + 1} of {documents.length} - Restore
+              this version to make edits
+            </span>
+          )}
         </div>
       </div>
 
       <div className="flex flex-row gap-4">
-        <Button
-          disabled={isMutating}
-          onClick={async () => {
-            setIsMutating(true);
-
-            mutate(
-              `/api/document?id=${artifact.documentId}`,
-              await fetch(`/api/document?id=${artifact.documentId}`, {
-                method: 'PATCH',
-                body: JSON.stringify({
-                  timestamp: getDocumentTimestampByIndex(
-                    documents,
-                    currentVersionIndex,
-                  ),
-                }),
-              }),
-              {
-                optimisticData: documents
-                  ? [
-                      ...documents.filter((document) =>
-                        isAfter(
-                          new Date(document.createdAt),
-                          new Date(
-                            getDocumentTimestampByIndex(
-                              documents,
-                              currentVersionIndex,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ]
-                  : [],
-              },
-            );
-          }}
-        >
-          <div>Restore this version</div>
+        <Button disabled={isMutating} onClick={handleRestoreVersion}>
+          <div>{isMutating ? 'Restoring...' : 'Restore this version'}</div>
           {isMutating && (
-            <div className="animate-spin">
+            <div className="ml-2 animate-spin">
               <LoaderIcon />
             </div>
           )}

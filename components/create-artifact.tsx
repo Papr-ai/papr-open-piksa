@@ -1,8 +1,8 @@
-import { Suggestion } from '@/lib/db/schema';
-import { UseChatHelpers } from '@ai-sdk/react';
-import { ComponentType, Dispatch, ReactNode, SetStateAction } from 'react';
-import { DataStreamDelta } from './data-stream-handler';
-import { UIArtifact } from './artifact';
+import type { Suggestion } from '@/lib/db/schema';
+import type { UseChatHelpers } from '@ai-sdk/react';
+import type { ComponentType, Dispatch, ReactNode, SetStateAction } from 'react';
+import type { DataStreamDelta } from './data-stream-handler';
+import type { UIArtifact } from './artifact';
 
 export type ArtifactActionContext<M = any> = {
   content: string;
@@ -46,11 +46,13 @@ interface ArtifactContent<M = any> {
   isLoading: boolean;
   metadata: M;
   setMetadata: Dispatch<SetStateAction<M>>;
+  language?: string;
 }
 
 interface InitializeParameters<M = any> {
   documentId: string;
   setMetadata: Dispatch<SetStateAction<M>>;
+  setArtifact: Dispatch<SetStateAction<UIArtifact>>;
 }
 
 type ArtifactConfig<T extends string, M = any> = {

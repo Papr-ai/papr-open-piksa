@@ -1,14 +1,16 @@
-<a href="https://chat.vercel.ai/">
-  <img alt="Next.js 14 and App Router-ready AI chatbot personalized with papr memory." src="app/(chat)/opengraph-image.png">
-  <h1 align="center">Chat SDK</h1>
+# Papr Chat
+
+<a href="https://chat.papr.ai">
+  <img alt="An open-source AI chatbot with memory capabilities powered by Papr and built on Next.js 14." src="app/(chat)/opengraph-image.png">
+  <h1 align="center">Papr Chat</h1>
 </a>
 
 <p align="center">
-    Chat SDK is a free, open-source template built with Next.js and the AI SDK that helps you quickly build powerful chatbot applications. This is a fork of Vercel's V0 open source project, enhanced by Papr with memory capabilities.
+    Papr Chat is an open-source AI chatbot with built-in memory capabilities, powered by Papr. Built on Next.js 14 and based on Vercel's AI chatbot template, Papr Chat demonstrates how to build powerful, context-aware chatbot applications that remember past conversations.
 </p>
 
 <p align="center">
-  <a href="https://chat-sdk.dev"><strong>Read Docs</strong></a> ·
+  <a href="https://docs.papr.ai/chat"><strong>Documentation</strong></a> ·
   <a href="#features"><strong>Features</strong></a> ·
   <a href="#model-providers"><strong>Model Providers</strong></a> ·
   <a href="#deploy-your-own"><strong>Deploy Your Own</strong></a> ·
@@ -18,51 +20,59 @@
 
 ## Features
 
-- [Next.js](https://nextjs.org) App Router
-  - Advanced routing for seamless navigation and performance
-  - React Server Components (RSCs) and Server Actions for server-side rendering and increased performance
-- [AI SDK](https://sdk.vercel.ai/docs)
-  - Unified API for generating text, structured objects, and tool calls with LLMs
-  - Hooks for building dynamic chat and generative user interfaces
-  - Supports xAI (default), OpenAI, Fireworks, and other model providers
-- Enhanced with [Papr Memory SDK](https://platform.papr.ai/)
-  - Long-term memory for personalized chat experiences
-  - Automatically stores and retrieves relevant user conversations
-  - RAG (Retrieval-Augmented Generation) capabilities for enhanced responses
+- **Memory-Powered Chat**
+  - Long-term memory for personalized chat experiences powered by [Papr](https://papr.ai)
+  - Automatic storage and retrieval of relevant conversations
+  - RAG (Retrieval-Augmented Generation) capabilities
   - Semantic search across conversation history
   - Persistent memory storage in the cloud
-- [shadcn/ui](https://ui.shadcn.com)
-  - Styling with [Tailwind CSS](https://tailwindcss.com)
-  - Component primitives from [Radix UI](https://radix-ui.com) for accessibility and flexibility
-- Data Persistence
-  - [Neon Serverless Postgres](https://vercel.com/marketplace/neon) for saving chat history and user data
-  - [Vercel Blob](https://vercel.com/storage/blob) for efficient file storage
-- [Auth.js](https://authjs.dev)
-  - Simple and secure authentication
 
-## About This Fork
+- **Modern Tech Stack**
+  - Built with [Next.js 14](https://nextjs.org) App Router
+  - [AI SDK](https://sdk.vercel.ai/docs) for unified LLM interactions
+  - Beautiful UI with [shadcn/ui](https://ui.shadcn.com) and [Tailwind CSS](https://tailwindcss.com)
+  - Component primitives from [Radix UI](https://radix-ui.com)
 
-This project is a fork of [Vercel's V0 open source chatbot](https://github.com/vercel/ai-chatbot), enhanced by [Papr](https://papr.ai) to incorporate advanced memory capabilities. The Papr Memory SDK allows chatbots to remember past conversations and provide more personalized responses over time.
+- **Production Ready**
+  - [Neon Serverless Postgres](https://neon.tech) for chat history
+  - [Vercel Blob](https://vercel.com/storage/blob) for file storage
+  - [Auth.js](https://authjs.dev) for authentication
+  - Easy deployment to Vercel
+
+## About Papr Chat
+
+Papr Chat is maintained by [Papr](https://papr.ai) and builds upon [Vercel's V0 chatbot](https://github.com/vercel/ai-chatbot). We've enhanced the original template with our memory SDK to create chatbots that can maintain context across conversations and provide truly personalized experiences.
+
+The key enhancement is the integration of Papr's Memory SDK, which allows your chatbot to:
+- Remember past conversations and user preferences
+- Retrieve relevant context automatically
+- Build a knowledge base from chat interactions
+- Provide more consistent and personalized responses
 
 ## Model Providers
 
-This template ships with [xAI](https://x.ai) `grok-2-1212` as the default chat model. However, with the [AI SDK](https://sdk.vercel.ai/docs), you can switch LLM providers to [OpenAI](https://openai.com), [Anthropic](https://anthropic.com), [Cohere](https://cohere.com/), and [many more](https://sdk.vercel.ai/providers/ai-sdk-providers) with just a few lines of code.
+Papr Chat ships with [xAI](https://x.ai) `grok-2-1212` as the default chat model, but supports multiple providers through the [AI SDK](https://sdk.vercel.ai/docs). You can easily switch to:
+- [OpenAI](https://openai.com)
+- [Anthropic](https://anthropic.com)
+- [Cohere](https://cohere.com/)
+- [And many more](https://sdk.vercel.ai/providers/ai-sdk-providers)
 
 ## Deploy Your Own
 
-You can deploy your own version of the Next.js AI Chatbot to Vercel with one click:
+Deploy Papr Chat to Vercel with one click:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel%2Fai-chatbot&env=AUTH_SECRET&envDescription=Generate%20a%20random%20secret%20to%20use%20for%20authentication&envLink=https%3A%2F%2Fgenerate-secret.vercel.app%2F32&project-name=my-awesome-chatbot&repository-name=my-awesome-chatbot&demo-title=AI%20Chatbot&demo-description=An%20Open-Source%20AI%20Chatbot%20Template%20Built%20With%20Next.js%20and%20the%20AI%20SDK%20by%20Vercel&demo-url=https%3A%2F%2Fchat.vercel.ai&products=%5B%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22ai%22%2C%22productSlug%22%3A%22grok%22%2C%22integrationSlug%22%3A%22xai%22%7D%2C%7B%22type%22%3A%22integration%22%2C%22protocol%22%3A%22storage%22%2C%22productSlug%22%3A%22neon%22%2C%22integrationSlug%22%3A%22neon%22%7D%2C%7B%22type%22%3A%22blob%22%7D%5D)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fpapr%2Fchat&env=AUTH_SECRET,PAPR_MEMORY_API_KEY&envDescription=API%20keys%20needed%20for%20Papr%20Chat&envLink=https%3A%2F%2Fdocs.papr.ai%2Fchat%2Fdeployment&project-name=papr-chat&repository-name=papr-chat&demo-title=Papr%20Chat&demo-description=Open-Source%20AI%20Chatbot%20with%20Memory%20by%20Papr&demo-url=https%3A%2F%2Fchat.papr.ai)
 
 ## Running locally
 
-You will need to use the environment variables [defined in `.env.example`](.env.example) to run Next.js AI Chatbot. It's recommended you use [Vercel Environment Variables](https://vercel.com/docs/projects/environment-variables) for this, but a `.env` file is all that is necessary.
+### Prerequisites
 
-> Note: You should not commit your `.env` file or it will expose secrets that will allow others to control access to your various AI and authentication provider accounts.
+1. Get your Papr API key:
+   - Sign up at [app.papr.ai](https://app.papr.ai)
+   - Go to Settings → API Keys
+   - Create a new API key
 
-### Environment Setup
-
-Your `.env.local` file should include the following variables:
+2. Set up your environment variables in `.env.local`:
 
 ```bash
 # Authentication (required)
@@ -74,31 +84,46 @@ POSTGRES_URL=your_neon_postgres_url
 # File Storage (required)
 BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
 
+# Papr Memory (required)
+PAPR_MEMORY_API_KEY=your_papr_memory_api_key
+
 # AI Provider (one is required)
 XAI_API_KEY=your_xai_api_key
 # OR
 OPENAI_API_KEY=your_openai_api_key
 # OR another provider
-
-# Memory (optional but recommended)
-PAPR_MEMORY_API_KEY=your_papr_memory_api_key
-PAPR_MEMORY_UserID_Testing=your_papr_test_userId
 ```
 
-To set up Papr Memory:
-1. Sign up at [app.papr.ai](https://app.papr.ai/)
-2. Go to settings -> API key to get your API key
-3. Add the API key to your environment variables
+### Installation
 
-### Installation and Running
+1. Clone the repository:
+```bash
+git clone https://github.com/papr/chat.git
+cd chat
+```
 
-1. Install Vercel CLI: `npm i -g vercel`
-2. Link local instance with Vercel and GitHub accounts (creates `.vercel` directory): `vercel link`
-3. Download your environment variables: `vercel env pull`
-
+2. Install dependencies:
 ```bash
 pnpm install
+```
+
+3. Run the development server:
+```bash
 pnpm dev
 ```
 
-Your app template should now be running on [localhost:3000](http://localhost:3000).
+Visit [localhost:3000](http://localhost:3000) to see your chatbot in action.
+
+## Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+## License
+
+Papr Chat is open-source software licensed under the MIT license.
+
+## Support
+
+- Documentation: [docs.papr.ai/chat](https://docs.papr.ai/chat)
+- Discord: [Join our community](https://discord.gg/papr)
+- Issues: [GitHub Issues](https://github.com/papr/chat/issues)

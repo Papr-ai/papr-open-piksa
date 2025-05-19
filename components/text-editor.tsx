@@ -127,21 +127,34 @@ function PureEditor({
 
   useEffect(() => {
     if (editorRef.current?.state.doc && content) {
-      const projectedSuggestions = projectWithPositions(
-        editorRef.current.state.doc,
-        suggestions,
-      ).filter(
-        (suggestion) => suggestion.selectionStart && suggestion.selectionEnd,
-      );
+      try {
+        // Ensure we have valid suggestions data
+        const validSuggestions = Array.isArray(suggestions) ? suggestions : [];
 
-      const decorations = createDecorations(
-        projectedSuggestions,
-        editorRef.current,
-      );
+        // Project suggestions onto the document and filter out invalid ones
+        const projectedSuggestions = projectWithPositions(
+          editorRef.current.state.doc,
+          validSuggestions,
+        ).filter(
+          (suggestion) =>
+            !!suggestion?.selectionStart &&
+            !!suggestion?.selectionEnd &&
+            suggestion.selectionStart < suggestion.selectionEnd,
+        );
 
-      const transaction = editorRef.current.state.tr;
-      transaction.setMeta(suggestionsPluginKey, { decorations });
-      editorRef.current.dispatch(transaction);
+        // Create decorations for valid suggestions
+        const decorations = createDecorations(
+          projectedSuggestions,
+          editorRef.current,
+        );
+
+        // Apply decorations to the editor
+        const transaction = editorRef.current.state.tr;
+        transaction.setMeta(suggestionsPluginKey, { decorations });
+        editorRef.current.dispatch(transaction);
+      } catch (error) {
+        console.error('Error applying suggestions to editor:', error);
+      }
     }
   }, [suggestions, content]);
 

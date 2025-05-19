@@ -1,4 +1,4 @@
-import 'server-only';
+'use server';
 
 import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { and, asc, desc, eq, gt, gte, inArray, lt } from 'drizzle-orm';
@@ -307,46 +307,73 @@ export async function saveDocument({
   userId: string;
 }) {
   try {
-    return await db.insert(document).values({
+    console.log(`[DB] Saving document (ID: ${id}, Title: ${title})`);
+
+    // Get the latest version's timestamp
+    const [latestDoc] = await db
+      .select({ createdAt: document.createdAt })
+      .from(document)
+      .where(eq(document.id, id))
+      .orderBy(desc(document.createdAt))
+      .limit(1);
+
+    // Create a new timestamp that's guaranteed to be after the latest version
+    const newTimestamp = latestDoc
+      ? new Date(new Date(latestDoc.createdAt).getTime() + 1)
+      : new Date();
+
+    const result = await db.insert(document).values({
       id,
       title,
       kind,
       content,
       userId,
-      createdAt: new Date(),
+      createdAt: newTimestamp,
     });
+
+    console.log(`[DB] Document saved successfully`);
+    return result;
   } catch (error) {
-    console.error('Failed to save document in database');
+    console.error('Failed to save document in database', error);
     throw error;
   }
 }
 
 export async function getDocumentsById({ id }: { id: string }) {
   try {
+    console.log(`[DB] Getting documents by ID: ${id}`);
     const documents = await db
       .select()
       .from(document)
       .where(eq(document.id, id))
       .orderBy(asc(document.createdAt));
 
+    console.log(`[DB] Retrieved ${documents.length} documents`);
     return documents;
   } catch (error) {
-    console.error('Failed to get document by id from database');
+    console.error('Failed to get document by id from database', error);
     throw error;
   }
 }
 
 export async function getDocumentById({ id }: { id: string }) {
   try {
+    console.log(`[DB] Getting latest document by ID: ${id}`);
     const [selectedDocument] = await db
       .select()
       .from(document)
       .where(eq(document.id, id))
       .orderBy(desc(document.createdAt));
 
+    if (!selectedDocument) {
+      console.log(`[DB] No document found with ID: ${id}`);
+    } else {
+      console.log(`[DB] Retrieved document: ${selectedDocument.title}`);
+    }
+
     return selectedDocument;
   } catch (error) {
-    console.error('Failed to get document by id from database');
+    console.error('Failed to get document by id from database', error);
     throw error;
   }
 }

@@ -4,12 +4,11 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { useWindowSize } from 'usehooks-ts';
 
-import type { UISuggestion } from '@/lib/editor/suggestions';
-
 import { CrossIcon, MessageIcon } from './icons';
+import type { UISuggestion } from '@/lib/editor/suggestions';
 import { Button } from './ui/button';
 import { cn } from '@/lib/utils';
-import { ArtifactKind } from './artifact';
+import type { ArtifactKind } from './artifact';
 
 export const Suggestion = ({
   suggestion,
@@ -22,6 +21,19 @@ export const Suggestion = ({
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const { width: windowWidth } = useWindowSize();
+
+  // Safely display suggestion content, handling possible undefined values
+  const description = suggestion?.description || 'No description available';
+
+  // Handle suggestion application with error handling
+  const handleApply = () => {
+    try {
+      onApply();
+      setIsExpanded(false);
+    } catch (error) {
+      console.error('Error applying suggestion:', error);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -63,11 +75,11 @@ export const Suggestion = ({
               <CrossIcon size={12} />
             </button>
           </div>
-          <div>{suggestion.description}</div>
+          <div>{description}</div>
           <Button
             variant="outline"
             className="w-fit py-1.5 px-3 rounded-full"
-            onClick={onApply}
+            onClick={handleApply}
           >
             Apply
           </Button>

@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { UIArtifact } from '@/components/artifact';
+import type { UIArtifact } from '@/components/artifact';
 import { useCallback, useMemo } from 'react';
 
 export const initialArtifactData: UIArtifact = {
@@ -40,11 +40,18 @@ export function useArtifact() {
     null,
     {
       fallbackData: initialArtifactData,
+      revalidateOnFocus: false,
+      errorRetryCount: 3,
     },
   );
 
   const artifact = useMemo(() => {
-    if (!localArtifact) return initialArtifactData;
+    if (!localArtifact) {
+      console.log(
+        '[ARTIFACT HOOK] No local artifact found, using initial data',
+      );
+      return initialArtifactData;
+    }
     return localArtifact;
   }, [localArtifact]);
 
@@ -54,7 +61,28 @@ export function useArtifact() {
         const artifactToUpdate = currentArtifact || initialArtifactData;
 
         if (typeof updaterFn === 'function') {
-          return updaterFn(artifactToUpdate);
+          const updated = updaterFn(artifactToUpdate);
+
+          if (
+            updated.documentId !== artifactToUpdate.documentId ||
+            updated.status !== artifactToUpdate.status ||
+            updated.isVisible !== artifactToUpdate.isVisible
+          ) {
+            console.log('[ARTIFACT HOOK] Artifact state change:', {
+              documentId: {
+                from: artifactToUpdate.documentId,
+                to: updated.documentId,
+              },
+              status: { from: artifactToUpdate.status, to: updated.status },
+              isVisible: {
+                from: artifactToUpdate.isVisible,
+                to: updated.isVisible,
+              },
+              contentLength: updated.content?.length || 0,
+            });
+          }
+
+          return updated;
         }
 
         return updaterFn;
