@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { RefreshIcon } from '@/components/icons';
@@ -130,59 +130,62 @@ export default function CollectionsPage() {
     }
   };
 
-  const fetchCollections = async (uid: string) => {
-    try {
-      // Don't set loading to true if we already have cached data
-      if (collections.length === 0) {
-        setIsLoading(true);
-      }
+  const fetchCollections = useCallback(
+    async (uid: string) => {
+      try {
+        // Don't set loading to true if we already have cached data
+        if (collections.length === 0) {
+          setIsLoading(true);
+        }
 
-      // First, make sure any uncategorized chats are categorized
-      await categorizeAndSaveChats(uid);
+        // First, make sure any uncategorized chats are categorized
+        await categorizeAndSaveChats(uid);
 
-      // Fetch all collections including the special Saved Chats collection
-      const collectionsData = await getAllCollections(uid);
+        // Fetch all collections including the special Saved Chats collection
+        const collectionsData = await getAllCollections(uid);
 
-      // Sort collections to ensure Saved Chats is first
-      const sortedCollections = [...collectionsData].sort((a, b) => {
-        // First check for systemType === 'saved_chats'
-        if (a.systemType === 'saved_chats') return -1;
-        if (b.systemType === 'saved_chats') return 1;
-        // Then check for isSystem
-        if (a.isSystem && !b.isSystem) return -1;
-        if (!a.isSystem && b.isSystem) return 1;
-        // Finally sort by title
-        return a.title.localeCompare(b.title);
-      });
-
-      setCollections(sortedCollections);
-      // Cache the collections
-      cacheCollections(sortedCollections);
-
-      // Fetch all chats for the user
-      const chatsResponse = await fetch(`/api/chats?userId=${uid}`);
-      if (!chatsResponse.ok) throw new Error('Failed to fetch chats');
-      const chats = await chatsResponse.json();
-
-      // Create a map of all chats for easy lookup
-      const chatMap = new Map<string, ChatInfo>();
-      chats.forEach((chat: any) => {
-        chatMap.set(chat.id, {
-          id: chat.id,
-          title: chat.title,
-          createdAt: chat.createdAt,
+        // Sort collections to ensure Saved Chats is first
+        const sortedCollections = [...collectionsData].sort((a, b) => {
+          // First check for systemType === 'saved_chats'
+          if (a.systemType === 'saved_chats') return -1;
+          if (b.systemType === 'saved_chats') return 1;
+          // Then check for isSystem
+          if (a.isSystem && !b.isSystem) return -1;
+          if (!a.isSystem && b.isSystem) return 1;
+          // Finally sort by title
+          return a.title.localeCompare(b.title);
         });
-      });
-      setAllChats(chatMap);
-      // Cache the chats
-      cacheChats(chatMap);
-    } catch (err) {
-      console.error('Error loading collections:', err);
-      setError('Failed to load collections');
-    } finally {
-      setIsLoading(false);
-    }
-  };
+
+        setCollections(sortedCollections);
+        // Cache the collections
+        cacheCollections(sortedCollections);
+
+        // Fetch all chats for the user
+        const chatsResponse = await fetch(`/api/chats?userId=${uid}`);
+        if (!chatsResponse.ok) throw new Error('Failed to fetch chats');
+        const chats = await chatsResponse.json();
+
+        // Create a map of all chats for easy lookup
+        const chatMap = new Map<string, ChatInfo>();
+        chats.forEach((chat: any) => {
+          chatMap.set(chat.id, {
+            id: chat.id,
+            title: chat.title,
+            createdAt: chat.createdAt,
+          });
+        });
+        setAllChats(chatMap);
+        // Cache the chats
+        cacheChats(chatMap);
+      } catch (err) {
+        console.error('Error loading collections:', err);
+        setError('Failed to load collections');
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [collections.length, setAllChats, setCollections, setError, setIsLoading],
+  );
 
   useEffect(() => {
     async function loadData() {
@@ -198,15 +201,11 @@ export default function CollectionsPage() {
       } catch (error) {
         console.error('Error loading data:', error);
         setError('Something went wrong. Please try again later.');
-      } finally {
-        setIsLoading(false);
       }
     }
 
-    if (isClient) {
-      loadData();
-    }
-  }, [isClient]);
+    loadData();
+  }, [isClient, fetchCollections]);
 
   return (
     <div className="flex flex-col h-full">

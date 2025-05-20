@@ -21,8 +21,7 @@ export function createMemoryService(apiKey: string) {
 
   // Always use HTTPS for Azure endpoint - force HTTPS even if baseURL is configured with HTTP
   const baseURLInput =
-    process.env.PAPR_MEMORY_API_URL ||
-    'https://memoryserver-development.azurewebsites.net';
+    process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
   // Ensure HTTPS is used
   const baseURL = baseURLInput.startsWith('https://')
     ? baseURLInput

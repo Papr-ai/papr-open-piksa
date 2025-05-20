@@ -59,8 +59,7 @@ export async function createUser(email: string, password: string) {
 
         // Initialize the Papr SDK
         const API_BASE_URL =
-          process.env.PAPR_MEMORY_API_URL ||
-          'https://memoryserver-development.azurewebsites.net';
+          process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
         const paprClient = initPaprMemory(paprApiKey, {
           baseURL: API_BASE_URL,
         });

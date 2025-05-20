@@ -66,8 +66,9 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
       </button>
 
       <div className="px-6 py-1 text-sm">
-        <div
-          className="text-red-700 dark:text-red-300 text-wrap font-mono whitespace-pre-wrap break-words text-xs cursor-pointer flex gap-1 items-start"
+        <button
+          type="button"
+          className="text-red-700 dark:text-red-300 text-wrap font-mono whitespace-pre-wrap break-words text-xs cursor-pointer flex gap-1 items-start w-full text-left bg-transparent border-0"
           onClick={() => setIsCollapsed(!isCollapsed)}
         >
           <ChevronRight
@@ -77,7 +78,7 @@ const ErrorBanner = ({ error, onDismiss, onAIFix }: ErrorBannerProps) => {
             }`}
           />
           {isCollapsed ? getTruncatedError() : error}
-        </div>
+        </button>
       </div>
 
       <div className="mt-2 px-6">
@@ -201,9 +202,10 @@ const ConsoleHeader = ({
   onToggle,
   latestMessage,
 }: ConsoleHeaderProps) => (
-  <div
+  <button
+    type="button"
     onClick={onToggle}
-    className="flex items-start gap-2 px-4 py-1.5 border-t border-border cursor-pointer hover:bg-[var(--background-darkest)] transition-colors"
+    className="flex items-start gap-2 px-4 py-1.5 border-t border-border cursor-pointer hover:bg-[var(--background-darkest)] transition-colors w-full text-left"
   >
     <Logs size={16} className="mt-0.5" />
     <div className="flex flex-col">
@@ -216,7 +218,7 @@ const ConsoleHeader = ({
     </div>
     <div className="flex-1" />
     {isOpen ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
-  </div>
+  </button>
 );
 
 // Console component
@@ -241,6 +243,7 @@ const PreviewIframe = ({ loading }: { loading: boolean }) => {
     originalUrl: string | null;
   }>(appUrlAtom);
   const setAppOutput = useSetAtom(appOutputAtom);
+  const appOutput = useAtomValue(appOutputAtom);
   const [reloadKey, setReloadKey] = useState(0);
   const [errorMessage, setErrorMessage] = useAtom(previewErrorMessageAtom);
   const selectedChatId = useAtomValue(selectedChatIdAtom);
@@ -399,6 +402,19 @@ const PreviewIframe = ({ loading }: { loading: boolean }) => {
       setCanGoForward(currentHistoryPosition < navigationHistory.length - 1);
     }
   }, [currentHistoryPosition, navigationHistory.length]);
+
+  useEffect(() => {
+    const updateState = () => {
+      const lastOutput = appOutput[appOutput.length - 1];
+      if (lastOutput?.error) {
+        setErrorMessage(lastOutput.error);
+      } else {
+        setErrorMessage(undefined);
+      }
+    };
+
+    updateState();
+  }, [appOutput, setErrorMessage]);
 
   return (
     <div className="flex flex-col h-full">

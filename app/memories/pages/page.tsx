@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FileIcon, RefreshIcon } from '@/components/icons';
@@ -60,7 +60,7 @@ export default function SavedPagesPage() {
     }
   }, []);
 
-  const fetchSavedPages = async () => {
+  const fetchSavedPages = useCallback(async () => {
     try {
       if (!isClient) return;
 
@@ -83,13 +83,13 @@ export default function SavedPagesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [isClient, savedPages.length, setError, setIsLoading, setSavedPages]);
 
   useEffect(() => {
     if (isClient) {
       fetchSavedPages();
     }
-  }, [isClient]);
+  }, [isClient, fetchSavedPages]);
 
   return (
     <div className="flex flex-col h-full">

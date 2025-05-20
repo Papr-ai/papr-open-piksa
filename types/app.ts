@@ -8,9 +8,10 @@ export interface App {
 
 export interface AppOutput {
   message: string;
-  type: string;
-  appId: string | number;
+  type: 'client-error' | 'server-error' | 'info';
+  appId: number | string;
   timestamp: number;
+  error?: string;
 }
 
 export interface UseRunAppReturn {

@@ -72,7 +72,7 @@ export const initPaprMemory = (
     ? baseURL.startsWith('https://')
       ? baseURL
       : `https://${baseURL.replace('http://', '')}`
-    : 'https://memoryserver-development.azurewebsites.net';
+    : 'https://memory.papr.ai';
 
   // Log the API key status and configuration
   console.log('[Memory] Initializing SDK with:');

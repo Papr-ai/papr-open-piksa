@@ -21,8 +21,7 @@ export function SidebarMemories({ user }: { user: User | undefined }) {
         <div className="space-y-1">
           <Link
             href="/memories/collections"
-            className="flex items-center gap-2 px-2 py-2 text-sm cursor-pointer hover:bg-sidebar-accent rounded-md"
-            onClick={() => setOpenMobile(false)}
+            className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
           >
             <BoxIcon size={16} />
             <span>Collections</span>
@@ -30,8 +29,7 @@ export function SidebarMemories({ user }: { user: User | undefined }) {
 
           <Link
             href="/memories/pages"
-            className="flex items-center gap-2 px-2 py-2 text-sm cursor-pointer hover:bg-sidebar-accent rounded-md"
-            onClick={() => setOpenMobile(false)}
+            className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
           >
             <FileIcon size={16} />
             <span>Artifacts</span>

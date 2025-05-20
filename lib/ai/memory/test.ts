@@ -35,13 +35,11 @@ for (const file of envFiles) {
 
 // Force HTTPS for Azure endpoint, regardless of environment variable
 // This ensures we use HTTPS for all API calls
-process.env.PAPR_MEMORY_API_URL =
-  'https://memoryserver-development.azurewebsites.net';
+process.env.PAPR_MEMORY_API_URL = 'https://memory.papr.ai';
 
 // Base API URL for all calls
 const API_BASE_URL =
-  process.env.PAPR_MEMORY_API_URL ||
-  'https://memoryserver-development.azurewebsites.net';
+  process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
 
 console.log('Using API base URL:', API_BASE_URL);
 

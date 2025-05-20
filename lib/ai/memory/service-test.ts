@@ -40,8 +40,7 @@ if (!apiKey) {
 
 // Force HTTPS for Azure endpoint
 const API_BASE_URL =
-  process.env.PAPR_MEMORY_API_URL ||
-  'https://memoryserver-development.azurewebsites.net';
+  process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
 
 async function runServiceTest() {
   console.log('=== Testing v0chat Memory Service ===');

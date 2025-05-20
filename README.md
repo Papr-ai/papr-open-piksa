@@ -59,9 +59,35 @@ Papr Chat ships with [xAI](https://x.ai) `grok-2-1212` as the default chat model
 
 ## Deploy Your Own
 
-Deploy Papr Chat to Vercel with one click:
+You can deploy Papr Chat to Vercel with one click. Here's what you'll need:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fpapr%2Fchat&env=AUTH_SECRET,PAPR_MEMORY_API_KEY&envDescription=API%20keys%20needed%20for%20Papr%20Chat&envLink=https%3A%2F%2Fdocs.papr.ai%2Fchat%2Fdeployment&project-name=papr-chat&repository-name=papr-chat&demo-title=Papr%20Chat&demo-description=Open-Source%20AI%20Chatbot%20with%20Memory%20by%20Papr&demo-url=https%3A%2F%2Fchat.papr.ai)
+1. A [Papr](https://app.papr.ai) account for the memory features
+2. A database (we'll set up Neon automatically)
+3. An AI provider API key (xAI, OpenAI, Anthropic, etc.)
+
+Click the button below to clone and deploy:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fpapr%2Fchat&env=PAPR_MEMORY_API_KEY,AUTH_SECRET,OPENAI_API_KEY&envDescription=API%20keys%20needed%20to%20run%20Papr%20Chat&envLink=https%3A%2F%2Fdocs.papr.ai%2Fchat%2Fdeployment&project-name=papr-chat&repository-name=papr-chat&demo-title=Papr%20Chat&demo-description=Open-Source%20AI%20Chatbot%20with%20Memory%20by%20Papr&demo-url=https%3A%2F%2Fchat.papr.ai&integration-ids=oac_VqOgBHqhEoFTPzGkPd7L0iH6)
+
+### What Happens When You Deploy
+
+1. Your GitHub repository will be cloned
+2. Vercel will create a new project and deploy it
+3. A Neon PostgreSQL database will be automatically provisioned
+4. Vercel Blob Storage will be set up for file uploads
+5. You'll be prompted to add the required environment variables:
+   - `PAPR_MEMORY_API_KEY`: Get this from [Papr Dashboard](https://app.papr.ai/settings/api-keys)
+   - `AUTH_SECRET`: A random string for authentication (we'll generate one for you)
+   - `OPENAI_API_KEY`: Your OpenAI API key (or another provider's key)
+
+### After Deployment
+
+1. Your app will be live at `your-project.vercel.app`
+2. Set up authentication in the Vercel dashboard
+3. Configure your AI provider settings in `config/ai.ts`
+4. Optionally customize the chat interface in `components/`
+
+For detailed setup instructions and customization options, visit our [deployment guide](https://docs.papr.ai/chat/deployment).
 
 ## Running locally
 
