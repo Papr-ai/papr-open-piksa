@@ -87,7 +87,13 @@ export async function POST(request: Request) {
           chatId: id,
           id: userMessage.id,
           role: 'user',
-          parts: userMessage.parts,
+          parts: userMessage.parts.map((part) => {
+            if (part.type === 'text') {
+              return part;
+            }
+            // Convert any non-text parts to text parts
+            return { type: 'text', text: String(part) };
+          }),
           attachments: userMessage.experimental_attachments ?? [],
           createdAt: new Date(),
         },
@@ -170,7 +176,17 @@ export async function POST(request: Request) {
                       id: assistantId,
                       chatId: id,
                       role: assistantMessage.role,
-                      parts: assistantMessage.parts,
+                      parts: (assistantMessage.parts || []).map((part) => {
+                        if (
+                          part.type === 'text' ||
+                          part.type === 'reasoning' ||
+                          part.type === 'tool-invocation'
+                        ) {
+                          return part;
+                        }
+                        // Convert any unknown part types to text
+                        return { type: 'text', text: String(part) };
+                      }),
                       attachments:
                         assistantMessage.experimental_attachments ?? [],
                       createdAt: new Date(),
