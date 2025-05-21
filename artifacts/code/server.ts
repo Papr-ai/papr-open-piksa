@@ -27,6 +27,8 @@ export const codeDocumentHandler = createDocumentHandler<'code'>({
       });
 
       let deltaCount = 0;
+      let lastSentContent = '';
+
       for await (const delta of fullStream) {
         deltaCount++;
         const { type } = delta;
@@ -52,15 +54,25 @@ export const codeDocumentHandler = createDocumentHandler<'code'>({
               length: cleanContent.length,
               preview: cleanContent.substring(0, 50),
               language,
-              fullCode: cleanContent, // Log the full code for debugging
             });
 
-            dataStream.writeData({
-              type: 'code-delta' as const,
-              content: cleanContent,
-            });
-
+            // Always send the full content instead of just the delta
+            // This ensures we don't have any partial rendering issues
             draftContent = cleanContent;
+
+            // Only send if the content has actually changed
+            if (draftContent !== lastSentContent) {
+              lastSentContent = draftContent;
+
+              // Send a small data chunk to force immediate rendering
+              dataStream.writeData({
+                type: 'code-delta' as const,
+                content: draftContent,
+              });
+
+              // Add a small delay to ensure proper UI updates
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
 
             console.log('[CODE SERVER] Updated draft content:', {
               deltaNumber: deltaCount,
@@ -76,7 +88,6 @@ export const codeDocumentHandler = createDocumentHandler<'code'>({
         totalDeltas: deltaCount,
         finalContentLength: draftContent.length,
         preview: draftContent.substring(0, 100),
-        fullContent: draftContent, // Log the full final content
       });
 
       // Send the final complete content again to ensure it's received
@@ -123,6 +134,8 @@ export const codeDocumentHandler = createDocumentHandler<'code'>({
       });
 
       let deltaCount = 0;
+      let lastSentContent = '';
+
       for await (const delta of fullStream) {
         deltaCount++;
         const { type } = delta;
@@ -148,15 +161,23 @@ export const codeDocumentHandler = createDocumentHandler<'code'>({
               length: cleanContent.length,
               preview: cleanContent.substring(0, 50),
               language,
-              fullCode: cleanContent, // Log the full code for debugging
             });
 
-            dataStream.writeData({
-              type: 'code-delta' as const,
-              content: cleanContent,
-            });
-
+            // Always use the full content, not incremental
             draftContent = cleanContent;
+
+            // Only send if content has changed to avoid duplicate updates
+            if (draftContent !== lastSentContent) {
+              lastSentContent = draftContent;
+
+              dataStream.writeData({
+                type: 'code-delta' as const,
+                content: draftContent,
+              });
+
+              // Add small delay to ensure client has time to process
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
 
             console.log('[CODE SERVER] Updated draft content:', {
               deltaNumber: deltaCount,
@@ -172,12 +193,18 @@ export const codeDocumentHandler = createDocumentHandler<'code'>({
         totalDeltas: deltaCount,
         finalContentLength: draftContent.length,
         preview: draftContent.substring(0, 100),
-        fullContent: draftContent, // Log the full final content
       });
 
       // Send the final complete content again to ensure it's received
       if (draftContent) {
         console.log('[CODE SERVER] Sending final complete content');
+        dataStream.writeData({
+          type: 'code-delta' as const,
+          content: draftContent,
+        });
+
+        // Send again after a small delay to ensure it's processed
+        await new Promise((resolve) => setTimeout(resolve, 50));
         dataStream.writeData({
           type: 'code-delta' as const,
           content: draftContent,

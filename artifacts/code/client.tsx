@@ -133,10 +133,12 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     };
     setMetadata(initialMetadata);
 
-    // Make sure artifact is visible from the start
+    // CRITICAL: Always set visibility to true
     setArtifact((draft: any) => ({
       ...draft,
       isVisible: true,
+      // Empty content string to avoid null/undefined issues
+      content: draft.content || '',
     }));
 
     // Pre-set content if needed to ensure visibility
@@ -154,22 +156,22 @@ export const codeArtifact = new Artifact<'code', Metadata>({
                 console.log(
                   '[CODE ARTIFACT] Setting initial content from document:',
                   {
+                    documentId: lastDocument.id,
                     contentLength: lastDocument.content?.length || 0,
                     preview: lastDocument.content?.substring(0, 50) || '',
                   },
                 );
 
-                // Update artifact with content from document
+                // Immediately update content without any async delays
                 setArtifact((draft: any) => ({
                   ...draft,
-                  content: lastDocument.content || '',
+                  content: lastDocument.content,
                   isVisible: true,
                 }));
 
                 // Check if we should enable preview mode based on content
                 const language = detectLanguage(lastDocument.content || '');
                 if (['html', 'svg', 'javascript', 'jsx'].includes(language)) {
-                  // Force update metadata with preview mode
                   setMetadata((prev: Metadata) => ({
                     ...prev,
                     previewMode: true,
@@ -188,70 +190,54 @@ export const codeArtifact = new Artifact<'code', Metadata>({
             '[CODE ARTIFACT] Failed to fetch initial document:',
             await response.text(),
           );
-          // Continue showing UI even on error
         }
       } catch (error) {
         console.error(
           '[CODE ARTIFACT] Error fetching initial document:',
           error,
         );
-        // Continue showing UI even on error
       }
     }
   },
   onStreamPart: ({ streamPart, setArtifact, setMetadata }) => {
     console.log('[CODE ARTIFACT] Stream part received:', {
       type: streamPart.type,
-      fullStreamPart: JSON.stringify(streamPart),
+      contentLength:
+        typeof streamPart.content === 'string' ? streamPart.content.length : 0,
       timestamp: new Date().toISOString(),
     });
 
     // Process code deltas
     if (streamPart.type === 'code-delta') {
       try {
-        setArtifact((draftArtifact) => {
-          if (!draftArtifact) {
-            return draftArtifact;
-          }
+        // CRITICAL: Direct immediate update of artifact content
+        const deltaContent =
+          typeof streamPart.content === 'string' ? streamPart.content : '';
 
-          // Accumulate content instead of replacing it
-          const deltaContent =
-            typeof streamPart.content === 'string' ? streamPart.content : '';
-          const currentContent = draftArtifact.content || '';
+        if (deltaContent) {
+          // Sync update to ensure immediate rendering
+          setArtifact((draft) => {
+            if (!draft) return draft;
 
-          // Use full replacement if content already starts with the current content
-          const newContent = deltaContent.startsWith(currentContent)
-            ? deltaContent // Full replacement with updated content
-            : currentContent + deltaContent; // Append delta to existing content
+            return {
+              ...draft,
+              content: deltaContent,
+              isVisible: true,
+              status: 'streaming' as const,
+            };
+          });
 
-          // Store language if present
-          const newLanguage =
-            streamPart.language || draftArtifact.language || undefined;
-
-          // Check if we should enable preview mode based on content
-          const language = detectLanguage(newContent);
+          // Detect language from content for potential preview mode
+          const language = detectLanguage(deltaContent);
           if (['html', 'svg', 'javascript', 'jsx'].includes(language)) {
             setMetadata((prev) => ({
               ...prev,
               previewMode: true,
             }));
           }
-
-          // Force visibility to true and ensure content is set
-          return {
-            ...draftArtifact,
-            content: newContent,
-            isVisible: true,
-            status: 'streaming' as const,
-            language: newLanguage,
-          };
-        });
+        }
       } catch (error) {
-        console.error(
-          '[CODE ARTIFACT] Error handling code delta:',
-          error,
-          streamPart,
-        );
+        console.error('[CODE ARTIFACT] Error handling code delta:', error);
       }
     }
   },
