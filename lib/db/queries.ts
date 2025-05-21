@@ -1,7 +1,7 @@
 'use server';
 
 import { genSaltSync, hashSync } from 'bcrypt-ts';
-import { and, asc, desc, eq, gt, gte, inArray, lt } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, lt, sql } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -308,30 +308,98 @@ export async function saveDocument({
   try {
     console.log(`[DB] Saving document (ID: ${id}, Title: ${title})`);
 
-    // Get the latest version's timestamp
-    const [latestDoc] = await db
-      .select({ createdAt: document.createdAt })
+    // Get all existing versions of this document
+    const existingVersions = await db
+      .select({
+        createdAt: document.createdAt,
+        version: document.version,
+      })
       .from(document)
       .where(eq(document.id, id))
-      .orderBy(desc(document.createdAt))
-      .limit(1);
+      .orderBy(desc(document.createdAt));
+
+    // Determine the next version number
+    let nextVersion = '1';
+    if (existingVersions.length > 0) {
+      const latestVersion = existingVersions[0]?.version ?? '0';
+      const versionNum = Number.parseInt(latestVersion, 10);
+      nextVersion = (versionNum + 1).toString();
+    }
 
     // Create a new timestamp that's guaranteed to be after the latest version
-    const newTimestamp = latestDoc
-      ? new Date(new Date(latestDoc.createdAt).getTime() + 1)
-      : new Date();
+    const newTimestamp =
+      existingVersions.length > 0
+        ? new Date(new Date(existingVersions[0].createdAt).getTime() + 1)
+        : new Date();
 
-    const result = await db.insert(document).values({
-      id,
-      title,
-      kind,
-      content,
-      userId,
-      createdAt: newTimestamp,
-    });
+    console.log(`[DB] Creating new version ${nextVersion} for document ${id}`);
 
-    console.log(`[DB] Document saved successfully`);
-    return result;
+    try {
+      // First, mark all existing versions as not latest
+      if (existingVersions.length > 0) {
+        await db
+          .update(document)
+          .set({ is_latest: false })
+          .where(eq(document.id, id));
+      }
+
+      // Then insert the new version
+      const result = await db.insert(document).values({
+        id,
+        title,
+        kind,
+        content,
+        userId,
+        createdAt: newTimestamp,
+        is_latest: true,
+        version: nextVersion,
+      });
+
+      console.log(`[DB] Document saved successfully as version ${nextVersion}`);
+      return result;
+    } catch (insertError) {
+      // Check if this is a constraint violation error
+      if (
+        insertError instanceof Error &&
+        insertError.message.includes('idx_document_latest_unique')
+      ) {
+        console.log(
+          `[DB] Constraint violation detected, running migration fix`,
+        );
+
+        // Execute the migration to remove the constraint if it exists
+        await db.execute(
+          sql`ALTER TABLE "Document" DROP CONSTRAINT IF EXISTS "idx_document_latest_unique"`,
+        );
+
+        // Try again with the same approach
+        // First, mark all existing versions as not latest
+        if (existingVersions.length > 0) {
+          await db
+            .update(document)
+            .set({ is_latest: false })
+            .where(eq(document.id, id));
+        }
+
+        // Then insert the new version
+        const result = await db.insert(document).values({
+          id,
+          title,
+          kind,
+          content,
+          userId,
+          createdAt: newTimestamp,
+          is_latest: true,
+          version: nextVersion,
+        });
+
+        console.log(`[DB] Document saved successfully after constraint fix`);
+        return result;
+      }
+
+      // If it's another type of error, rethrow it
+      throw insertError;
+    }
   } catch (error) {
     console.error('Failed to save document in database', error);
     throw error;
@@ -771,6 +839,40 @@ export async function getUncategorizedChats({ userId }: { userId: string }) {
     return allChats.filter((chat) => !categorizedChatIdSet.has(chat.id));
   } catch (error) {
     console.error('Failed to get uncategorized chats');
+    throw error;
+  }
+}
+
+// Function to check database constraints and structure
+export async function checkDatabaseStructure() {
+  try {
+    console.log('Checking database structure...');
+
+    // Check for the unique constraint that might be causing problems
+    const constraints = await db.execute(sql`
+      SELECT c.conname, c.contype, pg_get_constraintdef(c.oid) as def
+      FROM pg_constraint c
+      JOIN pg_class t ON c.conrelid = t.oid
+      JOIN pg_namespace n ON t.relnamespace = n.oid
+      WHERE t.relname = 'Document'
+      AND n.nspname = 'public'
+    `);
+
+    console.log('Document table constraints:', constraints);
+
+    // Check table structure
+    const columns = await db.execute(sql`
+      SELECT column_name, data_type, is_nullable
+      FROM information_schema.columns
+      WHERE table_name = 'Document'
+      AND table_schema = 'public'
+    `);
+
+    console.log('Document table structure:', columns);
+
+    return { constraints, columns };
+  } catch (error) {
+    console.error('Error checking database structure:', error);
     throw error;
   }
 }

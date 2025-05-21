@@ -17,7 +17,8 @@ export type DataStreamDelta = {
     | 'suggestion'
     | 'clear'
     | 'finish'
-    | 'kind';
+    | 'kind'
+    | 'status';
   content: string | Suggestion;
   language?: string;
 };
@@ -50,209 +51,111 @@ export function DataStreamHandler({ id }: { id: string }) {
       }),
     );
 
-    (newDeltas as DataStreamDelta[]).forEach((delta: DataStreamDelta) => {
-      console.log('[DATA STREAM] Processing delta:', {
-        type: delta.type,
-        contentType: typeof delta.content,
-        contentLength:
-          typeof delta.content === 'string' ? delta.content.length : 0,
-        content:
-          typeof delta.content === 'string' ? delta.content : 'not a string',
-        timestamp: new Date().toISOString(),
-      });
+    // Handle errors first
+    const errorDelta = newDeltas.find(
+      (d) => d && typeof d === 'object' && 'type' in d && d.type === 'error',
+    );
 
-      const artifactDefinition = artifactDefinitions.find(
-        (artifactDefinition) => artifactDefinition.kind === artifact.kind,
-      );
+    if (errorDelta) {
+      console.error('[DATA STREAM] Error delta received:', errorDelta);
+      setArtifact((draftArtifact) => ({
+        ...draftArtifact,
+        status: 'idle',
+        isVisible: true,
+      }));
+      return;
+    }
 
-      if (artifactDefinition?.onStreamPart) {
-        console.log(
-          `[DATA STREAM] Passing to ${artifact.kind} artifact handler:`,
-          {
-            deltaType: delta.type,
-            contentLength:
-              typeof delta.content === 'string' ? delta.content.length : 0,
+    // Process each delta in sequence
+    newDeltas.forEach((value) => {
+      const delta = value as DataStreamDelta;
+      if (!delta || typeof delta !== 'object') return;
+
+      switch (delta.type) {
+        case 'id':
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            documentId: delta.content as string,
+            status: 'streaming',
+          }));
+          break;
+
+        case 'title':
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            title: delta.content as string,
+            status: 'streaming',
+          }));
+          break;
+
+        case 'kind':
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            kind: delta.content as ArtifactKind,
+            status: 'streaming',
+          }));
+          break;
+
+        case 'clear':
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            content: '',
+            status: 'streaming',
+          }));
+          break;
+
+        case 'status':
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            status: delta.content as 'streaming' | 'idle',
+          }));
+          break;
+
+        case 'text-delta':
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            content: draftArtifact.content + (delta.content as string),
+            status: 'streaming',
+          }));
+          break;
+
+        case 'finish':
+          // Don't read from artifact here, as that creates a dependency
+          console.log('[DATA STREAM] Finishing document generation');
+          setArtifact((draftArtifact) => ({
+            ...draftArtifact,
+            status: 'idle',
+          }));
+          break;
+
+        default:
+          // Log unhandled delta types
+          console.log('[DATA STREAM] Unhandled delta type:', {
+            type: delta.type,
             timestamp: new Date().toISOString(),
-          },
-        );
-
-        // Special handling: If we receive text-delta and we're in a code artifact,
-        // also send it as a code-delta to ensure code content is processed
-        if (delta.type === 'text-delta' && artifact.kind === 'code') {
-          console.log(
-            '[DATA STREAM] Converting text-delta to code-delta for code artifact:',
-            {
-              originalContent: delta.content,
-              timestamp: new Date().toISOString(),
-            },
-          );
-          const codeDelta = {
-            ...delta,
-            type: 'code-delta' as const,
-          };
-
-          artifactDefinition.onStreamPart({
-            streamPart: codeDelta,
-            setArtifact,
-            setMetadata,
           });
-        } else {
-          artifactDefinition.onStreamPart({
-            streamPart: delta,
-            setArtifact,
-            setMetadata,
-          });
-        }
+          break;
       }
-
-      setArtifact((draftArtifact) => {
-        if (!draftArtifact) {
-          console.log('[DATA STREAM] Creating initial artifact state');
-          return { ...initialArtifactData, status: 'streaming' };
-        }
-
-        console.log('[DATA STREAM] Current artifact state:', {
-          kind: draftArtifact.kind,
-          contentLength: draftArtifact.content?.length || 0,
-          content: draftArtifact.content,
-          status: draftArtifact.status,
-          timestamp: new Date().toISOString(),
-        });
-
-        switch (delta.type) {
-          case 'id':
-            return {
-              ...draftArtifact,
-              documentId: delta.content as string,
-              status: 'streaming',
-            };
-
-          case 'title':
-            return {
-              ...draftArtifact,
-              title: delta.content as string,
-              status: 'streaming',
-            };
-
-          case 'kind':
-            return {
-              ...draftArtifact,
-              kind: delta.content as ArtifactKind,
-              status: 'streaming',
-            };
-
-          case 'clear':
-            return {
-              ...draftArtifact,
-              content: '',
-              status: 'streaming',
-            };
-
-          // Handle code content directly in DataStreamHandler to ensure it's applied
-          case 'code-delta': {
-            console.log('[DATA STREAM] Direct code delta handling:', {
-              contentLength:
-                typeof delta.content === 'string' ? delta.content.length : 0,
-              content:
-                typeof delta.content === 'string'
-                  ? delta.content
-                  : 'not a string',
-              timestamp: new Date().toISOString(),
-            });
-
-            const currentContent = draftArtifact.content || '';
-            const deltaContent =
-              typeof delta.content === 'string' ? delta.content : '';
-
-            // Use full replacement if content already starts with the current content
-            // This ensures we handle both delta updates and full content replacements
-            const newContent = deltaContent.startsWith(currentContent)
-              ? deltaContent // Full replacement with updated content
-              : currentContent + deltaContent; // Append delta to existing content
-
-            console.log('[DATA STREAM] Code content update calculation:', {
-              currentContentLength: currentContent.length,
-              deltaContentLength: deltaContent.length,
-              newContentLength: newContent.length,
-              isFullReplacement: deltaContent.startsWith(currentContent),
-              timestamp: new Date().toISOString(),
-            });
-
-            return {
-              ...draftArtifact,
-              content: newContent,
-              isVisible: true,
-              status: 'streaming',
-            };
-          }
-
-          // Also handle text-delta for code artifacts
-          case 'text-delta': {
-            // If we're in a code artifact, also handle text-delta as code content
-            if (draftArtifact.kind === 'code') {
-              console.log('[DATA STREAM] Using text-delta as code content:', {
-                contentLength:
-                  typeof delta.content === 'string' ? delta.content.length : 0,
-                content:
-                  typeof delta.content === 'string'
-                    ? delta.content
-                    : 'not a string',
-                timestamp: new Date().toISOString(),
-              });
-
-              const currentContent = draftArtifact.content || '';
-              const deltaContent =
-                typeof delta.content === 'string' ? delta.content : '';
-
-              // Use full replacement if content already starts with the current content
-              // This ensures we handle both delta updates and full content replacements
-              const newContent = deltaContent.startsWith(currentContent)
-                ? deltaContent // Full replacement with updated content
-                : currentContent + deltaContent; // Append delta to existing content
-
-              console.log(
-                '[DATA STREAM] Text-delta content update calculation:',
-                {
-                  currentContentLength: currentContent.length,
-                  deltaContentLength: deltaContent.length,
-                  newContentLength: newContent.length,
-                  isFullReplacement: deltaContent.startsWith(currentContent),
-                  timestamp: new Date().toISOString(),
-                },
-              );
-
-              return {
-                ...draftArtifact,
-                content: newContent,
-                isVisible: true,
-                status: 'streaming',
-              };
-            }
-            return draftArtifact;
-          }
-
-          case 'finish':
-            console.log('[DATA STREAM] Finishing with content:', {
-              contentLength: draftArtifact.content?.length || 0,
-              content: draftArtifact.content,
-              timestamp: new Date().toISOString(),
-            });
-            return {
-              ...draftArtifact,
-              status: 'idle',
-            };
-
-          default:
-            // Log unhandled delta types
-            console.log('[DATA STREAM] Unhandled delta type:', {
-              type: delta.type,
-              timestamp: new Date().toISOString(),
-            });
-            return draftArtifact;
-        }
-      });
     });
-  }, [dataStream, setArtifact, setMetadata, artifact]);
+
+    // Clean up when stream is complete
+    const lastDelta = dataStream[dataStream.length - 1];
+    if (
+      lastDelta &&
+      typeof lastDelta === 'object' &&
+      'type' in lastDelta &&
+      (lastDelta.type === 'finish' || lastDelta.type === 'error')
+    ) {
+      console.log('[DATA STREAM] Stream complete or errored, cleaning up');
+      lastProcessedIndex.current = -1; // Reset for next stream
+
+      // Ensure we're in idle state but don't change visibility
+      setArtifact((draftArtifact) => ({
+        ...draftArtifact,
+        status: 'idle',
+      }));
+    }
+  }, [dataStream, setArtifact, setMetadata]);
 
   return null;
 }

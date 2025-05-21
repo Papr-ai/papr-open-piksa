@@ -155,6 +155,8 @@ export const document = pgTable(
     userId: uuid('userId')
       .notNull()
       .references(() => user.id),
+    is_latest: boolean('is_latest').notNull().default(true),
+    version: varchar('version').notNull().default('1'),
   },
   (table) => {
     return {

@@ -161,7 +161,18 @@ export async function POST(request: Request) {
                 });
 
                 if (!assistantId) {
-                  throw new Error('No assistant message found!');
+                  console.error(
+                    '[CHAT API] No assistant message found in response',
+                  );
+                  dataStream.writeData({
+                    type: 'status',
+                    content: 'idle',
+                  });
+                  dataStream.writeData({
+                    type: 'finish',
+                    content: '',
+                  });
+                  return;
                 }
 
                 const [, assistantMessage] = appendResponseMessages({
@@ -200,40 +211,55 @@ export async function POST(request: Request) {
                   PAPR_MEMORY_API_KEY &&
                   session.user?.id
                 ) {
-                  console.log('-------------------------------------');
-                  console.log(
-                    `[Memory] Processing memory storage for user ${session.user.id} AFTER AI response`,
-                  );
-                  console.log(`[Memory] Chat ID: ${id}`);
-                  console.log(`[Memory] Message ID: ${userMessage.id}`);
-
                   try {
                     console.log('[Memory] Calling storeMessageInMemory...');
-                    const success = await storeMessageInMemory({
+                    await storeMessageInMemory({
                       userId: session.user.id,
                       chatId: id,
                       message: userMessage,
                       apiKey: PAPR_MEMORY_API_KEY,
                     });
-
-                    if (success) {
-                      console.log(
-                        '[Memory] Successfully stored message in memory',
-                      );
-                    } else {
-                      console.log('[Memory] Failed to store message in memory');
-                    }
-                  } catch (error) {
+                  } catch (memoryError) {
                     console.error(
                       '[Memory] Error storing message in memory:',
-                      error,
+                      memoryError,
                     );
+                    // Continue even if memory storage fails
                   }
-                  console.log('-------------------------------------');
                 }
-              } catch (_) {
-                console.error('Failed to save chat');
+
+                // Signal successful completion
+                dataStream.writeData({
+                  type: 'status',
+                  content: 'idle',
+                });
+                dataStream.writeData({
+                  type: 'finish',
+                  content: '',
+                });
+              } catch (error) {
+                console.error('[CHAT API] Error in onFinish:', error);
+                // Signal error but allow the stream to complete
+                dataStream.writeData({
+                  type: 'status',
+                  content: 'idle',
+                });
+                dataStream.writeData({
+                  type: 'finish',
+                  content: '',
+                });
               }
+            } else {
+              // Handle case where session.user.id is not available
+              console.error('[CHAT API] No user ID available in session');
+              dataStream.writeData({
+                type: 'status',
+                content: 'idle',
+              });
+              dataStream.writeData({
+                type: 'finish',
+                content: '',
+              });
             }
           },
           experimental_telemetry: {
@@ -242,43 +268,55 @@ export async function POST(request: Request) {
           },
         });
 
-        result.consumeStream();
-
-        result.mergeIntoDataStream(dataStream, {
-          sendReasoning: true,
-        });
+        try {
+          await result.mergeIntoDataStream(dataStream, {
+            sendReasoning: true,
+          });
+        } catch (streamError) {
+          console.error('[CHAT API] Error consuming stream:', streamError);
+          dataStream.writeData({
+            type: 'status',
+            content: 'idle',
+          });
+          dataStream.writeData({
+            type: 'finish',
+            content: '',
+          });
+        }
       },
-      onError: (error) => {
-        console.error('STREAMING ERROR:', error);
+      onError: (error: unknown) => {
+        console.error('[CHAT API] STREAMING ERROR:', error);
 
-        // Log additional details about the error
         if (error instanceof Error) {
-          console.error('Stream error message:', error.message);
-          console.error('Stream error stack:', error.stack);
+          console.error('[CHAT API] Stream error message:', error.message);
+          console.error('[CHAT API] Stream error stack:', error.stack);
         }
 
-        return 'Oops, an error occurred during processing. Please try again.';
+        return 'An error occurred during processing. Please try again.';
       },
     });
   } catch (error) {
-    console.error('CHAT API ERROR:', error);
+    console.error('[CHAT API] ERROR:', error);
 
     // Log additional details about the error
     if (error instanceof Error) {
-      console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
+      console.error('[CHAT API] Error message:', error.message);
+      console.error('[CHAT API] Error stack:', error.stack);
     }
 
-    // Check for specific error types
-    if (error instanceof TypeError) {
-      console.error(
-        'Type error - likely an issue with the model or middleware',
-      );
-    }
-
-    return new Response('An error occurred while processing your request!', {
-      status: 500,
-    });
+    return new Response(
+      JSON.stringify({
+        error: 'An error occurred while processing your request.',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      }),
+      {
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
+      },
+    );
   }
 }
 

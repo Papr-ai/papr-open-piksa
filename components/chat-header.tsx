@@ -72,7 +72,7 @@ function PureChatHeader({
         asChild
       >
         <Link
-          href="https://docs.papr.ai/chat"
+          href="https://platform.papr.ai/chat"
           target="_blank"
           rel="noopener noreferrer"
         >

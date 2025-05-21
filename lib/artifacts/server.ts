@@ -64,24 +64,68 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
       return;
     },
     onUpdateDocument: async (args: UpdateDocumentCallbackProps) => {
-      const draftContent = await config.onUpdateDocument({
-        document: args.document,
-        description: args.description,
-        dataStream: args.dataStream,
-        session: args.session,
-      });
-
-      if (args.session?.user?.id) {
-        await saveDocument({
-          id: args.document.id,
-          title: args.document.title,
-          content: draftContent,
-          kind: config.kind,
-          userId: args.session.user.id,
+      let draftContent = '';
+      try {
+        draftContent = await config.onUpdateDocument({
+          document: args.document,
+          description: args.description,
+          dataStream: args.dataStream,
+          session: args.session,
         });
-      }
 
-      return draftContent;
+        if (args.session?.user?.id) {
+          try {
+            // Force a new version to be created
+            await saveDocument({
+              id: args.document.id,
+              title: args.document.title,
+              content: draftContent,
+              kind: config.kind,
+              userId: args.session.user.id,
+            });
+
+            // Signal completion through the data stream
+            args.dataStream.writeData({
+              type: 'status',
+              content: 'idle',
+            });
+
+            // Explicitly mark completion
+            args.dataStream.writeData({
+              type: 'finish',
+              content: '',
+            });
+
+            return draftContent;
+          } catch (saveError) {
+            console.error('Error saving document:', saveError);
+            // On save error, signal error state but keep content
+            args.dataStream.writeData({
+              type: 'status',
+              content: 'idle',
+            });
+            args.dataStream.writeData({
+              type: 'finish',
+              content: '',
+            });
+            return draftContent; // Return the content even if save failed
+          }
+        }
+
+        return draftContent;
+      } catch (error) {
+        console.error('Error in onUpdateDocument:', error);
+        // On error, signal completion and return original content
+        args.dataStream.writeData({
+          type: 'status',
+          content: 'idle',
+        });
+        args.dataStream.writeData({
+          type: 'finish',
+          content: '',
+        });
+        return args.document.content || '';
+      }
     },
   };
 }
