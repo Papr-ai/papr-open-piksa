@@ -257,6 +257,15 @@ export function createMemoryService(apiKey: string) {
       // Use the SDK to search for memories - using the same format that works in test.ts
       console.log(`[Memory DEBUG] Searching for memories with SDK: "${query}"`);
 
+      // Check if userId format matches Papr user ID format (not a UUID)
+      // Papr user IDs are typically shorter and don't have hyphens
+      const isPaprUserId = !userId.includes('-') && userId.length < 20;
+      if (!isPaprUserId) {
+        console.warn(
+          `[Memory WARNING] Search is using what appears to be an app UUID (${userId}) instead of a Papr user ID. Memory search may not work correctly.`,
+        );
+      }
+
       // Create search parameters for the SDK - match test.ts format
       const searchParams = {
         query,
@@ -358,34 +367,68 @@ export function createMemoryService(apiKey: string) {
   const formatMemoriesForPrompt = (memories: any[]) => {
     if (!memories.length) return '';
 
-    // Extract timestamp from metadata if available
-    const getTimestamp = (memory: any) => {
-      try {
-        if (memory.metadata?.timestamp) {
-          return new Date(memory.metadata.timestamp).toLocaleString();
-        }
-        if (memory.created_at) {
-          return new Date(memory.created_at).toLocaleString();
-        }
-        return 'Unknown time';
-      } catch (e) {
-        return 'Unknown time';
-      }
-    };
+    try {
+      // First, ensure memories are properly serialized to prevent [object Object] issues
+      const safeMemories = memories.map((memory) => {
+        // Create a simplified memory object with only the needed properties
+        return {
+          content:
+            typeof memory.content === 'string'
+              ? memory.content
+              : memory.text || JSON.stringify(memory.content || {}),
+          id: memory.id || 'unknown',
+          created_at:
+            memory.created_at ||
+            memory.metadata?.timestamp ||
+            new Date().toISOString(),
+          metadata: memory.metadata || {},
+        };
+      });
 
-    return `
+      // Extract timestamp from metadata if available
+      const getTimestamp = (memory: any) => {
+        try {
+          if (memory.metadata?.timestamp) {
+            return new Date(memory.metadata.timestamp).toLocaleString();
+          }
+          if (memory.created_at) {
+            return new Date(memory.created_at).toLocaleString();
+          }
+          return 'Unknown time';
+        } catch (e) {
+          return 'Unknown time';
+        }
+      };
+
+      // Create the formatted string with properly sanitized content
+      const formattedMemories = safeMemories
+        .map((memory, index) => {
+          const content =
+            typeof memory.content === 'string'
+              ? memory.content
+              : typeof memory.content === 'object'
+                ? JSON.stringify(memory.content)
+                : String(memory.content);
+          const timestamp = getTimestamp(memory);
+          return `Memory ${index + 1} [${timestamp}]: ${content}`;
+        })
+        .join('\n\n');
+
+      return `
 The user has the following relevant memories you should consider when responding:
 
-${memories
-  .map((memory, index) => {
-    const content = memory.content || memory.text || '';
-    const timestamp = getTimestamp(memory);
-    return `Memory ${index + 1} [${timestamp}]: ${content}`;
-  })
-  .join('\n\n')}
+${formattedMemories}
 
 Consider these memories when responding to the user's current request. If the memories contain information relevant to the user's query, incorporate that information naturally into your response. Do not explicitly mention that you're using memories unless directly asked about your memory capabilities.
 `;
+    } catch (error) {
+      console.error(
+        '[Memory ERROR] Error formatting memories for prompt:',
+        error,
+      );
+      // Return a safe fallback in case of any errors
+      return `The user has some relevant memories that couldn't be formatted properly.`;
+    }
   };
 
   /**

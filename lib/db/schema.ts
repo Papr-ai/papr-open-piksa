@@ -92,6 +92,7 @@ export const message = pgTable('Message_v2', {
     .references(() => chat.id),
   role: varchar('role').notNull(),
   parts: json('parts').notNull(),
+  tool_calls: json('tool_calls').default(null),
   attachments: json('attachments').notNull(),
   createdAt: timestamp('createdAt').notNull(),
 });

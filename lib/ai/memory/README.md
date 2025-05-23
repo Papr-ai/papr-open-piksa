@@ -112,7 +112,7 @@ The memory system is integrated directly into the chat flow:
 import { initPaprMemory } from '@/lib/ai/memory';
 
 const paprClient = initPaprMemory(process.env.PAPR_MEMORY_API_KEY, {
-  baseURL: 'https://memoryserver-development.azurewebsites.net', // Optional
+  baseURL: 'https://memory.papr.ai', // Optional
 });
 ```
 
@@ -211,7 +211,7 @@ For SDK configuration options:
 import { initPaprMemory, type ClientOptions } from '@/lib/ai/memory';
 
 const options: Omit<ClientOptions, 'apiKey'> = {
-  baseURL: 'https://memoryserver-development.azurewebsites.net',
+  baseURL: 'https://memory.papr.ai',
   timeout: 30000, // 30 seconds
 };
 

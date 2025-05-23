@@ -82,6 +82,14 @@ export function MemoryToggle() {
     // Only update localStorage on the client
     if (typeof window !== 'undefined') {
       localStorage.setItem('memory-enabled', String(newState));
+
+      // Dispatch a custom event that other components can listen for
+      const event = new CustomEvent('memory-toggle-changed', {
+        detail: { enabled: newState },
+      });
+      window.dispatchEvent(event);
+
+      console.log('[Memory Toggle] Changed to:', newState);
     }
   };
 

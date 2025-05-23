@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { DocumentOpener } from './document-opener';
+import { ChatMemoryResults } from './chat-memory-results';
 
 export function Chat({
   id,
@@ -85,16 +86,23 @@ export function Chat({
           isReadonly={isReadonly}
         />
 
-        <Messages
-          chatId={id}
-          status={status}
-          votes={votes}
-          messages={messages}
-          setMessages={setMessages}
-          reload={reload}
-          isReadonly={isReadonly}
-          isArtifactVisible={isArtifactVisible}
-        />
+        <div className="flex-1 overflow-y-auto">
+          {/* Add the ChatMemoryResults component above the messages */}
+          <div className="w-full md:max-w-3xl mx-auto px-4 pt-4">
+            <ChatMemoryResults aiState={{ messages }} />
+          </div>
+
+          <Messages
+            chatId={id}
+            status={status}
+            votes={votes}
+            messages={messages}
+            setMessages={setMessages}
+            reload={reload}
+            isReadonly={isReadonly}
+            isArtifactVisible={isArtifactVisible}
+          />
+        </div>
 
         <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
           {!isReadonly && (

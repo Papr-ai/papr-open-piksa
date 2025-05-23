@@ -35,36 +35,19 @@ export async function enhancePromptWithMemories({
     }
 
     // Get the Papr User ID from database instead of using app User ID directly
-    let paprUserId = userId; // Default to app User ID if lookup fails
+    // Try to ensure the user has a Papr user ID
+    const paprUserId = await ensurePaprUser(userId, apiKey);
 
-    try {
-      // Import the db-related code inside the function to avoid circular dependencies
-      const { db, user, eq } = await import('@/lib/db/queries-minimal');
-
-      // Fetch the user to check if they have a Papr user ID
-      const userResult = await db
-        .select({ paprUserId: user.paprUserId })
-        .from(user)
-        .where(eq(user.id, userId))
-        .limit(1);
-
-      if (userResult.length > 0 && userResult[0].paprUserId) {
-        paprUserId = userResult[0].paprUserId;
-        console.log(
-          `[Memory DEBUG] Found Papr user ID: ${paprUserId} for app user ${userId}`,
-        );
-      } else {
-        console.log(
-          `[Memory DEBUG] No Papr user ID found for app user ${userId}, using app user ID as fallback`,
-        );
-      }
-    } catch (dbError) {
-      console.error(
-        '[Memory DEBUG] Error fetching Papr user ID from database:',
-        dbError,
+    if (!paprUserId) {
+      console.warn(
+        `[Memory DEBUG WARNING] Failed to get or create Papr user ID for app user ${userId}. Memory retrieval may not work correctly.`,
       );
-      // Continue with the app user ID if there's an error
+      return ''; // Without a valid Papr user ID, we can't reliably search for memories
     }
+
+    console.log(
+      `[Memory DEBUG] Using Papr user ID: ${paprUserId} for memory search (app user: ${userId})`,
+    );
 
     const memoryService = createMemoryService(apiKey);
 
@@ -147,6 +130,13 @@ export async function enhancePromptWithMemories({
       `[Memory DEBUG] Searching memories for user ID: ${paprUserId} with query: "${query}"`,
     );
 
+    // IMPORTANT: Use the Papr user ID for memory search, not the app's UUID
+    if (paprUserId?.includes('-')) {
+      console.warn(
+        `[Memory DEBUG WARNING] The Papr user ID (${paprUserId}) appears to be an app UUID, not a valid Papr ID.`,
+      );
+    }
+
     // Use the SDK to search for memories using the Papr User ID
     const memories = await memoryService.searchMemories(paprUserId, query, 25);
 
@@ -204,42 +194,22 @@ export async function storeMessageInMemory({
   }
 
   try {
-    // Import the db-related code inside the function to avoid circular dependencies
-    // and to keep memory processing separate from db access
-    const { db, user, eq } = await import('@/lib/db/queries-minimal');
+    // Ensure the user has a Papr user ID
+    const paprUserId = await ensurePaprUser(userId, apiKey);
 
-    // Fetch the user to check if they have a Papr user ID
-    let paprUserId: string | undefined;
-    try {
-      const userResult = await db
-        .select({ paprUserId: user.paprUserId })
-        .from(user)
-        .where(eq(user.id, userId))
-        .limit(1);
-
-      if (userResult.length > 0 && userResult[0].paprUserId) {
-        paprUserId = userResult[0].paprUserId;
-        console.log(
-          `[Memory] Using Papr user ID: ${paprUserId} for app user ${userId}`,
-        );
-      } else {
-        console.log(
-          `[Memory] No Papr user ID found for app user ${userId}, using app user ID`,
-        );
-      }
-    } catch (dbError) {
-      console.error(
-        '[Memory] Error fetching Papr user ID from database:',
-        dbError,
+    if (!paprUserId) {
+      console.warn(
+        `[Memory WARNING] Failed to get or create Papr user ID for app user ${userId}. Memory operations may not work correctly.`,
       );
-      // Continue with the app user ID if there's an error
+      return false;
     }
 
-    // Use the Papr user ID if available, otherwise fall back to the app user ID
-    const memoryUserId = paprUserId || userId;
+    console.log(
+      `[Memory] Using Papr user ID: ${paprUserId} for storing message from app user ${userId}`,
+    );
 
     const memoryService = createMemoryService(apiKey);
-    return await memoryService.storeMessage(memoryUserId, chatId, message);
+    return await memoryService.storeMessage(paprUserId, chatId, message);
   } catch (error) {
     console.error('[Memory] Error storing message in memory:', error);
     return false;
@@ -323,35 +293,26 @@ export async function searchUserMemories({
   }
 
   try {
-    // Import the db-related code inside the function to avoid circular dependencies
-    const { db, user, eq } = await import('@/lib/db/queries-minimal');
+    // Ensure the user has a Papr user ID
+    const paprUserId = await ensurePaprUser(userId, apiKey);
 
-    // Fetch the user to check if they have a Papr user ID
-    let paprUserId = userId; // Default to app user ID
-    try {
-      const userResult = await db
-        .select({ paprUserId: user.paprUserId })
-        .from(user)
-        .where(eq(user.id, userId))
-        .limit(1);
-
-      if (userResult.length > 0 && userResult[0].paprUserId) {
-        paprUserId = userResult[0].paprUserId;
-        console.log(
-          `[Memory] Using Papr user ID: ${paprUserId} for app user ${userId}`,
-        );
-      } else {
-        console.log(
-          `[Memory] No Papr user ID found for app user ${userId}, using app user ID as fallback`,
-        );
-      }
-    } catch (dbError) {
-      console.error(
-        '[Memory] Error fetching Papr user ID from database:',
-        dbError,
+    if (!paprUserId) {
+      console.warn(
+        `[Memory WARNING] Failed to get or create Papr user ID for app user ${userId}. Memory search may not work correctly.`,
       );
-      // Continue with the app user ID if there's an error
+      return [];
     }
+
+    // Validate the Papr user ID format
+    if (paprUserId.includes('-')) {
+      console.warn(
+        `[Memory WARNING] The Papr user ID (${paprUserId}) appears to be an app UUID, not a valid Papr ID.`,
+      );
+    }
+
+    console.log(
+      `[Memory] Using Papr user ID: ${paprUserId} for memory search (app user: ${userId})`,
+    );
 
     const memoryService = createMemoryService(apiKey);
 
@@ -399,42 +360,23 @@ export async function storeContentInMemory({
   }
 
   try {
-    // Import the db-related code inside the function to avoid circular dependencies
-    const { db, user, eq } = await import('@/lib/db/queries-minimal');
+    // Ensure the user has a Papr user ID
+    const paprUserId = await ensurePaprUser(userId, apiKey);
 
-    // Fetch the user to check if they have a Papr user ID
-    let paprUserId: string | undefined;
-    try {
-      const userResult = await db
-        .select({ paprUserId: user.paprUserId })
-        .from(user)
-        .where(eq(user.id, userId))
-        .limit(1);
-
-      if (userResult.length > 0 && userResult[0].paprUserId) {
-        paprUserId = userResult[0].paprUserId;
-        console.log(
-          `[Memory] Using Papr user ID: ${paprUserId} for app user ${userId}`,
-        );
-      } else {
-        console.log(
-          `[Memory] No Papr user ID found for app user ${userId}, using app user ID`,
-        );
-      }
-    } catch (dbError) {
-      console.error(
-        '[Memory] Error fetching Papr user ID from database:',
-        dbError,
+    if (!paprUserId) {
+      console.warn(
+        `[Memory WARNING] Failed to get or create Papr user ID for app user ${userId}. Memory operations may not work correctly.`,
       );
-      // Continue with the app user ID if there's an error
+      return false;
     }
 
-    // Use the Papr user ID if available, otherwise fall back to the app user ID
-    const memoryUserId = paprUserId || userId;
+    console.log(
+      `[Memory] Using Papr user ID: ${paprUserId} for storing content from app user ${userId}`,
+    );
 
     const memoryService = createMemoryService(apiKey);
     return await memoryService.storeContent(
-      memoryUserId,
+      paprUserId,
       content,
       type,
       metadata,
@@ -442,5 +384,88 @@ export async function storeContentInMemory({
   } catch (error) {
     console.error('[Memory] Error storing content in memory:', error);
     return false;
+  }
+}
+
+/**
+ * Ensure a user has a valid Papr Memory user ID
+ * This function checks if a user has a Papr user ID and creates one if not
+ * @param userId - The app user ID
+ * @param apiKey - Papr Memory API key
+ * @returns The Papr user ID
+ */
+export async function ensurePaprUser(
+  userId: string,
+  apiKey: string,
+): Promise<string | null> {
+  if (!apiKey) {
+    console.log('[Memory] No API key provided for Papr user creation');
+    return null;
+  }
+
+  try {
+    // Import the db-related code
+    const { db, user, eq } = await import('@/lib/db/queries-minimal');
+
+    // First check if the user already has a Papr user ID
+    const userResult = await db
+      .select({ paprUserId: user.paprUserId, email: user.email })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1);
+
+    // If the user has a Papr user ID, return it
+    if (userResult.length > 0 && userResult[0].paprUserId) {
+      console.log(
+        `[Memory] User ${userId} already has Papr user ID: ${userResult[0].paprUserId}`,
+      );
+      return userResult[0].paprUserId;
+    }
+
+    // User doesn't have a Papr user ID, need to create one
+    console.log(`[Memory] Creating Papr user for app user: ${userId}`);
+
+    const userEmail = userResult.length > 0 ? userResult[0].email : null;
+
+    // Initialize Papr SDK
+    const { initPaprMemory } = await import('@/lib/ai/memory');
+    const API_BASE_URL =
+      process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
+    const paprClient = initPaprMemory(apiKey, {
+      baseURL: API_BASE_URL,
+    });
+
+    // Create a user in Papr Memory
+    const paprUserResponse = await paprClient.user.create({
+      external_id: `v0chat-user-${userId}`,
+      email: userEmail,
+      metadata: {
+        source: 'v0chat',
+        app_user_id: userId,
+      },
+    });
+
+    // If successful, store the Papr user ID in our database
+    if (paprUserResponse?.user_id) {
+      const paprUserId = paprUserResponse.user_id;
+      console.log(`[Memory] Created Papr Memory user with ID: ${paprUserId}`);
+
+      // Update the user record with the Papr user ID
+      await db
+        .update(user)
+        .set({ paprUserId: paprUserId })
+        .where(eq(user.id, userId));
+
+      console.log(`[Memory] Updated local user record with Papr user ID`);
+      return paprUserId;
+    } else {
+      console.error(
+        `[Memory] Failed to create Papr Memory user - no user_id in response`,
+      );
+      return null;
+    }
+  } catch (error) {
+    console.error('[Memory] Error ensuring Papr user:', error);
+    return null;
   }
 }

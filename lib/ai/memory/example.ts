@@ -11,7 +11,7 @@ import {
 } from './index';
 
 // Base API URL for all calls
-const API_BASE_URL = 'https://memoryserver-development.azurewebsites.net';
+const API_BASE_URL = 'https://memory.papr.ai';
 
 // Example 1: Initialize the SDK
 const initializeSDK = () => {

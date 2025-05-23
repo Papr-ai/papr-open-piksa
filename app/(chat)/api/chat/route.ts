@@ -1,5 +1,4 @@
 import {
-  type UIMessage,
   appendResponseMessages,
   createDataStreamResponse,
   smoothStream,
@@ -30,6 +29,7 @@ import {
   storeMessageInMemory,
 } from '@/lib/ai/memory/middleware';
 import { systemPrompt } from '@/lib/ai/prompts';
+import type { ExtendedUIMessage } from '@/lib/types';
 
 export const maxDuration = 60;
 
@@ -49,7 +49,7 @@ export async function POST(request: Request) {
       selectedChatModel,
     }: {
       id: string;
-      messages: Array<UIMessage>;
+      messages: Array<ExtendedUIMessage>;
       selectedChatModel: string;
     } = await request.json();
 
@@ -94,6 +94,7 @@ export async function POST(request: Request) {
             // Convert any non-text parts to text parts
             return { type: 'text', text: String(part) };
           }),
+          tool_calls: null,
           attachments: userMessage.experimental_attachments ?? [],
           createdAt: new Date(),
         },
@@ -119,7 +120,24 @@ export async function POST(request: Request) {
 
         // Add memory context to system prompt if enabled
         const enhancedSystemPrompt = isMemoryEnabled
-          ? `${baseSystemPrompt}\n\nYou have access to a memory search tool that can find relevant past conversations and information. Use it when you need to recall past context or information from previous conversations. The tool returns an array of memory objects with content and timestamp.`
+          ? `${baseSystemPrompt}\n\n
+IMPORTANT MEMORY TOOL INSTRUCTIONS:
+You have access to a memory search tool that can find relevant past conversations and information. Use it when you need to recall past context or information from previous conversations.
+
+When using the searchMemories tool:
+1. ONLY use this tool when the user asks about past conversations or when you need context from previous interactions
+2. NEVER include the raw tool response or any JSON in your message text
+3. NEVER format memory results as code blocks or lists in your response
+4. After using the tool, ONLY reference the information in a natural conversational way
+5. The memory results will be automatically displayed to the user in a separate UI component
+
+IMPORTANT: If you use the searchMemories tool, do NOT manually format the results in your response. The tool output is handled separately by the UI.
+
+Examples of INCORRECT usage (DO NOT DO THIS):
+- Including JSON output: \`\`\`{ "memories": [...] }\`\`\`
+- Listing memories: "Here are your memories: 1. 2025-01-01: Memory content"
+- Date-based formatting: "2025-01-01: Memory content"
+`
           : baseSystemPrompt;
 
         console.log('[Memory] System prompt generation complete');
@@ -178,7 +196,7 @@ export async function POST(request: Request) {
                 const [, assistantMessage] = appendResponseMessages({
                   messages: [userMessage],
                   responseMessages: response.messages,
-                });
+                }) as [ExtendedUIMessage, ExtendedUIMessage];
 
                 // Save the AI response to database
                 await saveMessages({
@@ -187,17 +205,8 @@ export async function POST(request: Request) {
                       id: assistantId,
                       chatId: id,
                       role: assistantMessage.role,
-                      parts: (assistantMessage.parts || []).map((part) => {
-                        if (
-                          part.type === 'text' ||
-                          part.type === 'reasoning' ||
-                          part.type === 'tool-invocation'
-                        ) {
-                          return part;
-                        }
-                        // Convert any unknown part types to text
-                        return { type: 'text', text: String(part) };
-                      }),
+                      parts: assistantMessage.parts || [],
+                      tool_calls: assistantMessage.tool_calls || null,
                       attachments:
                         assistantMessage.experimental_attachments ?? [],
                       createdAt: new Date(),
@@ -274,6 +283,27 @@ export async function POST(request: Request) {
           });
         } catch (streamError) {
           console.error('[CHAT API] Error consuming stream:', streamError);
+
+          // Log more detailed information
+          if (messages.length > 0) {
+            const lastMessage = messages[messages.length - 1];
+            console.log('[CHAT API] Last message role:', lastMessage.role);
+
+            // Check for tool_calls
+            if (lastMessage.tool_calls) {
+              console.log(
+                '[CHAT API] Tool calls found:',
+                lastMessage.tool_calls.length,
+              );
+              lastMessage.tool_calls.forEach((tc, idx) => {
+                console.log(`[CHAT API] Tool call #${idx + 1}:`, {
+                  name: tc.function?.name,
+                  hasOutput: !!tc.function?.output,
+                });
+              });
+            }
+          }
+
           dataStream.writeData({
             type: 'status',
             content: 'idle',
