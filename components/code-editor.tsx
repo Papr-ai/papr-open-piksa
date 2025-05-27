@@ -1,8 +1,7 @@
 'use client';
 
 import { EditorView } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
-import { Transaction } from '@codemirror/state';
+import { EditorState, Transaction } from '@codemirror/state';
 import { python } from '@codemirror/lang-python';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { basicSetup } from 'codemirror';

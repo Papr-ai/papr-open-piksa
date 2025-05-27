@@ -2,6 +2,15 @@ import { Artifact } from '@/components/create-artifact';
 import { CopyIcon, RedoIcon, UndoIcon } from '@/components/icons';
 import { ImageEditor } from '@/components/image-editor';
 import { toast } from 'sonner';
+import React from 'react';
+
+// Create a wrapper component for ImageEditor that handles null content
+const ImageEditorWrapper = (props: any) => {
+  // If content is null, provide an empty string instead
+  const safeContent = props.content || '';
+  
+  return <ImageEditor {...props} content={safeContent} />;
+};
 
 export const imageArtifact = new Artifact({
   kind: 'image',
@@ -16,7 +25,7 @@ export const imageArtifact = new Artifact({
       }));
     }
   },
-  content: ImageEditor,
+  content: ImageEditorWrapper,
   actions: [
     {
       icon: <UndoIcon size={18} />,

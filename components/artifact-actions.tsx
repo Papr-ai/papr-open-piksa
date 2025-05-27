@@ -82,7 +82,7 @@ function PureArtifactActions({
   }
 
   const actionContext: ArtifactActionContext = {
-    content: artifact.content,
+    content: artifact.content || '',
     handleVersionChange,
     currentVersionIndex,
     isCurrentVersion,

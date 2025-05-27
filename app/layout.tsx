@@ -2,7 +2,6 @@ import { Toaster } from 'sonner';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
-import { ThinkingStateProvider } from '@/lib/thinking-state';
 
 import './globals.css';
 
@@ -36,10 +35,8 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <ThinkingStateProvider>
             <Toaster position="top-center" />
             {children}
-          </ThinkingStateProvider>
         </ThemeProvider>
       </body>
     </html>

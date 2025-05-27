@@ -31,4 +31,7 @@ export function ThinkingStateProvider({ children }: { children: ReactNode }) {
 // Hook to use the thinking state
 export function useThinkingState() {
   return useContext(ThinkingStateContext);
-} 
+}
+
+// Also export as default
+export default ThinkingStateProvider; 
