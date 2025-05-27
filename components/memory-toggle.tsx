@@ -23,25 +23,26 @@ const MemoryIcon = ({
     <svg
       width={size}
       height={size * 1.18}
-      viewBox="0 0 105 124"
+      viewBox="0 0 20 20"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
       <path
-        d="M27.9998 101.5C-11.5 158 6.99988 51 43.4008 60.5002C99.2884 75.0861 115.18 20.7781 83.6804 8.27816C40.2693 -8.94844 51.9998 65 27.9998 101.5Z"
+        d="M9.16274 17.5H8.3294L9.16274 11.6667H6.24607C5.51274 11.6667 5.97107 11.0417 5.98774 11.0167C7.06274 9.11667 8.6794 6.28333 10.8377 2.5H11.6711L10.8377 8.33333H13.7627C14.0961 8.33333 14.2794 8.49167 14.0961 8.88333C10.8044 14.625 9.16274 17.5 9.16274 17.5Z"
         stroke={isEnabled ? `url(#${gradientId})` : 'currentColor'}
-        strokeWidth="8"
+        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
+        fill={isEnabled ? `url(#${gradientId})` : 'none'}
         className={isEnabled ? '' : 'opacity-70'}
       />
       <defs>
         <linearGradient
           id={gradientId}
-          x1="17.2207"
-          y1="89.4214"
-          x2="68.8959"
-          y2="35.8394"
+          x1="5"
+          y1="17"
+          x2="14"
+          y2="3"
           gradientUnits="userSpaceOnUse"
         >
           <stop stopColor="#0060E0" />

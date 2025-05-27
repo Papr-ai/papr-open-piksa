@@ -16,7 +16,6 @@ import { toast } from 'sonner';
 import { unstable_serialize } from 'swr/infinite';
 import { getChatHistoryPaginationKey } from './sidebar-history';
 import { DocumentOpener } from './document-opener';
-import { ChatMemoryResults } from './chat-memory-results';
 
 export function Chat({
   id,
@@ -87,11 +86,6 @@ export function Chat({
         />
 
         <div className="flex-1 overflow-y-auto">
-          {/* Add the ChatMemoryResults component above the messages */}
-          <div className="w-full md:max-w-3xl mx-auto px-4 pt-4">
-            <ChatMemoryResults aiState={{ messages }} />
-          </div>
-
           <Messages
             chatId={id}
             status={status}

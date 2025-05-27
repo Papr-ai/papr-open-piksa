@@ -25,14 +25,32 @@ import { imageArtifact } from '@/artifacts/image/client';
 import { codeArtifact } from '@/artifacts/code/client';
 import { sheetArtifact } from '@/artifacts/sheet/client';
 import { textArtifact } from '@/artifacts/text/client';
+import { memoryArtifact } from '@/artifacts/memory/client';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
+
+export interface ArtifactContentProps {
+  content: any;
+  mode?: 'edit' | 'diff';
+  status?: string;
+  currentVersionIndex?: number;
+  suggestions?: any[];
+  onSaveContent?: (content: string, debounce: boolean) => void;
+  isInline?: boolean;
+  isCurrentVersion?: boolean;
+  getDocumentContentById?: (index: number) => string;
+  isLoading?: boolean;
+  metadata?: any;
+  setMetadata?: (metadata: any) => void;
+  language?: string;
+}
 
 export const artifactDefinitions = [
   textArtifact,
   codeArtifact,
   imageArtifact,
   sheetArtifact,
+  memoryArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]['kind'];
 
@@ -40,7 +58,7 @@ export interface UIArtifact {
   title: string;
   documentId: string;
   kind: ArtifactKind;
-  content: string;
+  content: string | null;
   isVisible: boolean;
   status: 'streaming' | 'idle';
   boundingBox: {

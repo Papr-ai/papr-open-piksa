@@ -9,4 +9,5 @@ export interface ExtendedUIMessage extends UIMessage {
     };
     id?: string;
   }>;
+  memories?: Array<any>;
 }

@@ -3,7 +3,7 @@
 import type { UIMessage } from 'ai';
 import cx from 'classnames';
 import { AnimatePresence, motion } from 'framer-motion';
-import { memo, useState } from 'react';
+import { memo, useState, useEffect } from 'react';
 import type { Vote } from '@/lib/db/schema';
 import { DocumentToolCall, DocumentToolResult } from './document';
 import { PencilEditIcon, SparklesIcon } from './icons';
@@ -19,6 +19,8 @@ import { MessageEditor } from './message-editor';
 import { DocumentPreview } from './document-preview';
 import { MessageReasoning } from './message-reasoning';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import { ChatMemoryResults } from './chat-memory-results';
+import { useThinkingState } from '@/lib/thinking-state';
 
 const PurePreviewMessage = ({
   chatId,
@@ -96,21 +98,6 @@ const PurePreviewMessage = ({
 
               if (type === 'text') {
                 if (mode === 'view') {
-                  if (
-                    typeof part.text === 'string' &&
-                    // Detect JSON patterns related to memories
-                    ((part.text.includes('"memories":') &&
-                      part.text.includes('"content":')) ||
-                      // Detect common memory formatting patterns
-                      (part.text.match(/Here are your .* memories/) &&
-                        part.text.match(/\d{4}-\d{2}-\d{2}:/)) ||
-                      // Detect formatted memory lists
-                      (part.text.match(/\d{4}-\d{2}-\d{2}.*:/) &&
-                        (part.text.match(/\d{4}-\d{2}-\d{2}.*:/g)?.length ||
-                          0) > 1))
-                  ) {
-                    return null;
-                  }
                   return (
                     <div key={key} className="flex flex-row gap-2 items-start">
                       {message.role === 'user' && !isReadonly && (
@@ -139,6 +126,9 @@ const PurePreviewMessage = ({
                         })}
                       >
                         <Markdown>{part.text}</Markdown>
+                        {message.role === 'assistant' && (
+                          <ChatMemoryResults message={message as any} />
+                        )}
                       </div>
                     </div>
                   );
@@ -259,6 +249,7 @@ export const PreviewMessage = memo(
 
 export const ThinkingMessage = () => {
   const role = 'assistant';
+  const { state: thinkingState } = useThinkingState();
 
   return (
     <motion.div
@@ -282,7 +273,7 @@ export const ThinkingMessage = () => {
 
         <div className="flex flex-col gap-2 w-full">
           <div className="flex flex-col gap-4 text-muted-foreground">
-            Thinking...
+            {thinkingState}
           </div>
         </div>
       </div>

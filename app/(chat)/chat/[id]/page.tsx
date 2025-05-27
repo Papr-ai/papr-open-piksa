@@ -44,32 +44,33 @@ export default async function Page({ params, searchParams }: PageProps) {
   function convertToUIMessages(messages: Array<DBMessage>): Array<UIMessage> {
     return messages.map((message) => {
       // Ensure parts are properly formatted
-      const parts = Array.isArray(message.parts)
-        ? message.parts.map((part) => {
-            if (message.role === 'user') {
-              // For user messages, ensure each part is a TextUIPart
-              if (typeof part === 'string') {
-                return { type: 'text', text: part };
-              } else if (typeof part === 'object' && 'text' in part) {
-                return { type: 'text', text: part.text };
-              } else if (
-                typeof part === 'object' &&
-                'type' in part &&
-                part.type === 'text'
-              ) {
-                return part;
+      let parts = message.parts as Array<any>;
+
+      // Handle old messages with content instead of parts
+      if (!parts || !Array.isArray(parts) || parts.length === 0) {
+        try {
+          // For older messages, try to convert content to parts
+          const content = (message as any).content;
+          if (content) {
+            if (typeof content === 'string') {
+              parts = [{ type: 'text', text: content }];
+            } else if (typeof content === 'object') {
+              // Legacy format
+              if ('text' in content) {
+                parts = [{ type: 'text', text: content.text }];
+              } else {
+                console.error('Unknown content format:', content);
+                parts = [{ type: 'text', text: JSON.stringify(content) }];
               }
-              // Default case - convert to string and wrap in TextUIPart
-              return { type: 'text', text: String(part) };
             }
-            // For assistant messages, preserve the part as is if it's properly formatted
-            if (typeof part === 'object' && 'type' in part) {
-              return part;
-            }
-            // Default case for assistant messages
-            return { type: 'text', text: String(part) };
-          })
-        : [{ type: 'text', text: '' }];
+          } else {
+            parts = [];
+          }
+        } catch (error) {
+          console.error('Error converting message content to parts:', error);
+          parts = [];
+        }
+      }
 
       return {
         id: message.id,
@@ -79,6 +80,8 @@ export default async function Page({ params, searchParams }: PageProps) {
         createdAt: message.createdAt,
         experimental_attachments:
           (message.attachments as Array<Attachment>) ?? [],
+        tool_calls: message.tool_calls as any,
+        memories: message.memories as any, // Include memories from the message
       };
     });
   }

@@ -15,6 +15,7 @@ import {
   vote,
   collection,
   chatCollection,
+  messageMemory,
 } from './schema';
 import type { User, Suggestion, DBMessage, Chat } from './schema';
 import type { ArtifactKind } from '@/components/artifact';
@@ -874,5 +875,81 @@ export async function checkDatabaseStructure() {
   } catch (error) {
     console.error('Error checking database structure:', error);
     throw error;
+  }
+}
+
+// Save memories for a message
+export async function saveMessageMemories({
+  messageId,
+  chatId,
+  memories,
+}: {
+  messageId: string;
+  chatId: string;
+  memories: any[];
+}) {
+  try {
+    console.log(`[DB] Saving ${memories.length} memories for message ${messageId} in chat ${chatId}`);
+    
+    // Check if entry exists first
+    const existingEntry = await db
+      .select()
+      .from(messageMemory)
+      .where(eq(messageMemory.messageId, messageId))
+      .limit(1);
+    
+    if (existingEntry.length > 0) {
+      console.log(`[DB] Found existing memory entry for message ${messageId}, updating...`);
+      // Update existing entry
+      await db
+        .update(messageMemory)
+        .set({
+          memories: memories as any,
+        })
+        .where(eq(messageMemory.messageId, messageId));
+    } else {
+      console.log(`[DB] Creating new memory entry for message ${messageId}`);
+      // Create new entry
+      await db.insert(messageMemory).values({
+        messageId,
+        chatId,
+        memories: memories as any,
+        createdAt: new Date(),
+      });
+    }
+    
+    console.log(`[DB] Successfully saved memories for message ${messageId}`);
+    return { success: true };
+  } catch (error) {
+    console.error(`[DB] Error saving memories for message ${messageId}:`, error);
+    return { success: false, error };
+  }
+}
+
+// Get memories for a message
+export async function getMessageMemories({
+  messageId,
+}: {
+  messageId: string;
+}) {
+  try {
+    console.log(`[DB] Retrieving memories for message ${messageId}`);
+    
+    const result = await db
+      .select()
+      .from(messageMemory)
+      .where(eq(messageMemory.messageId, messageId))
+      .limit(1);
+    
+    if (result.length === 0) {
+      console.log(`[DB] No memories found for message ${messageId}`);
+      return null;
+    }
+    
+    console.log(`[DB] Found memories for message ${messageId}, retrieving...`);
+    return result[0].memories;
+  } catch (error) {
+    console.error(`[DB] Error retrieving memories for message ${messageId}:`, error);
+    return null;
   }
 }

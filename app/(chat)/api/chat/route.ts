@@ -36,10 +36,64 @@ export const maxDuration = 60;
 // Get Papr Memory API key from environment
 const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY || '';
 
-// Create memory-enabled system prompt
-const memoryEnabledSystemPrompt = createMemoryEnabledSystemPrompt({
-  apiKey: PAPR_MEMORY_API_KEY,
-});
+// Update sanitization function to return messages in the correct format
+function sanitizeMessageForAI(message: ExtendedUIMessage) {
+  // Create a new message with only the properties expected by the AI SDK
+  return {
+    id: message.id,
+    role: message.role,
+    content: message.parts?.find(part => part.type === 'text')?.text || '',
+    // Only include these if they exist and are needed
+    tool_calls: message.tool_calls,
+    toolInvocations: message.toolInvocations,
+  };
+}
+
+// Function to extract memories from tool calls if present
+function extractMemoriesFromToolCalls(message: any): any[] | null {
+  if (!message) return null;
+  
+  // Check for toolInvocations first (newer format)
+  if (message.toolInvocations?.length) {
+    for (const invocation of message.toolInvocations) {
+      if (
+        (invocation.toolName === 'searchMemories' ||
+         invocation.toolName === 'mcp_Papr_MCP_Server_get_memory') &&
+        invocation.result?.memories?.length
+      ) {
+        console.log(`[Memory] Found memories in tool invocation for message ${message.id}`);
+        return invocation.result.memories;
+      }
+    }
+  }
+  
+  // Check for tool_calls (older format)
+  if (message.tool_calls?.length) {
+    for (const call of message.tool_calls) {
+      if (
+        call?.function?.name && 
+        (call.function.name.includes('searchMemories') || 
+         call.function.name.includes('get_memory')) &&
+        call.function?.output
+      ) {
+        try {
+          const output = typeof call.function.output === 'string' 
+            ? JSON.parse(call.function.output) 
+            : call.function.output;
+          
+          if (output?.memories?.length) {
+            console.log(`[Memory] Found memories in tool_calls for message ${message.id}`);
+            return output.memories;
+          }
+        } catch (e) {
+          console.error(`[Memory] Error parsing tool call output:`, e);
+        }
+      }
+    }
+  }
+  
+  return null;
+}
 
 export async function POST(request: Request) {
   try {
@@ -96,6 +150,7 @@ export async function POST(request: Request) {
           }),
           tool_calls: null,
           attachments: userMessage.experimental_attachments ?? [],
+          memories: null,
           createdAt: new Date(),
         },
       ],
@@ -130,6 +185,8 @@ When using the searchMemories tool:
 3. NEVER format memory results as code blocks or lists in your response
 4. After using the tool, ONLY reference the information in a natural conversational way
 5. The memory results will be automatically displayed to the user in a separate UI component
+6. If the initial search doesn't find what you're looking for, try searching again with different keywords or phrasings
+7. You can make up to 5 memory searches per response to find the most relevant information
 
 IMPORTANT: If you use the searchMemories tool, do NOT manually format the results in your response. The tool output is handled separately by the UI.
 
@@ -145,7 +202,8 @@ Examples of INCORRECT usage (DO NOT DO THIS):
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
           system: enhancedSystemPrompt,
-          messages,
+          // Sanitize all messages to prevent errors from additional properties
+          messages: messages.map(sanitizeMessageForAI),
           maxSteps: 5,
           temperature: selectedChatModel === 'chat-model-reasoning' ? 1 : 0,
           experimental_activeTools: [
@@ -198,7 +256,14 @@ Examples of INCORRECT usage (DO NOT DO THIS):
                   responseMessages: response.messages,
                 }) as [ExtendedUIMessage, ExtendedUIMessage];
 
-                // Save the AI response to database
+                // Extract memories from tool calls if present
+                const memories = extractMemoriesFromToolCalls(assistantMessage);
+                
+                if (memories && memories.length > 0) {
+                  console.log(`[Memory] Found ${memories.length} memories in assistant message, storing directly in message record`);
+                }
+
+                // Save the AI response to database with memories included
                 await saveMessages({
                   messages: [
                     {
@@ -209,6 +274,7 @@ Examples of INCORRECT usage (DO NOT DO THIS):
                       tool_calls: assistantMessage.tool_calls || null,
                       attachments:
                         assistantMessage.experimental_attachments ?? [],
+                      memories: memories, // Include the memories directly in the message record
                       createdAt: new Date(),
                     },
                   ],

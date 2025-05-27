@@ -9,6 +9,7 @@ import {
   primaryKey,
   foreignKey,
   boolean,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('User', {
@@ -94,6 +95,7 @@ export const message = pgTable('Message_v2', {
   parts: json('parts').notNull(),
   tool_calls: json('tool_calls').default(null),
   attachments: json('attachments').notNull(),
+  memories: jsonb('memories').default(null),
   createdAt: timestamp('createdAt').notNull(),
 });
 
@@ -150,7 +152,9 @@ export const document = pgTable(
     createdAt: timestamp('createdAt').notNull(),
     title: text('title').notNull(),
     content: text('content'),
-    kind: varchar('text', { enum: ['text', 'code', 'image', 'sheet'] })
+    kind: varchar('text', {
+      enum: ['text', 'code', 'image', 'sheet', 'memory'],
+    })
       .notNull()
       .default('text'),
     userId: uuid('userId')
@@ -193,3 +197,17 @@ export const suggestion = pgTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+// Message Memories table to store associations between messages and their retrieved memories
+export const messageMemory = pgTable(
+  'MessageMemory',
+  {
+    id: uuid('id').primaryKey().notNull().defaultRandom(),
+    messageId: uuid('messageId').notNull(),
+    chatId: uuid('chatId').notNull(),
+    memories: jsonb('memories').notNull(),
+    createdAt: timestamp('createdAt').notNull().defaultNow(),
+  }
+);
+
+export type MessageMemory = InferSelectModel<typeof messageMemory>;

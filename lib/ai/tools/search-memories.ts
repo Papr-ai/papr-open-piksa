@@ -63,7 +63,7 @@ export const searchMemories = ({ session }: SearchMemoriesOptions) =>
         const memories = await memoryService.searchMemories(
           paprUserId,
           query,
-          10,
+          20,
         );
 
         const formattedMemories = memories.map((memory) => {

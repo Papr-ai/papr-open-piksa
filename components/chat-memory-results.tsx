@@ -1,132 +1,228 @@
-import { useEffect, useState } from 'react';
-import { MemoryResults } from './memory-results';
+import { useEffect, useState, useRef } from 'react';
 import type { ExtendedUIMessage } from '@/lib/types';
+import { FileIcon } from './icons';
+import { MemoryDrawer } from './memory-drawer';
+import { useThinkingState } from '@/lib/thinking-state';
 
 interface ChatMemoryResultsProps {
-  aiState: {
-    messages: ExtendedUIMessage[];
-  };
+  message: ExtendedUIMessage;
 }
 
-export function ChatMemoryResults({ aiState }: ChatMemoryResultsProps) {
-  const [memoryResults, setMemoryResults] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+// Create a global cache to track messages with no memories
+const NO_MEMORY_MESSAGES = new Set<string>();
+// Create a global cache to track messages with memories
+const HAS_MEMORY_MESSAGES = new Set<string>();
+// Track rendered memory components by message ID
+const RENDERED_MEMORY_COMPONENTS = new Set<string>();
 
-  // Extract memory search results from AI messages and tools
-  useEffect(() => {
-    if (!aiState?.messages) return;
+export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [memories, setMemories] = useState<Array<any>>([]);
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const { setThinkingState } = useThinkingState();
+  // Add a ref to track if this is the first render
+  const isFirstRender = useRef(true);
+  const messageId = ((message as any).objectId || message.id) as string;
 
-    // Add debug logging to see all messages
-    console.log('[Memory UI Debug] Total messages:', aiState.messages.length);
+  // Function to store memories in localStorage for fast retrieval
+  const storeMemoriesInLocalStorage = (messageId: string, memoriesData: any[]) => {
+    try {
+      localStorage.setItem(`memory-${messageId}`, JSON.stringify(memoriesData));
+      console.log(`[MEMORY] Stored ${memoriesData.length} memories for message ${messageId} in localStorage`);
+    } catch (err) {
+      console.error('[MEMORY] Error storing memories in localStorage:', err);
+    }
+  };
 
-    // Check recent AI assistant messages for memory search tool usage
-    const recentMessages = [...aiState.messages].reverse().slice(0, 5);
-
-    // Log information about each message
-    recentMessages.forEach((msg, idx) => {
-      console.log(`[Memory UI Debug] Message #${idx + 1} role:`, msg.role);
-      if (msg.tool_calls) {
-        console.log(
-          `[Memory UI Debug] Message #${idx + 1} has tool_calls:`,
-          msg.tool_calls.length,
-        );
-        msg.tool_calls.forEach((tc, tcIdx) => {
-          console.log(`[Memory UI Debug] Tool call #${tcIdx + 1}:`, {
-            name: tc.function?.name,
-            hasOutput: !!tc.function?.output,
-          });
-        });
+  // Function to fetch memories from localStorage
+  const fetchMemoriesFromLocalStorage = (messageId: string) => {
+    try {
+      const storedMemories = localStorage.getItem(`memory-${messageId}`);
+      if (storedMemories) {
+        const parsedMemories = JSON.parse(storedMemories);
+        console.log(`[MEMORY] Retrieved ${parsedMemories.length} memories for message ${messageId} from localStorage`);
+        return parsedMemories;
       }
-    });
+    } catch (err) {
+      console.error('[MEMORY] Error retrieving memories from localStorage:', err);
+    }
+    return null;
+  };
 
-    let foundMemories = null;
-    let foundError = null;
+  // Prevent duplicate memory components
+  useEffect(() => {
+    // Skip if not first render
+    if (!isFirstRender.current) return;
+    isFirstRender.current = false;
+    
+    // If this message ID is already rendered, don't render it again
+    if (RENDERED_MEMORY_COMPONENTS.has(messageId)) {
+      console.log(`[MEMORY RESULTS] Skipping duplicate memory component for message ${messageId}`);
+      // Force component to not render by setting memoryCount to 0
+      setMemoryCount(0);
+      return;
+    }
+    
+    // Mark this message as rendered
+    RENDERED_MEMORY_COMPONENTS.add(messageId);
+    
+    // Cleanup function to remove this message ID when component unmounts
+    return () => {
+      RENDERED_MEMORY_COMPONENTS.delete(messageId);
+    };
+  }, [messageId]);
 
-    // Look for memory search results in tool_calls
-    for (const message of recentMessages) {
-      if (message.role !== 'assistant') continue;
+  // Load memories directly from the message object or localStorage
+  useEffect(() => {
+    if (!message) return;
 
-      // Check for tool_calls (useChat properly structures these)
-      if (message.tool_calls) {
-        for (const toolCall of message.tool_calls) {
-          if (
-            toolCall.function?.name === 'searchMemories' &&
-            toolCall.function?.output
-          ) {
-            try {
-              console.log('[Memory UI] Found searchMemories tool call');
-              console.log(
-                '[Memory UI] Raw tool output:',
-                toolCall.function.output,
-              );
-              const result = JSON.parse(toolCall.function.output);
-
-              // Add more detailed logging
-              console.log('[Memory UI] Tool output parsed:', result);
-              console.log('[Memory UI] Tool output contents:', {
-                hasMemories: !!result.memories,
-                memoryCount: result.memories?.length || 0,
-                isArray: Array.isArray(result.memories),
-                error: result.error,
-              });
-
-              // Check if we have memory results
-              if (result.memories && Array.isArray(result.memories)) {
-                console.log(
-                  `[Memory UI] Found ${result.memories.length} memories in tool call result`,
-                );
-
-                // Simply pass the raw memory result, let MemoryResults component handle parsing
-                foundMemories = result;
-
-                break;
-              }
-
-              // Check for errors
-              if (result.error) {
-                foundError = result.error;
-              }
-            } catch (err) {
-              console.error('Error parsing memory search results:', err);
+    // Skip user messages - only assistant messages have memories
+    if (message.role === 'user') return;
+    
+    // Skip if we've already determined this is a duplicate
+    if (RENDERED_MEMORY_COMPONENTS.has(messageId) && 
+        document.querySelectorAll(`[data-memory-component="${messageId}"]`).length > 1) {
+      return;
+    }
+    
+    console.log(`[MEMORY] Processing message ${messageId} for memories`);
+    
+    // Start loading
+    setIsLoading(true);
+    setThinkingState('Searching memories...', 'memory_direct_load');
+    
+    // Check for memories in the message object itself (new approach)
+    if ((message as any).memories && Array.isArray((message as any).memories)) {
+      const memoriesFromMessage = (message as any).memories;
+      console.log(`[MEMORY] Found ${memoriesFromMessage.length} memories directly in message object`);
+      
+      setMemories(memoriesFromMessage);
+      setMemoryCount(memoriesFromMessage.length);
+      
+      // Store in localStorage for faster future access
+      storeMemoriesInLocalStorage(messageId, memoriesFromMessage);
+      
+      setIsLoading(false);
+      setThinkingState('Thinking...', 'memory_direct_found');
+      return;
+    }
+    
+    // Fallback to localStorage for previously stored memories
+    const localStorageMemories = fetchMemoriesFromLocalStorage(messageId);
+    if (localStorageMemories && localStorageMemories.length > 0) {
+      console.log(`[MEMORY] Using ${localStorageMemories.length} memories from localStorage`);
+      
+      setMemories(localStorageMemories);
+      setMemoryCount(localStorageMemories.length);
+      
+      setIsLoading(false);
+      setThinkingState('Thinking...', 'memory_local_found');
+      return;
+    }
+    
+    // For compatibility with older messages, check for tool invocations with memory results
+    const toolInvocations = (message as any).toolInvocations;
+    if (toolInvocations?.length) {
+      for (const invocation of toolInvocations) {
+        if (
+          (invocation.toolName === 'searchMemories' ||
+            invocation.toolName === 'mcp_Papr_MCP_Server_get_memory') &&
+          invocation.result?.memories?.length
+        ) {
+          try {
+            const memoriesFromTool = invocation.result.memories;
+            if (memoriesFromTool && memoriesFromTool.length > 0) {
+              console.log(`[MEMORY] Found ${memoriesFromTool.length} memories in tool invocation`);
+              
+              // Store in localStorage for future access
+              storeMemoriesInLocalStorage(messageId, memoriesFromTool);
+              
+              setMemories(memoriesFromTool);
+              setMemoryCount(memoriesFromTool.length);
+              
+              setIsLoading(false);
+              setThinkingState('Processing information...', 'memory_tool_found');
+              return;
             }
+          } catch (err) {
+            console.error('[MEMORY] Error processing memory results from tool invocation:', err);
           }
         }
       }
-
-      // If we found memories, no need to check more messages
-      if (foundMemories) break;
     }
-
-    // Update state with found results
-    setMemoryResults(foundMemories);
-    setError(foundError);
+    
+    // For compatibility with even older messages, check tool_calls
+    const toolCalls = (message as any).tool_calls;
+    if (toolCalls?.length) {
+      for (const call of toolCalls) {
+        if (
+          call?.function?.name && 
+          (call.function.name.includes('searchMemories') || call.function.name.includes('get_memory')) &&
+          call.function?.output
+        ) {
+          try {
+            const output = typeof call.function.output === 'string' 
+              ? JSON.parse(call.function.output) 
+              : call.function.output;
+            
+            if (output?.memories?.length) {
+              const memoriesFromCall = output.memories;
+              console.log(`[MEMORY] Found ${memoriesFromCall.length} memories in tool_calls output`);
+              
+              // Store in localStorage for future access
+              storeMemoriesInLocalStorage(messageId, memoriesFromCall);
+              
+              setMemories(memoriesFromCall);
+              setMemoryCount(memoriesFromCall.length);
+              
+              setIsLoading(false);
+              setThinkingState('Processing information...', 'memory_call_found');
+              return;
+            }
+          } catch (e) {
+            console.error(`[MEMORY] Error parsing tool call output:`, e);
+          }
+        }
+      }
+    }
+    
+    // No memories found through any method
+    console.log(`[MEMORY] No memories found for message ${messageId}`);
     setIsLoading(false);
-  }, [aiState?.messages]);
+    setThinkingState('Thinking...', 'memory_none_found');
+  }, [message, messageId, setThinkingState]);
 
-  // Don't render anything if there are no memory results
-  if (
-    !memoryResults ||
-    !memoryResults.memories ||
-    memoryResults.memories.length === 0
-  ) {
-    // Log why we're not showing results
-    console.log('[Memory UI] Not showing memory results because:', {
-      noResults: !memoryResults,
-      noMemoriesProperty: memoryResults && !memoryResults.memories,
-      emptyMemoriesArray: memoryResults?.memories?.length === 0,
-    });
-    return null;
-  }
+  if (memoryCount === 0 && !isLoading) return null;
 
   return (
-    <div className="bg-muted/30 rounded-lg p-4 mb-4">
-      <h3 className="text-sm font-medium mb-3">Related Memories</h3>
-      <MemoryResults
-        memories={memoryResults}
-        isLoading={isLoading}
-        error={error}
+    <>
+      <div className="mt-2" data-memory-component={messageId}>
+        <button
+          type="button"
+          onClick={() => setIsDrawerOpen(true)}
+          className="bg-muted/50 cursor-pointer border py-2 px-3 rounded-xl w-fit flex flex-row gap-3 items-start hover:bg-muted/70 transition-colors"
+          disabled={isLoading}
+        >
+          <div className="text-muted-foreground mt-1">
+            <FileIcon />
+          </div>
+          <div className="text-left flex flex-col">
+            <span className="font-medium">Related Memories</span>
+            <span className="text-sm text-muted-foreground">
+              {isLoading 
+                ? "Loading memories..." 
+                : `${memoryCount} ${memoryCount === 1 ? 'memory' : 'memories'} found - Click to view`}
+            </span>
+          </div>
+        </button>
+      </div>
+
+      <MemoryDrawer 
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+        memories={memories}
       />
-    </div>
+    </>
   );
 }

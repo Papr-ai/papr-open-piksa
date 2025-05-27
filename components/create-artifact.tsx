@@ -34,7 +34,7 @@ export type ArtifactToolbarItem = {
 
 interface ArtifactContent<M = any> {
   title: string;
-  content: string;
+  content: string | null;
   mode: 'edit' | 'diff';
   isCurrentVersion: boolean;
   currentVersionIndex: number;

@@ -90,7 +90,10 @@ export function DocumentPreview({
       ? {
           title: artifact.title,
           kind: artifact.kind,
-          content: artifact.content,
+          content:
+            typeof artifact.content === 'string'
+              ? artifact.content
+              : JSON.stringify(artifact.content),
           id: artifact.documentId,
           createdAt: new Date(),
           userId: 'noop',
@@ -158,23 +161,27 @@ const PureHitboxLayer = ({
     (event: MouseEvent<HTMLElement>) => {
       const boundingBox = event.currentTarget.getBoundingClientRect();
 
-      setArtifact((artifact) =>
-        artifact.status === 'streaming'
-          ? { ...artifact, isVisible: true }
-          : {
-              ...artifact,
-              title: result.title,
-              documentId: result.id,
-              kind: result.kind,
-              isVisible: true,
-              boundingBox: {
-                left: boundingBox.x,
-                top: boundingBox.y,
-                width: boundingBox.width,
-                height: boundingBox.height,
-              },
-            },
-      );
+      setArtifact((artifact) => {
+        // If it's already streaming, just make it visible
+        if (artifact.status === 'streaming') {
+          return { ...artifact, isVisible: true };
+        }
+
+        // For other artifacts, update with result properties
+        return {
+          ...artifact,
+          title: result.title,
+          documentId: result.id,
+          kind: result.kind,
+          isVisible: true,
+          boundingBox: {
+            left: boundingBox.x,
+            top: boundingBox.y,
+            width: boundingBox.width,
+            height: boundingBox.height,
+          },
+        };
+      });
     },
     [setArtifact, result],
   );
@@ -209,25 +216,30 @@ const PureDocumentHeader = ({
   title: string;
   kind: ArtifactKind;
   isStreaming: boolean;
-}) => (
-  <div className="p-4 border rounded-t-2xl flex flex-row gap-2 items-start sm:items-center justify-between dark:bg-muted border-b-0 dark:border-zinc-700">
-    <div className="flex flex-row items-start sm:items-center gap-3">
-      <div className="text-muted-foreground">
-        {isStreaming ? (
-          <div className="animate-spin">
-            <LoaderIcon />
-          </div>
-        ) : kind === 'image' ? (
-          <ImageIcon />
-        ) : (
-          <FileIcon />
-        )}
+}) => {
+  // Filter out unsupported kinds
+  const displayKind = kind === 'memory' ? 'text' : kind;
+
+  return (
+    <div className="p-4 border rounded-t-2xl flex flex-row gap-2 items-start sm:items-center justify-between dark:bg-muted border-b-0 dark:border-zinc-700">
+      <div className="flex flex-row items-start sm:items-center gap-3">
+        <div className="text-muted-foreground">
+          {isStreaming ? (
+            <div className="animate-spin">
+              <LoaderIcon />
+            </div>
+          ) : displayKind === 'image' ? (
+            <ImageIcon />
+          ) : (
+            <FileIcon />
+          )}
+        </div>
+        <div className="-translate-y-1 sm:translate-y-0 font-medium">{title}</div>
       </div>
-      <div className="-translate-y-1 sm:translate-y-0 font-medium">{title}</div>
+      <div className="w-8" />
     </div>
-    <div className="w-8" />
-  </div>
-);
+  );
+};
 
 const DocumentHeader = memo(PureDocumentHeader, (prevProps, nextProps) => {
   if (prevProps.title !== nextProps.title) return false;

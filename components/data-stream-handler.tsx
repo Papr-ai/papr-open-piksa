@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import { artifactDefinitions, type ArtifactKind } from './artifact';
 import type { Suggestion } from '@/lib/db/schema';
 import { useArtifact } from '@/hooks/use-artifact';
+import { useThinkingState } from '@/lib/thinking-state';
 
 export type DataStreamDelta = {
   type:
@@ -18,32 +19,55 @@ export type DataStreamDelta = {
     | 'clear'
     | 'finish'
     | 'kind'
-    | 'status';
-  content: string | Suggestion;
+    | 'status'
+    | 'tool-call'
+    | 'tool-result';
+  content: string | Suggestion | Record<string, any>;
   language?: string;
+  toolCall?: {
+    id: string;
+    name: string;
+  };
+  toolResult?: {
+    id: string;
+    result: any;
+  };
+  tool_calls?: Array<{
+    id: string;
+    function: {
+      name: string;
+    };
+  }>;
 };
 
 export function DataStreamHandler({ id }: { id: string }) {
-  const { data: dataStream } = useChat({ id });
+  const { data: dataStream, messages } = useChat({ id });
   const { artifact, setArtifact, setMetadata } = useArtifact();
   const lastProcessedIndex = useRef(-1);
-
+  const { setThinkingState } = useThinkingState();
+  
   useEffect(() => {
     if (!dataStream?.length) return;
 
     const newDeltas = dataStream.slice(lastProcessedIndex.current + 1);
     lastProcessedIndex.current = dataStream.length - 1;
 
-    // Log all new deltas with safer access to properties
+    // Log all new deltas with more details about tool calls
     console.log(
-      '[DATA STREAM] All new deltas:',
+      '[DATA STREAM] New deltas:',
       newDeltas.map((d) => {
-        if (d && typeof d === 'object' && 'type' in d && 'content' in d) {
-          const content = d.content;
+        if (d && typeof d === 'object') {
+          const toolCallInfo = 'toolCall' in d ? d.toolCall : 
+                               'tool_calls' in d ? d.tool_calls : 
+                               null;
+          
+          const content = 'content' in d ? d.content : null;
+          
           return {
-            type: d.type,
-            contentPreview:
-              typeof content === 'string' ? content : 'not a string',
+            type: 'type' in d ? d.type : 'unknown',
+            toolCall: toolCallInfo ? JSON.stringify(toolCallInfo) : undefined,
+            contentPreview: typeof content === 'string' ? content.substring(0, 50) : 'non-string content',
+            keys: Object.keys(d),
             timestamp: new Date().toISOString(),
           };
         }
@@ -63,6 +87,8 @@ export function DataStreamHandler({ id }: { id: string }) {
         status: 'idle',
         isVisible: true,
       }));
+      
+      setThinkingState('Thinking...', 'error_detected');
       return;
     }
 
@@ -126,14 +152,11 @@ export function DataStreamHandler({ id }: { id: string }) {
             ...draftArtifact,
             status: 'idle',
           }));
+          
+          setThinkingState('Thinking...', 'stream_finished');
           break;
 
         default:
-          // Log unhandled delta types
-          console.log('[DATA STREAM] Unhandled delta type:', {
-            type: delta.type,
-            timestamp: new Date().toISOString(),
-          });
           break;
       }
     });
@@ -148,6 +171,8 @@ export function DataStreamHandler({ id }: { id: string }) {
     ) {
       console.log('[DATA STREAM] Stream complete or errored, cleaning up');
       lastProcessedIndex.current = -1; // Reset for next stream
+      
+      setThinkingState('Thinking...', 'stream_cleanup');
 
       // Ensure we're in idle state but don't change visibility
       setArtifact((draftArtifact) => ({
@@ -155,7 +180,7 @@ export function DataStreamHandler({ id }: { id: string }) {
         status: 'idle',
       }));
     }
-  }, [dataStream, setArtifact, setMetadata]);
+  }, [dataStream, setArtifact, setMetadata, setThinkingState]);
 
   return null;
 }

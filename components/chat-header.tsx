@@ -76,7 +76,7 @@ function PureChatHeader({
           target="_blank"
           rel="noopener noreferrer"
         >
-          <img src="/papr-logo.svg" alt="Papr Logo" className="w-4 h-4 mr-2" />
+          <img src="/images/papr-logo.svg" alt="Papr Logo" className="w-4 h-4 mr-2" />
           Documentation
         </Link>
       </Button>
