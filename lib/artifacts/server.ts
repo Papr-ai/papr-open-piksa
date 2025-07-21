@@ -130,6 +130,42 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
   };
 }
 
+export const artifactKinds = [
+  'text',
+  'code',
+  'image',
+  'sheet',
+  'memory',
+  'github-code',
+] as const;
+
+// Simple handler for GitHub code artifact
+const githubCodeDocumentHandler = createDocumentHandler<'github-code'>({
+  kind: 'github-code',
+  onCreateDocument: async ({ title, dataStream }) => {
+    // While GitHub file explorer doesn't need generated content,
+    // we should actually create a basic project structure to get started
+    console.log('[GITHUB ARTIFACT] Creating document with title:', title);
+    
+    // Signal that we want to create a code project with this title
+    dataStream.writeData({
+      type: 'code-project-request',
+      content: {
+        title,
+        kind: 'web-game'
+      }
+    });
+    
+    // Let the client decide when to finish
+    return '';
+  },
+  onUpdateDocument: async ({ document, description, dataStream }) => {
+    // GitHub file explorer doesn't need updated content
+    dataStream.writeData({ type: 'finish', content: '' });
+    return document.content || '';
+  },
+});
+
 /*
  * Use this array to define the document handlers for each artifact kind.
  */
@@ -138,12 +174,5 @@ export const documentHandlersByArtifactKind: Array<DocumentHandler> = [
   codeDocumentHandler,
   imageDocumentHandler,
   sheetDocumentHandler,
+  githubCodeDocumentHandler,
 ];
-
-export const artifactKinds = [
-  'text',
-  'code',
-  'image',
-  'sheet',
-  'memory',
-] as const;

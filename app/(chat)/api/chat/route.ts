@@ -22,6 +22,19 @@ import { updateDocument } from '@/lib/ai/tools/update-document';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { searchMemories } from '@/lib/ai/tools/search-memories';
+import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
+import { 
+  createListRepositoriesTool,
+  createCreateProjectTool,
+  createGetRepositoryFilesTool,
+  createGetFileContentTool,
+  createSearchFilesTool,
+  createOpenFileExplorerTool,
+  createCreateRepositoryTool,
+  createUpdateStagedFileTool,
+  createGetStagingStateTool,
+  createClearStagedFilesTool
+} from '@/lib/ai/tools/github-integration';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 import {
@@ -30,6 +43,9 @@ import {
 } from '@/lib/ai/memory/middleware';
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { ExtendedUIMessage } from '@/lib/types';
+import { modelSupportsReasoning } from '@/lib/ai/models';
+import { createToolFeedbackMiddleware } from '@/lib/ai/tools/middleware/feedback';
+import { ToolRegistry } from '@/lib/ai/tools/middleware/registry';
 
 export const maxDuration = 60;
 
@@ -38,14 +54,32 @@ const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY || '';
 
 // Update sanitization function to return messages in the correct format
 function sanitizeMessageForAI(message: ExtendedUIMessage) {
+  // Filter out incomplete tool invocations (only include those with results)
+  const completedToolInvocations = message.toolInvocations?.filter(invocation => {
+    // Only include tool invocations that have completed successfully
+    return invocation.state === 'result';
+  });
+
+  // Find text content or use placeholder for empty messages
+  const textPart = message.parts?.find(part => part.type === 'text');
+  const textContent = textPart?.text || '';
+  
+  // Use placeholder if text is empty but we have attachments or tool calls
+  const hasAttachments = message.experimental_attachments && message.experimental_attachments.length > 0;
+  const hasToolCalls = message.tool_calls && message.tool_calls.length > 0;
+  const content = textContent.trim() || 
+                  (hasAttachments ? "[Attachment provided]" : 
+                  (hasToolCalls ? "[Tool call provided]" : "Empty message"));
+
   // Create a new message with only the properties expected by the AI SDK
   return {
     id: message.id,
     role: message.role,
-    content: message.parts?.find(part => part.type === 'text')?.text || '',
+    content: content,
     // Only include these if they exist and are needed
     tool_calls: message.tool_calls,
-    toolInvocations: message.toolInvocations,
+    // Only include completed tool invocations to avoid AI SDK errors
+    toolInvocations: completedToolInvocations && completedToolInvocations.length > 0 ? completedToolInvocations : undefined,
   };
 }
 
@@ -95,6 +129,531 @@ function extractMemoriesFromToolCalls(message: any): any[] | null {
   return null;
 }
 
+interface ToolStartEvent {
+  toolName: string;
+  args: Record<string, any>;
+}
+
+interface ToolEndEvent {
+  toolName: string;
+  result: Record<string, any>;
+}
+
+// Helper function to generate user-friendly message when a tool call starts
+function getToolCallStartMessage(toolName: string, args: Record<string, any>): string {
+  switch (toolName) {
+    case 'searchMemories':
+      return `🔍 Searching your memories for: "${args.query}"`;
+    case 'getWeather':
+      return `🌤️ Getting weather information for ${args.location}`;
+    case 'createDocument':
+      return `📝 Creating document: "${args.title}"`;
+    case 'updateDocument':
+      return `✏️ Updating document: "${args.title}"`;
+    case 'requestSuggestions':
+      return `💡 Generating suggestions for this conversation`;
+    case 'listRepositories':
+      return `📂 Loading your GitHub repositories`;
+    case 'createProject':
+      return `🚀 Creating project: "${args.project?.name || 'New Project'}" in ${args.repository?.owner}/${args.repository?.name}`;
+    case 'getRepositoryFiles':
+      return `📁 Loading files from ${args.repository?.owner}/${args.repository?.name}`;
+    case 'getFileContent':
+      return `📄 Reading file: ${args.filePath}`;
+    case 'searchFiles':
+      return `🔎 Searching for files matching: "${args.searchQuery}"`;
+    case 'openFileExplorer':
+      return `🗂️ Opening file explorer for ${args.repository?.owner}/${args.repository?.name}`;
+    case 'createRepository':
+      return `🏗️ Setting up new repository: "${args.repositoryName}"`;
+    case 'requestRepositoryApproval':
+      return `✅ Requesting approval for repository: "${args.repositoryName}"`;
+    case 'updateStagedFile':
+      return `📝 Updating staged file: ${args.filePath}`;
+    case 'getStagingState':
+      return `🔍 Checking staging state for ${args.repository?.owner}/${args.repository?.name}`;
+    case 'clearStagedFiles':
+      return `🗑️ Clearing staged files for ${args.repository?.owner}/${args.repository?.name}`;
+    case 'createTaskPlan':
+      return `📋 Creating task plan with ${args.tasks?.length || 0} steps`;
+    case 'updateTask':
+      return `📝 Updating task status`;
+    case 'completeTask':
+      return `✅ Completing task`;
+    case 'getTaskStatus':
+      return `📊 Checking task progress`;
+    case 'addTask':
+      return `📋 Adding tasks to plan`;
+    default:
+      return `🔧 Running ${toolName}`;
+  }
+}
+
+// Helper function to generate user-friendly message when a tool call completes
+function getToolCallResultMessage(toolName: string, result: Record<string, any>): string {
+  switch (toolName) {
+    case 'searchMemories':
+      const memoryCount = result.memories?.length || 0;
+      return memoryCount > 0 
+        ? `✅ Found ${memoryCount} relevant ${memoryCount === 1 ? 'memory' : 'memories'}`
+        : `📭 No relevant memories found`;
+    case 'getWeather':
+      return `✅ Weather information retrieved`;
+    case 'createDocument':
+      return `✅ Document created successfully`;
+    case 'updateDocument':
+      return `✅ Document updated successfully`;
+    case 'requestSuggestions':
+      return `✅ Suggestions generated`;
+    case 'listRepositories':
+      const repoCount = result.repositories?.length || 0;
+      return `✅ Found ${repoCount} repositories`;
+    case 'createProject':
+      if (result.success) {
+        const fileCount = result.stagedFiles?.length || 0;
+        return `✅ Project "${result.project?.name || 'New Project'}" created with ${fileCount} files staged for review`;
+      } else {
+        return `❌ Failed to create project: ${result.error}`;
+      }
+    case 'getRepositoryFiles':
+      const fileCount = result.files?.length || 0;
+      return `✅ Loaded ${fileCount} files`;
+    case 'getFileContent':
+      return `✅ File content loaded`;
+    case 'searchFiles':
+      const searchResults = result.searchResults?.length || 0;
+      return `✅ Found ${searchResults} matching files`;
+    case 'openFileExplorer':
+      return `✅ File explorer opened`;
+    case 'createRepository':
+      if (result.requiresApproval) {
+        return `⏳ Awaiting approval for repository: "${result.repositoryName}"`;
+      } else if (result.success) {
+        return `✅ Repository "${result.repository?.name}" created successfully`;
+      } else {
+        return `❌ Failed to create repository: ${result.error}`;
+      }
+    case 'requestRepositoryApproval':
+      return `✅ Repository approval requested`;
+    case 'updateStagedFile':
+      return `✅ Staged file updated`;
+    case 'getStagingState':
+      const stagedCount = result.stagedFilesCount || 0;
+      return `✅ Found ${stagedCount} staged files`;
+    case 'clearStagedFiles':
+      const clearedCount = result.clearedCount || 0;
+      return `✅ Cleared ${clearedCount} staged files`;
+    case 'createTaskPlan':
+    case 'updateTask':
+    case 'completeTask':
+    case 'getTaskStatus':
+    case 'addTask':
+      if (result.error) {
+        return `❌ Task tracker error: ${result.error}`;
+      } else if (result.success) {
+        if (result.nextTask) {
+          return `✅ ${result.message} - Next: ${result.nextTask.title}`;
+        } else if (result.allCompleted) {
+          return `🎉 All tasks completed! ${result.message}`;
+        } else {
+          return `✅ ${result.message}`;
+        }
+      } else {
+        return `✅ Task tracker completed`;
+      }
+    default:
+      return `✅ ${toolName} completed successfully`;
+  }
+}
+
+// Helper function to prepare file path for streaming code
+function streamFileCode(dataStream: any, filePath: string, content: string, language: string, isFirst = false, isFinal = false, isNewChat = false) {
+  // Helper to get filename from path
+  const getFilename = (path: string) => path.split('/').pop();
+
+  console.log(`[CHAT API] Streaming code for file: ${filePath}`);
+  
+  // Send file path for UI indicator
+  if (isFirst) {
+    dataStream.writeData({
+      type: 'project-structure',
+      content: [{
+        path: filePath,
+        name: getFilename(filePath) || 'file',
+        isDirectory: false,
+        content: '',
+        language
+      }]
+    });
+  }
+  
+  // Send the code content with file path
+  dataStream.writeData({
+    type: 'code-delta',
+    content: content,
+    filePath: filePath,
+    isIncremental: !isFinal,
+    isFinal: isFinal,
+    newChat: isNewChat // Pass the flag to indicate a new chat/project
+  });
+
+  // Mark streaming complete for this file if it's final
+  if (isFinal) {
+    console.log(`[CHAT API] Completed streaming for file: ${filePath}`);
+  }
+}
+
+// Helper function to create and stream a new code project
+async function createAndStreamCodeProject(dataStream: any, title: string, isNewChat = true) {
+  console.log(`[CHAT API] Creating new code project: ${title}`);
+  
+  // Define basic project structure for a web-based game
+  const projectFiles = [
+    {
+      path: 'index.html',
+      content: `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title}</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="game-container">
+    <canvas id="gameCanvas"></canvas>
+    <div class="game-ui">
+      <div class="score">Score: <span id="scoreValue">0</span></div>
+      <button id="startButton">Start Game</button>
+    </div>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>`,
+      language: 'html'
+    },
+    {
+      path: 'style.css',
+      content: `body {
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background-color: #f0f0f0;
+  font-family: Arial, sans-serif;
+}
+
+.game-container {
+  position: relative;
+  width: 600px;
+  height: 400px;
+  border: 2px solid #333;
+  overflow: hidden;
+}
+
+canvas {
+  background-color: #111;
+}
+
+.game-ui {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  color: white;
+  font-size: 18px;
+}
+
+.score {
+  margin-bottom: 10px;
+}
+
+button {
+  background-color: #4CAF50;
+  border: none;
+  color: white;
+  padding: 8px 16px;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 16px;
+  margin: 4px 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}`,
+      language: 'css'
+    },
+    {
+      path: 'script.js',
+      content: `// Game variables
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const startButton = document.getElementById('startButton');
+const scoreElement = document.getElementById('scoreValue');
+
+// Set canvas dimensions
+canvas.width = 600;
+canvas.height = 400;
+
+// Game state
+let gameRunning = false;
+let score = 0;
+let snake = [];
+let food = {};
+let direction = 'right';
+
+// Game settings
+const gridSize = 20;
+const initialSnakeLength = 3;
+const gameSpeed = 100; // milliseconds
+
+// Initialize game
+function initGame() {
+  // Reset game state
+  gameRunning = true;
+  score = 0;
+  scoreElement.textContent = score;
+  direction = 'right';
+  
+  // Create initial snake
+  snake = [];
+  for (let i = 0; i < initialSnakeLength; i++) {
+    snake.push({
+      x: Math.floor(canvas.width / (2 * gridSize)) * gridSize - i * gridSize,
+      y: Math.floor(canvas.height / (2 * gridSize)) * gridSize
+    });
+  }
+  
+  // Place initial food
+  placeFood();
+  
+  // Start game loop
+  gameLoop();
+}
+
+// Place food at random position
+function placeFood() {
+  food = {
+    x: Math.floor(Math.random() * (canvas.width / gridSize)) * gridSize,
+    y: Math.floor(Math.random() * (canvas.height / gridSize)) * gridSize
+  };
+  
+  // Make sure food doesn't spawn on snake
+  for (let segment of snake) {
+    if (segment.x === food.x && segment.y === food.y) {
+      placeFood(); // Try again
+      break;
+    }
+  }
+}
+
+// Game loop
+function gameLoop() {
+  if (!gameRunning) return;
+  
+  setTimeout(() => {
+    moveSnake();
+    checkCollision();
+    drawGame();
+    gameLoop();
+  }, gameSpeed);
+}
+
+// Move snake
+function moveSnake() {
+  // Create new head based on direction
+  const head = {x: snake[0].x, y: snake[0].y};
+  
+  switch(direction) {
+    case 'up': head.y -= gridSize; break;
+    case 'down': head.y += gridSize; break;
+    case 'left': head.x -= gridSize; break;
+    case 'right': head.x += gridSize; break;
+  }
+  
+  // Add new head to beginning of snake array
+  snake.unshift(head);
+  
+  // Check if food is eaten
+  if (head.x === food.x && head.y === food.y) {
+    score += 10;
+    scoreElement.textContent = score;
+    placeFood();
+  } else {
+    // Remove tail if food wasn't eaten
+    snake.pop();
+  }
+}
+
+// Check for collisions
+function checkCollision() {
+  const head = snake[0];
+  
+  // Check wall collision
+  if (
+    head.x < 0 ||
+    head.y < 0 ||
+    head.x >= canvas.width ||
+    head.y >= canvas.height
+  ) {
+    gameOver();
+    return;
+  }
+  
+  // Check self collision (starting from index 1 to avoid checking head against itself)
+  for (let i = 1; i < snake.length; i++) {
+    if (head.x === snake[i].x && head.y === snake[i].y) {
+      gameOver();
+      return;
+    }
+  }
+}
+
+// Draw everything
+function drawGame() {
+  // Clear canvas
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw snake
+  ctx.fillStyle = '#4CAF50';
+  for (let segment of snake) {
+    ctx.fillRect(segment.x, segment.y, gridSize - 2, gridSize - 2);
+  }
+  
+  // Draw food
+  ctx.fillStyle = '#FF5252';
+  ctx.fillRect(food.x, food.y, gridSize - 2, gridSize - 2);
+}
+
+// Game over
+function gameOver() {
+  gameRunning = false;
+  alert('Game Over! Your score: ' + score);
+  startButton.style.display = 'inline-block';
+}
+
+// Event listeners
+startButton.addEventListener('click', () => {
+  startButton.style.display = 'none';
+  initGame();
+});
+
+// Keyboard controls
+document.addEventListener('keydown', (event) => {
+  if (!gameRunning) return;
+  
+  switch(event.key) {
+    case 'ArrowUp':
+      if (direction !== 'down') direction = 'up';
+      break;
+    case 'ArrowDown':
+      if (direction !== 'up') direction = 'down';
+      break;
+    case 'ArrowLeft':
+      if (direction !== 'right') direction = 'left';
+      break;
+    case 'ArrowRight':
+      if (direction !== 'left') direction = 'right';
+      break;
+  }
+});`,
+      language: 'javascript'
+    },
+    {
+      path: 'README.md',
+      content: `# ${title}
+
+A modern snake game built with HTML5 Canvas and JavaScript.
+
+## How to Play
+
+1. Open index.html in a web browser
+2. Click the "Start Game" button
+3. Use the arrow keys to control the snake
+4. Eat the food to grow and score points
+5. Avoid hitting the walls or yourself
+
+## Features
+
+- Responsive canvas-based gameplay
+- Score tracking
+- Clean, modern UI
+- Customizable speed and grid size
+
+## Customization
+
+You can customize the game by modifying the variables in script.js:
+- gameSpeed: Changes how fast the snake moves
+- gridSize: Changes the size of the snake and food
+- initialSnakeLength: Changes the starting length of the snake`,
+      language: 'markdown'
+    }
+  ];
+
+  // First, send the project structure to set up the file tree
+  dataStream.writeData({
+    type: 'project-structure',
+    content: projectFiles.map(file => ({
+      path: file.path,
+      name: file.path.split('/').pop() || file.path,
+      isDirectory: false,
+      content: '',  // Initial content is empty, will be streamed
+      language: file.language
+    })),
+    newChat: isNewChat
+  });
+
+  // Wait a moment to ensure structure is processed
+  await new Promise(resolve => setTimeout(resolve, 100));
+
+  // Then stream each file's content
+  for (let i = 0; i < projectFiles.length; i++) {
+    const file = projectFiles[i];
+    const isFirst = i === 0;
+    const isFinal = i === projectFiles.length - 1;
+    
+    // Stream this file's code
+    streamFileCode(
+      dataStream, 
+      file.path,
+      file.content, 
+      file.language,
+      isFirst,
+      true,  // Each file is complete when sent
+      isNewChat
+    );
+    
+    // Small delay between files to avoid overwhelming the client
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  return "Project files created successfully";
+}
+
+// Tool configuration for error handling
+const toolConfig = {
+  searchMemories: {
+    errorHandling: {
+      nonFatal: true,
+      errorMessage: 'Memory search failed, continuing without it',
+    }
+  },
+  getWeather: {
+    errorHandling: {
+      nonFatal: true,
+      errorMessage: 'Weather lookup failed, continuing without it',
+    }
+  },
+  requestSuggestions: {
+    errorHandling: {
+      nonFatal: true,
+      errorMessage: 'Failed to generate suggestions, continuing without them',
+    }
+  }
+};
+
 export async function POST(request: Request) {
   try {
     const {
@@ -106,6 +665,9 @@ export async function POST(request: Request) {
       messages: Array<ExtendedUIMessage>;
       selectedChatModel: string;
     } = await request.json();
+
+    // Get abort signal from request
+    const signal = request.signal;
 
     const session = await auth();
 
@@ -133,6 +695,57 @@ export async function POST(request: Request) {
       }
     }
 
+    // Extract context information from headers if present
+    const contextHeader = request.headers.get('X-Context');
+    let contextData = [];
+    
+    if (contextHeader && contextHeader.length > 0) {
+      try {
+        contextData = JSON.parse(contextHeader);
+        console.log('[CHAT API] Context data received:', contextData.length, 'items');
+      } catch (error) {
+        console.error('[CHAT API] Error parsing context header:', error);
+      }
+    }
+
+    // Extract interaction mode from headers if present
+    const interactionModeHeader = request.headers.get('X-Interaction-Mode');
+    const interactionMode = interactionModeHeader === 'build' ? 'build' : 'chat';
+    console.log('[CHAT API] Interaction mode:', interactionMode);
+
+    // Extract code artifact info if present
+    const hasCodeArtifact = request.headers.get('X-Code-Artifact') === 'true';
+    const isNewChat = request.headers.get('X-New-Chat') === 'true';
+    let codeFileStructure: any[] = [];
+    let currentCodeFile = '';
+    let repoOwner = '';
+    let repoName = '';
+    
+    if (hasCodeArtifact) {
+      try {
+        // Check for GitHub repository info
+        repoOwner = request.headers.get('X-Code-Repo-Owner') || '';
+        repoName = request.headers.get('X-Code-Repo-Name') || '';
+        
+        // Check for regular file structure
+        const codeFilesHeader = request.headers.get('X-Code-Files');
+        if (codeFilesHeader) {
+          codeFileStructure = JSON.parse(codeFilesHeader);
+        }
+        
+        currentCodeFile = request.headers.get('X-Current-File') || '';
+        
+        console.log('[CHAT API] Received code artifact info:', {
+          fileCount: codeFileStructure.length,
+          currentFile: currentCodeFile,
+          githubRepo: repoOwner && repoName ? `${repoOwner}/${repoName}` : 'none',
+          isNewChat
+        });
+      } catch (error) {
+        console.error('[CHAT API] Error parsing code artifact headers:', error);
+      }
+    }
+
     // STEP 1: First, save the message to our database
     console.log('[Memory] Saving user message to database...');
     await saveMessages({
@@ -151,15 +764,151 @@ export async function POST(request: Request) {
           tool_calls: null,
           attachments: userMessage.experimental_attachments ?? [],
           memories: null,
+          modelId: null, // User messages don't have a model
           createdAt: new Date(),
         },
       ],
     });
     console.log('[Memory] User message saved to database');
 
+    // Check if the selected model supports reasoning
+    const supportsReasoning = modelSupportsReasoning(selectedChatModel);
+    console.log(`[Chat API] Model ${selectedChatModel} supports reasoning: ${supportsReasoning}`);
+
+    // Prepare system prompt with context if needed
+    const prepareSystemPrompt = (basePrompt: string) => {
+      let enhancedPrompt = basePrompt;
+      
+      // Add context information if available
+      if (contextData.length > 0) {
+        // Add context information to the system prompt
+        const contextSection = `
+CONTEXT INFORMATION:
+The user has provided the following context for this conversation:
+${contextData.map((ctx: any, index: number) => {
+  // Include the document content if available
+  const contentPreview = ctx.text 
+    ? `\n\nContent: ${ctx.text.substring(0, 1000)}${ctx.text.length > 1000 ? '...' : ''}`
+    : '(No text content)';
+  
+  return `\n\n[DOCUMENT ${index + 1}]: ${ctx.title} (${ctx.type})${contentPreview}`;
+}).join('\n')}
+
+Please consider this context when responding to the user's message.
+`;
+        enhancedPrompt += contextSection;
+      }
+      
+      // Add build mode instructions if in build mode
+      if (interactionMode === 'build') {
+        const buildModeSection = `
+BUILD MODE INSTRUCTIONS:
+The user is in "build" mode, focused on creating code and applications rather than just chatting.
+- ALWAYS write code directly in the code artifact (kind: 'code')
+- Focus on creating complete, runnable projects with all necessary files
+- Provide step-by-step guidance on building and running the application
+- When asked about general programming concepts, provide practical, executable examples
+- GitHub connection is OPTIONAL - do NOT require it
+
+LOVABLE CODE EXPERIENCE:
+1. When a user asks for code, IMMEDIATELY create a code artifact using the createDocument tool
+2. Continue streaming code as you generate it, allowing users to watch it develop
+3. Include ALL necessary files for a complete project (package.json, HTML, CSS, etc.)
+4. Make sure code is runnable - consider the execution environment
+5. Explain how to run, test, and use the code after it's created
+
+VERCEL SANDBOX EXECUTION:
+- Users can run the created code directly in a Vercel sandbox environment
+- Include clear instructions on how to run the code in the sandbox
+- If creating a web application, ensure it properly listens on the port provided by the environment
+- For Node.js projects, create a proper package.json with all dependencies
+- For Python projects, include requirements.txt with all dependencies
+- Explain any special setup or configuration needed for the sandbox environment
+
+GITHUB INTEGRATION (OPTIONAL):
+- Users MAY choose to save their code to GitHub if desired
+- Do NOT assume users have GitHub connected
+- Focus on creating functional code first, then offer GitHub options
+`;
+        enhancedPrompt += buildModeSection;
+        
+        // If we have code artifact info, add it to the system prompt
+        if (hasCodeArtifact) {
+          let codeArtifactSection = '';
+          
+          // If we have GitHub repository info
+          if (repoOwner && repoName) {
+            codeArtifactSection = `
+ACTIVE GITHUB REPOSITORY:
+The user is working with a GitHub repository: ${repoOwner}/${repoName}
+
+IMPORTANT INSTRUCTIONS:
+1. Use your available GitHub file reading tools to examine this repository
+2. Continue working with THIS repository - do not ask which repository to use
+3. When adding new code or modifying existing code, ensure it's compatible with the repository
+`;
+          }
+          // If we have regular code artifact file structure
+          else if (codeFileStructure.length > 0) {
+            codeArtifactSection = `
+ACTIVE CODE ARTIFACT:
+The user is actively working on code in the artifact editor. Here's the current file structure:
+
+${codeFileStructure.map(file => {
+  const prefix = file.isDirectory ? '📁 ' : '📄 ';
+  return `${prefix}${file.path}`;
+}).join('\n')}
+
+${currentCodeFile ? `\nThe user is currently editing: ${currentCodeFile}` : ''}
+
+IMPORTANT INSTRUCTIONS:
+1. Use your available file reading tools to examine the content of these files as needed
+2. When the user asks about specific code or functionality, read the relevant files first
+3. Continue working with THIS code project that's already open in the artifact editor
+4. DO NOT ask which repository to use - work with these files directly
+5. When adding new code or modifying existing code, ensure it's compatible with the current project
+`;
+          }
+          
+          if (codeArtifactSection) {
+            enhancedPrompt += codeArtifactSection;
+          }
+        }
+      }
+      
+      return enhancedPrompt;
+    };
+
     // STEP 2: Process AI response with memory search as a tool
     return createDataStreamResponse({
       execute: async (dataStream) => {
+        // Add signal to stream options
+        const streamOptions = {
+          signal,
+          onCancel: () => {
+            console.log('[CHAT API] Request cancelled by client');
+            dataStream.writeData({
+              type: 'status',
+              content: 'cancelled',
+            });
+          }
+        };
+
+        // Create a data stream transformer to intercept certain messages
+        const transformedDataStream = {
+          ...dataStream,
+          writeData: (data: any) => {
+            // Check for code project request
+            if (data.type === 'code-project-request') {
+              console.log('[CHAT API] Intercepted code project request:', data.content);
+              return; // Don't pass this message to the client
+            }
+            
+            // Pass through all other messages
+            return dataStream.writeData(data);
+          }
+        };
+
         // Check if memory search is enabled in the request
         const memoryHeaderValue = request.headers.get('X-Memory-Enabled');
         console.log(
@@ -174,7 +923,7 @@ export async function POST(request: Request) {
         const baseSystemPrompt = systemPrompt({ selectedChatModel });
 
         // Add memory context to system prompt if enabled
-        const enhancedSystemPrompt = isMemoryEnabled
+        let enhancedSystemPrompt = isMemoryEnabled
           ? `${baseSystemPrompt}\n\n
 IMPORTANT MEMORY TOOL INSTRUCTIONS:
 You have access to a memory search tool that can find relevant past conversations and information. Use it when you need to recall past context or information from previous conversations.
@@ -194,52 +943,190 @@ Examples of INCORRECT usage (DO NOT DO THIS):
 - Including JSON output: \`\`\`{ "memories": [...] }\`\`\`
 - Listing memories: "Here are your memories: 1. 2025-01-01: Memory content"
 - Date-based formatting: "2025-01-01: Memory content"
+
+STAGING WORKFLOW:
+When working with GitHub repositories, you have access to a staging area that prevents conflicts:
+- Files are first staged for review before being committed
+- When getting file content, you automatically check the staging area FIRST, then GitHub
+- IMPORTANT: Always check existing staged files before creating new projects using getStagingState
+- When creating projects, you have two options:
+  1. Update existing staged files (default behavior) - files with same paths will be updated
+  2. Clear all staged files first (set clearStagedFiles: true) - creates completely fresh project
+- Use updateStagedFile to modify existing staged files
+- The user can review all changes in the staging area before committing them
+- When the user runs the app, it uses the LATEST staged files, not the files in the editor
+
+STAGING BEST PRACTICES:
+1. Before creating a new project, use getStagingState to check what files are already staged
+2. If the user wants to replace an existing project entirely, you can:
+   - Use clearStagedFiles: true parameter in createProject, OR
+   - Use the clearStagedFiles tool first, then create the project normally
+3. If the user wants to update/modify an existing project, use the default behavior
+4. Always inform the user about staged files and what will happen when they run the app
+5. Use updateStagedFile to modify individual staged files without affecting others
+
+AVAILABLE STAGING TOOLS:
+- getStagingState: Check what files are currently staged in a repository
+- clearStagedFiles: Clear all staged files for a repository to start fresh
+- updateStagedFile: Update content of an existing staged file
+- createProject with clearStagedFiles: true: Create project and clear old staged files first
 `
           : baseSystemPrompt;
+        
+        // Add context information to system prompt if present
+        enhancedSystemPrompt = prepareSystemPrompt(enhancedSystemPrompt);
 
         console.log('[Memory] System prompt generation complete');
 
-        const result = streamText({
-          model: myProvider.languageModel(selectedChatModel),
-          system: enhancedSystemPrompt,
-          // Sanitize all messages to prevent errors from additional properties
-          messages: messages.map(sanitizeMessageForAI),
-          maxSteps: 5,
-          temperature: selectedChatModel === 'chat-model-reasoning' ? 1 : 0,
-          experimental_activeTools: [
-            'getWeather',
-            'createDocument',
-            'updateDocument',
-            'requestSuggestions',
-            ...(isMemoryEnabled ? (['searchMemories'] as const) : []),
-          ],
-          experimental_transform: smoothStream({ chunking: 'word' }),
-          experimental_generateMessageId: generateUUID,
-          tools: {
-            getWeather,
-            createDocument: createDocument({ session, dataStream }),
-            updateDocument: updateDocument({ session, dataStream }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
-            }),
-            ...(isMemoryEnabled
-              ? { searchMemories: searchMemories({ session, dataStream }) }
-              : {}),
-          },
-          onFinish: async ({ response }) => {
-            if (session.user?.id) {
-              try {
-                const assistantId = getTrailingMessageId({
-                  messages: response.messages.filter(
-                    (message) => message.role === 'assistant',
-                  ),
-                });
+        try {
+          // Initialize tool registry
+          const toolRegistry = new ToolRegistry();
 
-                if (!assistantId) {
-                  console.error(
-                    '[CHAT API] No assistant message found in response',
-                  );
+          // Create feedback middleware with abort signal and tool config
+          const createToolWrapper = (toolName: string) => {
+            const middleware = createToolFeedbackMiddleware({
+              toolName,
+              dataStream,
+              registry: toolRegistry,
+              signal,
+              toolConfig,
+            });
+            return middleware.wrapTool;
+          };
+
+          // Wrap tools with feedback
+          const tools = {
+            getWeather: createToolWrapper('getWeather')(getWeather),
+            createDocument: createToolWrapper('createDocument')(createDocument({ session, dataStream })),
+            updateDocument: createToolWrapper('updateDocument')(updateDocument({ session, dataStream })),
+            requestSuggestions: createToolWrapper('requestSuggestions')(requestSuggestions({ session, dataStream })),
+            listRepositories: createToolWrapper('listRepositories')(createListRepositoriesTool({ session, dataStream })),
+            createProject: createToolWrapper('createProject')(createCreateProjectTool({ session, dataStream })),
+            getRepositoryFiles: createToolWrapper('getRepositoryFiles')(createGetRepositoryFilesTool({ session, dataStream })),
+            getFileContent: createToolWrapper('getFileContent')(createGetFileContentTool({ session, dataStream })),
+            searchFiles: createToolWrapper('searchFiles')(createSearchFilesTool({ session, dataStream })),
+            openFileExplorer: createToolWrapper('openFileExplorer')(createOpenFileExplorerTool({ session, dataStream })),
+            createRepository: createToolWrapper('createRepository')(createCreateRepositoryTool({ session, dataStream })),
+            updateStagedFile: createToolWrapper('updateStagedFile')(createUpdateStagedFileTool({ session, dataStream })),
+            getStagingState: createToolWrapper('getStagingState')(createGetStagingStateTool({ session, dataStream })),
+            clearStagedFiles: createToolWrapper('clearStagedFiles')(createClearStagedFilesTool({ session, dataStream })),
+            
+            // Task tracker tools
+            createTaskPlan: createToolWrapper('createTaskPlan')(createTaskTrackerTools(dataStream).createTaskPlan),
+            updateTask: createToolWrapper('updateTask')(createTaskTrackerTools(dataStream).updateTask),
+            completeTask: createToolWrapper('completeTask')(createTaskTrackerTools(dataStream).completeTask),
+            getTaskStatus: createToolWrapper('getTaskStatus')(createTaskTrackerTools(dataStream).getTaskStatus),
+            addTask: createToolWrapper('addTask')(createTaskTrackerTools(dataStream).addTask),
+            
+            ...(isMemoryEnabled
+              ? { searchMemories: createToolWrapper('searchMemories')(searchMemories({ session, dataStream })) }
+              : {}),
+          };
+
+          // Track any code project request to handle it separately
+          let pendingCodeProjectRequest: any = null;
+          
+          // Create a data stream transformer to intercept certain messages
+          const transformedDataStream = {
+            ...dataStream,
+            writeData: (data: any) => {
+              // Check for code project request
+              if (data.type === 'code-project-request') {
+                console.log('[CHAT API] Intercepted code project request:', data.content);
+                pendingCodeProjectRequest = data.content;
+                return; // Don't pass this message to the client
+              }
+              
+              // Pass through all other messages
+              return dataStream.writeData(data);
+            }
+          };
+
+          // Create new result with wrapped tools and abort signal
+          const resultWithFeedback = await streamText({
+            model: myProvider.languageModel(interactionMode === 'build' ? 'build-model' : selectedChatModel),
+            system: enhancedSystemPrompt,
+            messages: messages.map(sanitizeMessageForAI),
+            tools: tools,  // Use original tools
+            providerOptions: {
+              anthropic: {
+                // Only enable thinking if the model supports reasoning
+                ...(supportsReasoning ? { thinking: { type: 'enabled', budgetTokens: 2000 } } : {})
+              },
+              openai: {
+                // Enable high-effort reasoning for o4-mini
+                ...(selectedChatModel === 'o4-mini' ? { 
+                  reasoning: { 
+                    effort: 'high',
+                    budgetTokens: 5000 // Higher token budget for more thorough reasoning
+                  }
+                } : {})
+              }
+            },
+            maxSteps: 10,
+            temperature: 1,
+            experimental_activeTools: [
+              'getWeather',
+              'createDocument',
+              'updateDocument',
+              'requestSuggestions',
+              'listRepositories',
+              'createProject',
+              'getRepositoryFiles',
+              'getFileContent',
+              'searchFiles',
+              'openFileExplorer',
+              'createRepository',
+              'updateStagedFile',
+              'getStagingState',
+              'clearStagedFiles',
+              'createTaskPlan',
+              'updateTask', 
+              'completeTask',
+              'getTaskStatus',
+              'addTask',
+              ...(isMemoryEnabled ? (['searchMemories'] as const) : []),
+            ],
+            experimental_generateMessageId: generateUUID,
+            tools: tools, // Use original tools, not wrappedTools
+            onFinish: async ({ response }) => {
+              console.log('[CHAT API] Response messages:', JSON.stringify(response.messages, null, 2));
+              if (session.user?.id) {
+                try {
+                  const assistantId = getTrailingMessageId({
+                    messages: response.messages.filter(
+                      (message) => message.role === 'assistant',
+                    ),
+                  });
+
+                  if (!assistantId) {
+                    console.error(
+                      '[CHAT API] No assistant message found in response',
+                    );
+                    dataStream.writeData({
+                      type: 'status',
+                      content: 'idle',
+                    });
+                    dataStream.writeData({
+                      type: 'finish',
+                      content: '',
+                    });
+                    return;
+                  }
+
+                  const [, assistantMessage] = appendResponseMessages({
+                    messages: [userMessage],
+                    responseMessages: response.messages,
+                  }) as [ExtendedUIMessage, ExtendedUIMessage];
+
+                  // Extract memories from tool calls if present
+                  const memories = extractMemoriesFromToolCalls(assistantMessage);
+                  
+                  if (memories && memories.length > 0) {
+                    console.log(`[Memory] Found ${memories.length} memories in assistant message, storing directly in message record`);
+                  }
+
+                  // Signal completion before persistence operations
                   dataStream.writeData({
                     type: 'status',
                     content: 'idle',
@@ -248,73 +1135,59 @@ Examples of INCORRECT usage (DO NOT DO THIS):
                     type: 'finish',
                     content: '',
                   });
-                  return;
+
+                  // Fire-and-forget persistence operations
+                  Promise.all([
+                    // Save the AI response to database with memories included
+                    saveMessages({
+                      messages: [
+                        {
+                          id: assistantId,
+                          chatId: id,
+                          role: assistantMessage.role,
+                          parts: assistantMessage.parts || [],
+                          tool_calls: assistantMessage.tool_calls || null,
+                          attachments:
+                            assistantMessage.experimental_attachments ?? [],
+                          memories: memories,
+                          modelId: selectedChatModel,
+                          createdAt: new Date(),
+                        },
+                      ],
+                    }).catch(error => {
+                      console.error('[CHAT API] Error saving assistant message:', error);
+                    }),
+
+                    // Store the user message in memory if enabled
+                    isMemoryEnabled && PAPR_MEMORY_API_KEY ?
+                      storeMessageInMemory({
+                        userId: session.user.id,
+                        chatId: id,
+                        message: userMessage,
+                        apiKey: PAPR_MEMORY_API_KEY,
+                      }).catch(error => {
+                        console.error('[Memory] Error storing message in memory:', error);
+                      })
+                    : Promise.resolve()
+                  ]).catch(error => {
+                    console.error('[CHAT API] Error in background persistence:', error);
+                  });
+
+                } catch (error) {
+                  console.error('[CHAT API] Error in onFinish:', error);
+                  // Signal error but allow the stream to complete
+                  dataStream.writeData({
+                    type: 'status',
+                    content: 'idle',
+                  });
+                  dataStream.writeData({
+                    type: 'finish',
+                    content: '',
+                  });
                 }
-
-                const [, assistantMessage] = appendResponseMessages({
-                  messages: [userMessage],
-                  responseMessages: response.messages,
-                }) as [ExtendedUIMessage, ExtendedUIMessage];
-
-                // Extract memories from tool calls if present
-                const memories = extractMemoriesFromToolCalls(assistantMessage);
-                
-                if (memories && memories.length > 0) {
-                  console.log(`[Memory] Found ${memories.length} memories in assistant message, storing directly in message record`);
-                }
-
-                // Save the AI response to database with memories included
-                await saveMessages({
-                  messages: [
-                    {
-                      id: assistantId,
-                      chatId: id,
-                      role: assistantMessage.role,
-                      parts: assistantMessage.parts || [],
-                      tool_calls: assistantMessage.tool_calls || null,
-                      attachments:
-                        assistantMessage.experimental_attachments ?? [],
-                      memories: memories, // Include the memories directly in the message record
-                      createdAt: new Date(),
-                    },
-                  ],
-                });
-
-                // Store the user message in memory if enabled
-                if (
-                  isMemoryEnabled &&
-                  PAPR_MEMORY_API_KEY &&
-                  session.user?.id
-                ) {
-                  try {
-                    console.log('[Memory] Calling storeMessageInMemory...');
-                    await storeMessageInMemory({
-                      userId: session.user.id,
-                      chatId: id,
-                      message: userMessage,
-                      apiKey: PAPR_MEMORY_API_KEY,
-                    });
-                  } catch (memoryError) {
-                    console.error(
-                      '[Memory] Error storing message in memory:',
-                      memoryError,
-                    );
-                    // Continue even if memory storage fails
-                  }
-                }
-
-                // Signal successful completion
-                dataStream.writeData({
-                  type: 'status',
-                  content: 'idle',
-                });
-                dataStream.writeData({
-                  type: 'finish',
-                  content: '',
-                });
-              } catch (error) {
-                console.error('[CHAT API] Error in onFinish:', error);
-                // Signal error but allow the stream to complete
+              } else {
+                // Handle case where session.user.id is not available
+                console.error('[CHAT API] No user ID available in session');
                 dataStream.writeData({
                   type: 'status',
                   content: 'idle',
@@ -324,31 +1197,51 @@ Examples of INCORRECT usage (DO NOT DO THIS):
                   content: '',
                 });
               }
-            } else {
-              // Handle case where session.user.id is not available
-              console.error('[CHAT API] No user ID available in session');
-              dataStream.writeData({
-                type: 'status',
-                content: 'idle',
-              });
-              dataStream.writeData({
-                type: 'finish',
-                content: '',
-              });
-            }
-          },
-          experimental_telemetry: {
-            isEnabled: isProductionEnvironment,
-            functionId: 'stream-text',
-          },
-        });
-
-        try {
-          await result.mergeIntoDataStream(dataStream, {
-            sendReasoning: true,
+            },
+            experimental_telemetry: {
+              isEnabled: isProductionEnvironment,
+              functionId: 'stream-text',
+            },
           });
+
+          // Use the standard mergeIntoDataStream with sendReasoning enabled for models that support it
+          await resultWithFeedback.mergeIntoDataStream(transformedDataStream, {
+            sendReasoning: supportsReasoning,
+            ...streamOptions, // Pass stream options including signal
+          });
+
+          // Ensure we send the final status updates
+          dataStream.writeData({
+            type: 'status',
+            content: 'idle',
+          });
+          
+          // Handle the pending code project request if it exists
+          if (pendingCodeProjectRequest) {
+            console.log('[CHAT API] Handling pending code project request:', pendingCodeProjectRequest);
+            const title = pendingCodeProjectRequest.title || 'New Project';
+            const isNewChat = request.headers.get('X-New-Chat') === 'true';
+            try {
+              await createAndStreamCodeProject(dataStream, title, isNewChat);
+              console.log('[CHAT API] Code project streamed successfully');
+            } catch (projectError) {
+              console.error('[CHAT API] Error creating code project:', projectError);
+            }
+          }
+          
+          dataStream.writeData({
+            type: 'finish',
+            content: '',
+          });
+
         } catch (streamError) {
           console.error('[CHAT API] Error consuming stream:', streamError);
+
+          // Check if error is due to abort
+          if (signal?.aborted) {
+            console.log('[CHAT API] Stream aborted by client');
+            return;
+          }
 
           // Log more detailed information
           if (messages.length > 0) {
@@ -383,6 +1276,12 @@ Examples of INCORRECT usage (DO NOT DO THIS):
       onError: (error: unknown) => {
         console.error('[CHAT API] STREAMING ERROR:', error);
 
+        // Check if error is due to abort
+        if (signal?.aborted) {
+          console.log('[CHAT API] Stream aborted by client');
+          return 'Request cancelled';
+        }
+
         if (error instanceof Error) {
           console.error('[CHAT API] Stream error message:', error.message);
           console.error('[CHAT API] Stream error stack:', error.stack);
@@ -393,6 +1292,14 @@ Examples of INCORRECT usage (DO NOT DO THIS):
     });
   } catch (error) {
     console.error('[CHAT API] ERROR:', error);
+
+    // Get abort signal from request
+    const signal = request.signal;
+
+    // Check if error is due to abort
+    if (signal?.aborted) {
+      return new Response('Request cancelled', { status: 499 }); // Using 499 status code for client closed request
+    }
 
     // Log additional details about the error
     if (error instanceof Error) {
