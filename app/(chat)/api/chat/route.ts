@@ -695,23 +695,18 @@ export async function POST(request: Request) {
       }
     }
 
-    // Extract context information from headers if present
-    const contextHeader = request.headers.get('X-Context');
-    let contextData = [];
+    // Get custom headers from the request
+    const memoryHeaderValue = request.headers.get('X-Memory-Enabled');
+    const isMemoryEnabled = memoryHeaderValue === 'true';
+    console.log('[CHAT API] Memory enabled:', isMemoryEnabled);
     
-    if (contextHeader && contextHeader.length > 0) {
-      try {
-        contextData = JSON.parse(contextHeader);
-        console.log('[CHAT API] Context data received:', contextData.length, 'items');
-      } catch (error) {
-        console.error('[CHAT API] Error parsing context header:', error);
-      }
-    }
-
-    // Extract interaction mode from headers if present
-    const interactionModeHeader = request.headers.get('X-Interaction-Mode');
-    const interactionMode = interactionModeHeader === 'build' ? 'build' : 'chat';
-    console.log('[CHAT API] Interaction mode:', interactionMode);
+    const contextHeader = request.headers.get('X-Context');
+    const selectedContexts = contextHeader ? JSON.parse(contextHeader) : [];
+    console.log('[CHAT API] Selected contexts:', selectedContexts);
+    
+          // Keep track of interaction mode (only chat mode supported)
+      const interactionMode = 'chat';
+      console.log('[CHAT API] Interaction mode:', interactionMode);
 
     // Extract code artifact info if present
     const hasCodeArtifact = request.headers.get('X-Code-Artifact') === 'true';
@@ -780,12 +775,12 @@ export async function POST(request: Request) {
       let enhancedPrompt = basePrompt;
       
       // Add context information if available
-      if (contextData.length > 0) {
+      if (selectedContexts.length > 0) {
         // Add context information to the system prompt
         const contextSection = `
 CONTEXT INFORMATION:
 The user has provided the following context for this conversation:
-${contextData.map((ctx: any, index: number) => {
+${selectedContexts.map((ctx: any, index: number) => {
   // Include the document content if available
   const contentPreview = ctx.text 
     ? `\n\nContent: ${ctx.text.substring(0, 1000)}${ctx.text.length > 1000 ? '...' : ''}`
@@ -799,81 +794,18 @@ Please consider this context when responding to the user's message.
         enhancedPrompt += contextSection;
       }
       
-      // Add build mode instructions if in build mode
-      if (interactionMode === 'build') {
-        const buildModeSection = `
-BUILD MODE INSTRUCTIONS:
-The user is in "build" mode, focused on creating code and applications rather than just chatting.
-- ALWAYS write code directly in the code artifact (kind: 'code')
-- Focus on creating complete, runnable projects with all necessary files
-- Provide step-by-step guidance on building and running the application
-- When asked about general programming concepts, provide practical, executable examples
-- GitHub connection is OPTIONAL - do NOT require it
-
-LOVABLE CODE EXPERIENCE:
-1. When a user asks for code, IMMEDIATELY create a code artifact using the createDocument tool
-2. Continue streaming code as you generate it, allowing users to watch it develop
-3. Include ALL necessary files for a complete project (package.json, HTML, CSS, etc.)
-4. Make sure code is runnable - consider the execution environment
-5. Explain how to run, test, and use the code after it's created
-
-VERCEL SANDBOX EXECUTION:
-- Users can run the created code directly in a Vercel sandbox environment
-- Include clear instructions on how to run the code in the sandbox
-- If creating a web application, ensure it properly listens on the port provided by the environment
-- For Node.js projects, create a proper package.json with all dependencies
-- For Python projects, include requirements.txt with all dependencies
-- Explain any special setup or configuration needed for the sandbox environment
-
-GITHUB INTEGRATION (OPTIONAL):
-- Users MAY choose to save their code to GitHub if desired
-- Do NOT assume users have GitHub connected
-- Focus on creating functional code first, then offer GitHub options
-`;
-        enhancedPrompt += buildModeSection;
-        
-        // If we have code artifact info, add it to the system prompt
-        if (hasCodeArtifact) {
-          let codeArtifactSection = '';
-          
-          // If we have GitHub repository info
-          if (repoOwner && repoName) {
-            codeArtifactSection = `
-ACTIVE GITHUB REPOSITORY:
-The user is working with a GitHub repository: ${repoOwner}/${repoName}
+      // Add GitHub repository context if available
+      if (hasCodeArtifact && repoOwner && repoName) {
+        const githubSection = `
+GITHUB REPOSITORY CONTEXT:
+The user is asking about a GitHub repository: ${repoOwner}/${repoName}
 
 IMPORTANT INSTRUCTIONS:
 1. Use your available GitHub file reading tools to examine this repository
-2. Continue working with THIS repository - do not ask which repository to use
-3. When adding new code or modifying existing code, ensure it's compatible with the repository
-`;
-          }
-          // If we have regular code artifact file structure
-          else if (codeFileStructure.length > 0) {
-            codeArtifactSection = `
-ACTIVE CODE ARTIFACT:
-The user is actively working on code in the artifact editor. Here's the current file structure:
-
-${codeFileStructure.map(file => {
-  const prefix = file.isDirectory ? '📁 ' : '📄 ';
-  return `${prefix}${file.path}`;
-}).join('\n')}
-
-${currentCodeFile ? `\nThe user is currently editing: ${currentCodeFile}` : ''}
-
-IMPORTANT INSTRUCTIONS:
-1. Use your available file reading tools to examine the content of these files as needed
 2. When the user asks about specific code or functionality, read the relevant files first
-3. Continue working with THIS code project that's already open in the artifact editor
-4. DO NOT ask which repository to use - work with these files directly
-5. When adding new code or modifying existing code, ensure it's compatible with the current project
+3. Provide helpful analysis and explanations about the code
 `;
-          }
-          
-          if (codeArtifactSection) {
-            enhancedPrompt += codeArtifactSection;
-          }
-        }
+        enhancedPrompt += githubSection;
       }
       
       return enhancedPrompt;
@@ -1044,7 +976,7 @@ AVAILABLE STAGING TOOLS:
 
           // Create new result with wrapped tools and abort signal
           const resultWithFeedback = await streamText({
-            model: myProvider.languageModel(interactionMode === 'build' ? 'build-model' : selectedChatModel),
+            model: myProvider.languageModel(selectedChatModel), // Always use selectedChatModel
             system: enhancedSystemPrompt,
             messages: messages.map(sanitizeMessageForAI),
             tools: tools,  // Use original tools
@@ -1088,7 +1020,6 @@ AVAILABLE STAGING TOOLS:
               ...(isMemoryEnabled ? (['searchMemories'] as const) : []),
             ],
             experimental_generateMessageId: generateUUID,
-            tools: tools, // Use original tools, not wrappedTools
             onFinish: async ({ response }) => {
               console.log('[CHAT API] Response messages:', JSON.stringify(response.messages, null, 2));
               if (session.user?.id) {

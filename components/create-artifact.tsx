@@ -12,6 +12,7 @@ export type ArtifactActionContext<M = any> = {
   mode: 'edit' | 'diff';
   metadata: M;
   setMetadata: Dispatch<SetStateAction<M>>;
+  appendMessage?: UseChatHelpers['append'];
 };
 
 type ArtifactAction<M = any> = {

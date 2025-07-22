@@ -7,170 +7,72 @@
 import { createMemoryService } from './service';
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { UIMessage } from 'ai';
+import type { UserCreateParams, UserResponse } from '@papr/memory/resources/user';
+import type { MemoryType, Memory } from '@papr/memory/resources/memory';
 
 interface EnhancePromptOptions {
   userId: string;
-  messages: UIMessage[];
+  prompt: string;
   apiKey: string;
+  maxMemories?: number;
+  searchQuery?: string;
 }
 
+
 /**
- * Enhance the system prompt with relevant memories
+ * Enhance a prompt with relevant memories
  */
 export async function enhancePromptWithMemories({
   userId,
-  messages,
+  prompt,
   apiKey,
+  maxMemories = 25,
+  searchQuery,
 }: EnhancePromptOptions): Promise<string> {
+  if (!apiKey) {
+    console.log('[Memory] No API key provided');
+    return prompt; // If no API key, return original prompt
+  }
+
   try {
-    console.log(
-      `[Memory DEBUG] enhancePromptWithMemories called for user ${userId}`,
-    );
-    console.log(`[Memory DEBUG] API key present: ${apiKey ? 'Yes' : 'No'}`);
-    console.log(`[Memory DEBUG] Number of messages: ${messages.length}`);
-
-    if (!apiKey) {
-      console.log('[Memory DEBUG] No API key, returning empty string');
-      return ''; // If no API key, return empty string
-    }
-
-    // Get the Papr User ID from database instead of using app User ID directly
-    // Try to ensure the user has a Papr user ID
+    // Ensure the user has a Papr user ID
     const paprUserId = await ensurePaprUser(userId, apiKey);
 
     if (!paprUserId) {
       console.warn(
-        `[Memory DEBUG WARNING] Failed to get or create Papr user ID for app user ${userId}. Memory retrieval may not work correctly.`,
+        `[Memory WARNING] Failed to get or create Papr user ID for app user ${userId}. Memory operations may not work correctly.`,
       );
-      return ''; // Without a valid Papr user ID, we can't reliably search for memories
+      return prompt;
     }
 
     console.log(
-      `[Memory DEBUG] Using Papr user ID: ${paprUserId} for memory search (app user: ${userId})`,
+      `[Memory] Using Papr user ID: ${paprUserId} for searching memories for app user ${userId}`,
     );
 
+    // Create memory service
     const memoryService = createMemoryService(apiKey);
 
-    // Get the most recent user message to search for relevant memories
-    const latestUserMessage = [...messages]
-      .reverse()
-      .find((message) => message.role === 'user');
-
-    if (!latestUserMessage) {
-      console.log(
-        '[Memory DEBUG] No user message found, returning empty string',
-      );
-      return '';
-    }
-
-    console.log(
-      `[Memory DEBUG] Found latest user message with ID: ${latestUserMessage.id}`,
+    // Search for relevant memories
+    const memories = await memoryService.searchMemories(
+      paprUserId,
+      searchQuery || prompt,
+      maxMemories,
     );
 
-    // Extract query from message parts
-    let query = '';
-
-    // If message has content field, use it directly
-    if ('content' in latestUserMessage && latestUserMessage.content) {
-      query = String(latestUserMessage.content);
-      console.log(
-        `[Memory DEBUG] Using message content field: "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`,
-      );
-    } else if (latestUserMessage.parts) {
-      // Otherwise extract from parts with type-safe property checks
-      query = latestUserMessage.parts
-        .map((part) => {
-          if (typeof part === 'string') {
-            return part;
-          }
-
-          // Handle complex message parts with type-safe property checks
-          if (part && typeof part === 'object') {
-            // Check for text property (TextUIPart)
-            if ('text' in part && typeof part.text === 'string') {
-              return part.text;
-            }
-            // Check for content property
-            if ('content' in part && typeof part.content === 'string') {
-              return part.content;
-            }
-            // Check for type-based structure
-            if ('type' in part && part.type === 'text') {
-              // TextUIPart should have a text property
-              if ('text' in part && typeof part.text === 'string') {
-                return part.text;
-              }
-            }
-
-            // Try to serialize the object as fallback
-            try {
-              return JSON.stringify(part);
-            } catch (e) {
-              console.log('[Memory DEBUG] Could not stringify part:', e);
-            }
-          }
-
-          return '';
-        })
-        .join(' ')
-        .trim();
-
-      console.log(
-        `[Memory DEBUG] Extracted query from parts: "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}"`,
-      );
+    // If no memories found, return original prompt
+    if (!memories || memories.length === 0) {
+      console.log('[Memory] No relevant memories found');
+      return prompt;
     }
 
-    if (!query) {
-      console.log('[Memory DEBUG] Empty query, returning empty string');
-      return '';
-    }
+    // Format memories and combine with prompt
+    const memoryContext = memoryService.formatMemoriesForPrompt(memories);
+    const enhancedPrompt = `${memoryContext}\n\n${systemPrompt}\n\n${prompt}`;
 
-    // Search for memories using the SDK with the actual query content
-    console.log(
-      `[Memory DEBUG] Searching memories for user ID: ${paprUserId} with query: "${query}"`,
-    );
-
-    // IMPORTANT: Use the Papr user ID for memory search, not the app's UUID
-    if (paprUserId?.includes('-')) {
-      console.warn(
-        `[Memory DEBUG WARNING] The Papr user ID (${paprUserId}) appears to be an app UUID, not a valid Papr ID.`,
-      );
-    }
-
-    // Use the SDK to search for memories using the Papr User ID
-    const memories = await memoryService.searchMemories(paprUserId, query, 25);
-
-    console.log(`[Memory DEBUG] Found ${memories.length} relevant memories`);
-
-    // Log detailed memory information for debugging
-    if (memories.length > 0) {
-      console.log('[Memory DEBUG] Memory search results:');
-      memories.forEach((memory, i) => {
-        console.log(`[Memory DEBUG] Memory #${i + 1}:`);
-        console.log(
-          `[Memory DEBUG] Content: ${memory.content?.substring(0, 100)}...`,
-        );
-        console.log(`[Memory DEBUG] ID: ${memory.id || 'Not available'}`);
-        console.log(
-          `[Memory DEBUG] User ID: ${memory.user_id || memory.metadata?.user_id || 'Not found'}`,
-        );
-      });
-    } else {
-      console.log('[Memory DEBUG] No memories found in search results');
-    }
-
-    // Format memories as a prompt addition
-    const promptAddition = memoryService.formatMemoriesForPrompt(memories);
-    console.log(
-      `[Memory DEBUG] Returning prompt addition of length ${promptAddition.length} characters`,
-    );
-    return promptAddition;
+    return enhancedPrompt;
   } catch (error) {
-    console.error(
-      '[Memory DEBUG] Error enhancing prompt with memories:',
-      error,
-    );
-    return '';
+    console.error('[Memory] Error enhancing prompt with memories:', error);
+    return prompt;
   }
 }
 
@@ -251,14 +153,16 @@ export function createMemoryEnabledSystemPrompt({
     // Enhance with memories
     const memoryPrompt = await enhancePromptWithMemories({
       userId,
-      messages,
+      prompt: basePrompt,
       apiKey,
+      maxMemories: 25,
+      searchQuery: messages.map(m => m.content).join('\n'),
     });
 
     // Combine the prompts
     if (memoryPrompt) {
       console.log('[Memory DEBUG] Enhanced system prompt with user memories');
-      return `${basePrompt}\n\n${memoryPrompt}`;
+      return memoryPrompt;
     }
 
     console.log(
@@ -339,7 +243,7 @@ export async function searchUserMemories({
 }
 
 /**
- * Store any content in memory
+ * Store content in memory
  */
 export async function storeContentInMemory({
   userId,
@@ -376,10 +280,10 @@ export async function storeContentInMemory({
 
     const memoryService = createMemoryService(apiKey);
     return await memoryService.storeContent(
-      paprUserId,
-      content,
-      type,
-      metadata,
+      paprUserId, 
+      content, 
+      type as MemoryType, 
+      { ...metadata, app_user_id: userId }
     );
   } catch (error) {
     console.error('[Memory] Error storing content in memory:', error);
@@ -435,33 +339,86 @@ export async function ensurePaprUser(
       baseURL: API_BASE_URL,
     });
 
-    // Create a user in Papr Memory
-    const paprUserResponse = await paprClient.user.create({
-      external_id: `PaprChat-user-${userId}`,
-      email: userEmail,
-      metadata: {
-        source: 'PaprChat',
-        app_user_id: userId,
-      },
-    });
+    let paprUserId = null;
 
-    // If successful, store the Papr user ID in our database
-    if (paprUserResponse?.user_id) {
-      const paprUserId = paprUserResponse.user_id;
+    try {
+      // Create user body params with proper typing
+      const createParams = {
+        external_id: `PaprChat-user-${userId}`,
+        email: userEmail || undefined,
+        metadata: {
+          source: 'PaprChat',
+          app_user_id: userId,
+        }
+      };
+
+      // Try to create a user in Papr Memory with properly structured parameters
+      const userResponse = await paprClient.user.create(createParams);
+
+      // Check if response indicates success and has an ID
+      if (!userResponse || !userResponse.user_id) {
+        console.error(
+          '[Memory] Invalid user creation response:',
+          userResponse,
+        );
+        return null;
+      }
+
+      paprUserId = userResponse.user_id;
       console.log(`[Memory] Created Papr Memory user with ID: ${paprUserId}`);
 
+    } catch (createError: any) {
+      console.log(`[Memory] User creation failed:`, createError);
+      
+      // Check if this is a 409 "User already exists" error
+      if (createError.status === 409) {
+        console.log(`[Memory] User already exists in Papr Memory with email: ${userEmail}`);
+        console.log(`[Memory] Attempting to create with different external_id to work around existing user`);
+        
+        // Try with a timestamp-based external_id to avoid conflicts
+        const timestamp = Date.now();
+        const alternativeExternalId = `PaprChat-user-${userId}-${timestamp}`;
+        
+        try {
+          const alternativeUserResponse = await paprClient.user.create({
+            external_id: alternativeExternalId,
+            email: userEmail ? `${timestamp}-${userEmail}` : undefined, // Use a different email to avoid conflict
+            metadata: {
+              source: 'PaprChat-Alternative',
+              app_user_id: userId,
+              original_email: userEmail || null,
+              note: 'Created with alternative ID due to existing user conflict'
+            },
+          });
+          
+          if (alternativeUserResponse?.user_id) {
+            paprUserId = alternativeUserResponse.user_id;
+            console.log(`[Memory] Created alternative Papr Memory user with ID: ${paprUserId}`);
+          } else {
+            console.error(`[Memory] Failed to create alternative Papr Memory user`);
+            return null;
+          }
+        } catch (alternativeError) {
+          console.error(`[Memory] Failed to create alternative user:`, alternativeError);
+          return null;
+        }
+      } else {
+        // Re-throw non-409 errors
+        throw createError;
+      }
+    }
+
+    if (paprUserId) {
       // Update the user record with the Papr user ID
       await db
         .update(user)
-        .set({ paprUserId: paprUserId })
+        .set({ paprUserId })
         .where(eq(user.id, userId));
 
       console.log(`[Memory] Updated local user record with Papr user ID`);
       return paprUserId;
     } else {
-      console.error(
-        `[Memory] Failed to create Papr Memory user - no user_id in response`,
-      );
+      console.error(`[Memory] Failed to obtain Papr user ID`);
       return null;
     }
   } catch (error) {

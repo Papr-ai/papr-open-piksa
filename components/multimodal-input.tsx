@@ -24,6 +24,22 @@ import { SuggestedActions } from './suggested-actions';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { MemoryToggle } from './memory-toggle';
+import { ModelSelector } from '@/components/model-selector';
+import { VisibilitySelector } from '@/components/visibility-selector';
+import type { VisibilityType } from '@/components/visibility-selector';
+import { PageContext } from '@/types/app';
+import { AddContextButton } from './context-chip';
+import { useContext } from '@/hooks/use-context';
+import { useArtifact } from '@/hooks/use-artifact';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from './ui/tooltip';
+
+// Define interaction modes - simplified to just chat
+export type InteractionMode = 'chat';
 
 function PureMultimodalInput({
   chatId,
@@ -38,6 +54,8 @@ function PureMultimodalInput({
   append,
   handleSubmit,
   className,
+  selectedModelId,
+  selectedVisibilityType,
 }: {
   chatId: string;
   input: UseChatHelpers['input'];
@@ -51,9 +69,27 @@ function PureMultimodalInput({
   append: UseChatHelpers['append'];
   handleSubmit: UseChatHelpers['handleSubmit'];
   className?: string;
+  selectedModelId: string;
+  selectedVisibilityType: VisibilityType;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  
+  // Use the artifact hook with chat ID for chat-specific artifacts
+  const { artifact, setArtifact } = useArtifact(chatId);
+
+  // Set interaction mode to just chat since we removed build mode
+  const [interactionMode] = useLocalStorage<InteractionMode>('interaction-mode', 'chat');
+
+  // Use the custom context hook
+  const { 
+    selectedContexts,
+    updateContexts,
+    clearContexts 
+  } = useContext();
+
+  // Track memory enabled state
+  const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -74,14 +110,8 @@ function PureMultimodalInput({
       textareaRef.current.style.height = '98px';
     }
   };
-
-  const [localStorageInput, setLocalStorageInput] = useLocalStorage(
-    'input',
-    '',
-  );
-
-  // Track memory enabled state
-  const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
+  const storageKey = `chat-input-${chatId}`;
+  const [localStorageInput, setLocalStorageInput] = useLocalStorage(storageKey, '');
 
   // Initialize from localStorage after mount
   useEffect(() => {
@@ -89,6 +119,18 @@ function PureMultimodalInput({
     if (storedValue !== null) {
       setIsMemoryEnabled(storedValue === 'true');
     }
+
+    // Add event listener for memory toggle changes
+    const handleMemoryToggle = (event: CustomEvent) => {
+      console.log('[MultimodalInput] Memory toggle changed:', event.detail.enabled);
+      setIsMemoryEnabled(event.detail.enabled);
+    };
+
+    window.addEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+
+    return () => {
+      window.removeEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+    };
   }, []);
 
   useEffect(() => {
@@ -116,17 +158,29 @@ function PureMultimodalInput({
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
 
   const submitForm = useCallback(() => {
+    // Check if input is empty or just whitespace
+    if (!input || input.trim().length === 0) {
+      console.log('[MultimodalInput] Preventing empty message submission');
+      return;
+    }
+
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
-    // Get the memory-enabled state from the hook
+    // Prepare custom headers with memory and context info
+    const customHeaders: Record<string, string> = {
+      'X-Memory-Enabled': isMemoryEnabled ? 'true' : 'false',
+      'X-Context': selectedContexts.length > 0 ? JSON.stringify(selectedContexts) : '',
+      'X-Interaction-Mode': interactionMode,
+    };
+
+    // Submit the message with our custom headers
     handleSubmit(undefined, {
       experimental_attachments: attachments,
-      headers: {
-        'X-Memory-Enabled': isMemoryEnabled ? 'true' : 'false',
-      },
+      headers: customHeaders,
     });
 
     setAttachments([]);
+    clearContexts(); // Clear selected contexts after submitting
     setLocalStorageInput('');
     resetHeight();
 
@@ -134,6 +188,7 @@ function PureMultimodalInput({
       textareaRef.current?.focus();
     }
   }, [
+    input,
     attachments,
     handleSubmit,
     setAttachments,
@@ -141,6 +196,9 @@ function PureMultimodalInput({
     width,
     chatId,
     isMemoryEnabled,
+    selectedContexts,
+    clearContexts,
+    interactionMode,
   ]);
 
   const uploadFile = async (file: File) => {
@@ -197,90 +255,91 @@ function PureMultimodalInput({
   );
 
   return (
-    <div className="relative w-full flex flex-col gap-4">
-      {messages.length === 0 &&
-        attachments.length === 0 &&
-        uploadQueue.length === 0 && (
-          <SuggestedActions append={append} chatId={chatId} />
-        )}
+    <div className="relative w-full flex flex-col gap-2 bg-background p-2 rounded-[15px] dark:border-zinc-700"
+      style={{
+        boxShadow: '0 -2px 10px hsl(var(--ring) / 0.1)',
+      }}
+    >
+      {/* Add Context at the top */}
+      <div className="flex flex-wrap items-center gap-1 mb-1">
+        <AddContextButton
+          selectedContexts={selectedContexts}
+          onContextsChange={updateContexts}
+        />
+      </div>
+      
+      <div className="flex flex-col items-start w-full gap-2">
+        <Textarea
+          ref={textareaRef}
+          tabIndex={0}
+          placeholder="Ask anything"
+          className=" flex-1 min-h-[40px] max-h-[240px] resize-none bg-background px-4 py-2 overflow-y-auto border-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          value={input}          
+          onChange={handleInput}
+          onKeyDown={(event) => {
+            if (
+              event.key === 'Enter' &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing &&
+              status !== 'streaming' &&
+              input && 
+              input.trim().length > 0
+            ) {
+              event.preventDefault();
+              submitForm();
+            }
+          }}
+          disabled={status === 'streaming'}
+        />
+        <div className="flex flex-row items-center justify-between gap-2 w-full">
+          <div className="flex items-center gap-2">
+            <ModelSelector selectedModelId={selectedModelId} className="h-8" />
+            <MemoryToggle />
+          </div>
+          <div className="flex flex-row pb-2 justify-start">
+            <div className="flex flex-row ml-3 mr-2 justify-start">
+              {status === 'streaming' ? (
+                <StopButton stop={stop} setMessages={setMessages} />
+              ) : (
+                <SendButton
+                  submitForm={submitForm}
+                  input={input}
+                  uploadQueue={uploadQueue}
+                />
+              )}
+            </div>
+          </div>
+        </div>
 
-      <input
-        type="file"
-        className="fixed -top-4 -left-4 size-0.5 opacity-0 pointer-events-none"
-        ref={fileInputRef}
-        multiple
-        onChange={handleFileChange}
-        tabIndex={-1}
-      />
+      </div>
 
       {(attachments.length > 0 || uploadQueue.length > 0) && (
-        <div
-          data-testid="attachments-preview"
-          className="flex flex-row gap-2 overflow-x-scroll items-end"
-        >
-          {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
+        <div className="flex flex-wrap gap-2 mt-2">
+          {uploadQueue.map((id) => (
+            <div
+              key={id}
+              className="flex items-center gap-1 bg-muted p-1 rounded-lg text-xs"
+            >
+              <div className="animate-pulse">Uploading...</div>
+            </div>
           ))}
-
-          {uploadQueue.map((filename) => (
+          {attachments.map((attachment) => (
             <PreviewAttachment
-              key={filename}
-              attachment={{
-                url: '',
-                name: filename,
-                contentType: '',
-              }}
-              isUploading={true}
+              key={attachment.name}
+              attachment={attachment}
+              isUploading={false}
             />
           ))}
         </div>
       )}
 
-      <Textarea
-        data-testid="multimodal-input"
-        ref={textareaRef}
-        placeholder="Send a message..."
-        value={input}
-        onChange={handleInput}
-        className={cx(
-          'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700',
-          className,
-        )}
-        rows={2}
-        autoFocus
-        onKeyDown={(event) => {
-          if (
-            event.key === 'Enter' &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
-            event.preventDefault();
-
-            if (status !== 'ready') {
-              toast.error('Please wait for the model to finish its response!');
-            } else {
-              submitForm();
-            }
-          }
-        }}
+      <input
+        ref={fileInputRef}
+        className="hidden"
+        type="file"
+        onChange={handleFileChange}
+        tabIndex={-1}
       />
-
-      <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
-        <AttachmentsButton fileInputRef={fileInputRef} status={status} />
-        <MemoryToggle />
-      </div>
-
-      <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-        {status === 'submitted' ? (
-          <StopButton stop={stop} setMessages={setMessages} />
-        ) : (
-          <SendButton
-            input={input}
-            submitForm={submitForm}
-            uploadQueue={uploadQueue}
-          />
-        )}
-      </div>
     </div>
   );
 }
@@ -331,14 +390,14 @@ function PureStopButton({
   return (
     <Button
       data-testid="stop-button"
-      className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
+      className="rounded-full p-1.5 h-8 w-8 bg-red-500 hover:bg-red-600 text-white"
       onClick={(event) => {
         event.preventDefault();
         stop();
         setMessages((messages) => messages);
       }}
     >
-      <StopIcon size={14} />
+      <StopIcon size={16} />
     </Button>
   );
 }
@@ -357,14 +416,14 @@ function PureSendButton({
   return (
     <Button
       data-testid="send-button"
-      className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
+      className="rounded-full p-1.5 h-8 w-8 bg-blue-500 hover:bg-blue-600 text-white cursor-pointer z-10"
       onClick={(event) => {
         event.preventDefault();
         submitForm();
       }}
-      disabled={input.length === 0 || uploadQueue.length > 0}
+      disabled={!input || input.trim().length === 0 || uploadQueue.length > 0}
     >
-      <ArrowUpIcon size={14} />
+      <ArrowUpIcon size={16} />
     </Button>
   );
 }

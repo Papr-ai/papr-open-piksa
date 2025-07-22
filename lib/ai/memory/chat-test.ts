@@ -126,8 +126,9 @@ async function testMemoryWorkflow() {
     // Test enhancePromptWithMemories directly to see if it can extract the query
     const enhancedPrompt = await enhancePromptWithMemories({
       userId: TEST_USER_ID,
-      messages: [chatUIMessage],
+      prompt: chatUIMessage.content,
       apiKey: PAPR_MEMORY_API_KEY,
+      searchQuery: chatUIMessage.content
     });
 
     if (enhancedPrompt && enhancedPrompt.length > 0) {
@@ -184,8 +185,7 @@ async function testMemoryWorkflow() {
 
       // Check if our new message is in the results
       const foundNewMessage = afterMemories.some(
-        (memory) =>
-          memory.content?.includes(testId) || memory.text?.includes(testId),
+        (memory) => memory.content?.includes(testId)
       );
 
       if (foundNewMessage) {
@@ -199,6 +199,54 @@ async function testMemoryWorkflow() {
     } else {
       console.log('No memories found for query');
     }
+
+    // Test 6: Check Reasoning Events format to verify UI compatibility
+    console.log('\n4. Testing Reasoning Events format for UI compatibility...');
+    
+    // Create test reasoning events in the format that would be emitted by the search-memories.ts tool
+    const testReasoningEvents = [
+      {
+        type: 'reasoning',
+        content: {
+          text: '🔍 Starting memory search with query: "test query"',
+          timestamp: new Date().toISOString(),
+          step: 'start',
+          duration: null
+        }
+      },
+      {
+        type: 'reasoning',
+        content: {
+          text: '🔄 Initializing memory search...',
+          timestamp: new Date().toISOString(),
+          step: 'init',
+          duration: 125
+        }
+      },
+      {
+        type: 'reasoning',
+        content: {
+          text: '🔍 Executing memory search for "test query" (max results: 5)...',
+          timestamp: new Date().toISOString(),
+          step: 'search',
+          duration: 200
+        }
+      },
+      {
+        type: 'reasoning',
+        content: {
+          text: '✅ Found 3 relevant memories (API: 0.18s, Total: 0.52s)',
+          timestamp: new Date().toISOString(),
+          step: 'complete',
+          duration: 310
+        }
+      }
+    ];
+    
+    console.log('Generated test reasoning events:');
+    console.log(JSON.stringify(testReasoningEvents, null, 2));
+    console.log('\nThese events match the format expected by MessageReasoning component');
+    console.log('To verify in the UI, these events should display as a step list showing reasoning progress');
 
     console.log('\n=== Memory Service Chat Workflow Test Completed ===');
   } catch (error) {

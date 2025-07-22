@@ -160,24 +160,7 @@ export const GPSIcon = ({ size = 16 }: { size: number }) => {
   );
 };
 
-export const InvoiceIcon = ({ size = 16 }: { size: number }) => {
-  return (
-    <svg
-      height={size}
-      strokeLinejoin="round"
-      viewBox="0 0 16 16"
-      width={size}
-      style={{ color: 'currentcolor' }}
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M13 15.1L12 14.5L10.1524 15.8857C10.0621 15.9534 9.93791 15.9534 9.8476 15.8857L8 14.5L6.14377 15.8922C6.05761 15.9568 5.94008 15.9601 5.85047 15.9003L3.75 14.5L3 15L2.83257 15.1116L1.83633 15.7758L1.68656 15.8756C1.60682 15.9288 1.5 15.8716 1.5 15.7758V15.5958V14.3985V14.1972V1.5V0H3H8H9.08579C9.351 0 9.60536 0.105357 9.79289 0.292893L14.2071 4.70711C14.3946 4.89464 14.5 5.149 14.5 5.41421V6.5V14.2507V14.411V15.5881V15.7881C14.5 15.8813 14.3982 15.9389 14.3183 15.891L14.1468 15.7881L13.1375 15.1825L13 15.1ZM12.3787 5L9.5 2.12132V5H12.3787ZM8 1.5V5V6.5H9.5H13V13.3507L12.7717 13.2138L11.9069 12.6948L11.1 13.3L10 14.125L8.9 13.3L8 12.625L7.1 13.3L5.94902 14.1632L4.58205 13.2519L3.75 12.6972L3 13.1972V1.5H8Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-};
+
 
 export const LogoOpenAI = ({ size = 16 }: { size?: number }) => {
   return (
@@ -284,77 +267,29 @@ export const FileIcon = ({ size = 16 }: { size?: number }) => {
   );
 };
 
-export const LoaderIcon = ({ size = 16 }: { size?: number }) => {
+export const LoaderIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
   return (
     <svg
       height={size}
       strokeLinejoin="round"
       viewBox="0 0 16 16"
       width={size}
-      style={{ color: 'currentcolor' }}
+      style={{ color: "currentcolor" }}
+      className={className}
     >
-      <g clipPath="url(#clip0_2393_1490)">
-        <path d="M8 0V4" stroke="currentColor" strokeWidth="1.5" />
-        <path
-          opacity="0.5"
-          d="M8 16V12"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.9"
-          d="M3.29773 1.52783L5.64887 4.7639"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.1"
-          d="M12.7023 1.52783L10.3511 4.7639"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.4"
-          d="M12.7023 14.472L10.3511 11.236"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.6"
-          d="M3.29773 14.472L5.64887 11.236"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.2"
-          d="M15.6085 5.52783L11.8043 6.7639"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.7"
-          d="M0.391602 10.472L4.19583 9.23598"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.3"
-          d="M15.6085 10.4722L11.8043 9.2361"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-        <path
-          opacity="0.8"
-          d="M0.391602 5.52783L4.19583 6.7639"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        />
-      </g>
-      <defs>
-        <clipPath id="clip0_2393_1490">
-          <rect width="16" height="16" fill="white" />
-        </clipPath>
-      </defs>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM8 0a8 8 0 100 16A8 8 0 008 0z"
+        fill="currentColor"
+        opacity="0.2"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M7.25.75A.75.75 0 018 0a8 8 0 018 8 .75.75 0 01-1.5 0A6.5 6.5 0 008 1.5a.75.75 0 01-.75-.75z"
+        fill="currentColor"
+      />
     </svg>
   );
 };
@@ -552,7 +487,7 @@ export const StopIcon = ({ size = 16 }: { size?: number }) => {
   );
 };
 
-export const PaperclipIcon = ({ size = 16 }: { size?: number }) => {
+export const PaperclipIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
   return (
     <svg
       height={size}
@@ -560,7 +495,7 @@ export const PaperclipIcon = ({ size = 16 }: { size?: number }) => {
       viewBox="0 0 16 16"
       width={size}
       style={{ color: 'currentcolor' }}
-      className="-rotate-45"
+      className={`-rotate-45 ${className || ''}`}
     >
       <path
         fillRule="evenodd"
@@ -1271,6 +1206,148 @@ export const BrainIcon = ({
         fillRule="evenodd"
         clipRule="evenodd"
         d="M12 6C8.13401 6 5 9.13401 5 13C5 14.5913 5.63214 16.0493 6.70711 17.1213C6.89464 17.3071 7 17.5614 7 17.8284V19C7 20.1046 7.89543 21 9 21H15C16.1046 21 17 20.1046 17 19V17.8284C17 17.5614 17.1054 17.3071 17.2929 17.1213C18.3679 16.0493 19 14.5913 19 13C19 9.13401 15.866 6 12 6ZM7 13C7 10.2386 9.23858 8 12 8C14.7614 8 17 10.2386 17 13C17 13.7911 16.8037 14.5414 16.4516 15.2026C15.9555 16.0871 15.6306 17.0772 15.5121 18.0921C15.5041 18.1576 15.5 18.2241 15.5 18.291V19C15.5 19.2761 15.2761 19.5 15 19.5H9C8.72386 19.5 8.5 19.2761 8.5 19V18.291C8.5 18.2241 8.49594 18.1576 8.48787 18.0921C8.36935 17.0772 8.04451 16.0871 7.54842 15.2026C7.19635 14.5414 7 13.7911 7 13Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+};
+
+export function ThinkIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path
+        d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20Z"
+        fill="currentColor"
+      />
+      <path
+        d="M12 16C13.1 16 14 15.1 14 14C14 12.9 13.1 12 12 12C10.9 12 10 12.9 10 14C10 15.1 10.9 16 12 16Z"
+        fill="currentColor"
+      />
+      <path
+        d="M12 10C13.1 10 14 9.1 14 8C14 6.9 13.1 6 12 6C10.9 6 10 6.9 10 8C10 9.1 10.9 10 12 10Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+export const YouTubeIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
+  return (
+    <svg
+      height={size}
+      width={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ color: "currentcolor" }}
+      className={className}
+    >
+      <path
+        d="M23.498 6.64a3 3 0 0 0-2.121-2.121C19.505 4 12 4 12 4s-7.505 0-9.377.518A3 3 0 0 0 .502 6.64C0 8.513 0 12.5 0 12.5s0 3.987.502 5.86a3 3 0 0 0 2.121 2.121C4.495 21 12 21 12 21s7.505 0 9.377-.518a3 3 0 0 0 2.121-2.121C24 16.487 24 12.5 24 12.5s0-3.987-.502-5.86Z"
+        fill="currentColor"
+      />
+      <path
+        d="m9.545 16.248 6.182-3.748-6.182-3.748v7.496Z"
+        fill="white"
+      />
+    </svg>
+  );
+};
+
+export const PDFIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
+  return (
+    <svg
+      height={size}
+      width={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ color: "currentcolor" }}
+      className={className}
+    >
+      <path
+        d="M7 18H17V16H7V18Z"
+        fill="currentColor"
+      />
+      <path
+        d="M17 14H7V12H17V14Z"
+        fill="currentColor"
+      />
+      <path
+        d="M7 10H11V8H7V10Z"
+        fill="currentColor"
+      />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M6 2C4.34315 2 3 3.34315 3 5V19C3 20.6569 4.34315 22 6 22H18C19.6569 22 21 20.6569 21 19V9C21 5.13401 17.866 2 14 2H6ZM5 5C5 4.44772 5.44772 4 6 4H14V9H19V19C19 19.5523 18.5523 20 18 20H6C5.44772 20 5 19.5523 5 19V5ZM16 7H19.0011C18.8058 5.7252 18.0709 4.59001 17.0402 3.83209C16.6341 3.5454 16.1801 3.31103 15.6983 3.14308C15.6975 3.14277 15.6967 3.14245 15.6959 3.14214C15.2957 3.01219 14.8759 2.92732 14.4472 2.89062C14.2987 2.87471 14.1487 2.86538 13.9972 2.862C13.9121 2.86035 13.8266 2.86 13.7407 2.86096C13.6636 2.86179 13.5863 2.86374 13.5089 2.86682C13.2683 2.875 13.0297 2.89867 12.7951 2.93699C16.0307 2.8522 16 7 16 7Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+};
+
+export const DocumentIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
+  return (
+    <svg
+      height={size}
+      width={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ color: "currentcolor" }}
+      className={className}
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M3 5C3 3.34315 4.34315 2 6 2H14C14.2652 2 14.5196 2.10536 14.7071 2.29289L20.7071 8.29289C20.8946 8.48043 21 8.73478 21 9V19C21 20.6569 19.6569 22 18 22H6C4.34315 22 3 20.6569 3 19V5ZM6 4C5.44772 4 5 4.44772 5 5V19C5 19.5523 5.44772 20 6 20H18C18.5523 20 19 19.5523 19 19V10H14C13.4477 10 13 9.55228 13 9V4H6ZM15 4.41421V8H18.5858L15 4.41421ZM7 12C7 11.4477 7.44772 11 8 11H16C16.5523 11 17 11.4477 17 12C17 12.5523 16.5523 13 16 13H8C7.44772 13 7 12.5523 7 12ZM7 16C7 15.4477 7.44772 15 8 15H16C16.5523 15 17 15.4477 17 16C17 16.5523 16.5523 17 16 17H8C7.44772 17 7 16.5523 7 16Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+};
+
+export const PageIcon = ({ size = 16, className }: { size?: number, className?: string }) => {
+  return (
+    <svg
+      height={size}
+      width={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ color: "currentcolor" }}
+      className={className}
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M4 4C4 2.89543 4.89543 2 6 2H14C14.2652 2 14.5196 2.10536 14.7071 2.29289L19.7071 7.29289C19.8946 7.48043 20 7.73478 20 8V20C20 21.1046 19.1046 22 18 22H6C4.89543 22 4 21.1046 4 20V4ZM6 4H14V8C14 8.55228 14.4477 9 15 9H18V20H6V4Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+};
+
+export const XIcon = ({ size = 16 }: { size?: number }) => {
+  return (
+    <svg
+      height={size}
+      strokeLinejoin="round"
+      viewBox="0 0 16 16"
+      width={size}
+      style={{ color: 'currentcolor' }}
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M12.4697 13.5303C12.7626 13.8232 13.2374 13.8232 13.5303 13.5303C13.8232 13.2374 13.8232 12.7626 13.5303 12.4697L9.06066 8L13.5303 3.53033C13.8232 3.23744 13.8232 2.76256 13.5303 2.46967C13.2374 2.17678 12.7626 2.17678 12.4697 2.46967L8 6.93934L3.53033 2.46967C3.23744 2.17678 2.76256 2.17678 2.46967 2.46967C2.17678 2.76256 2.17678 3.23744 2.46967 3.53033L6.93934 8L2.46967 12.4697C2.17678 12.7626 2.17678 13.2374 2.46967 13.5303C2.76256 13.8232 3.23744 13.8232 3.53033 13.5303L8 9.06066L12.4697 13.5303Z"
         fill="currentColor"
       />
     </svg>

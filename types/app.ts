@@ -28,6 +28,20 @@ export interface UseLoadAppFileReturn {
   error: Error | null;
 }
 
-export interface UseStreamChatReturn {
-  streamMessage: (options: { prompt: string; chatId: string }) => Promise<void>;
+export type UseStreamChatReturn = {
+  streamMessage: (props: { prompt: string; chatId: string; model?: string }) => Promise<any>;
+  reasoningSteps: any[];
+  getReasoningSteps: () => any[];
+};
+
+export interface PageContext {
+  id: string;
+  title: string;
+  type?: 'page' | 'document' | 'youtube' | 'pdf';
+  file?: {
+    name: string;
+    url: string;
+    __type: string;
+  };
+  text?: string;
 }

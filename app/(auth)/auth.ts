@@ -1,14 +1,17 @@
 import { compare } from 'bcrypt-ts';
 import NextAuth, { type User, type Session } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
+import GitHub from 'next-auth/providers/github';
 
-import { getUser } from '@/lib/db/queries';
+import { getUser, createOAuthUser, ensurePaprUserId } from '@/lib/db/queries';
 
 import { authConfig } from './auth.config';
 
 interface ExtendedUser extends User {
   id: string;
   paprUserId?: string;
+  githubAccessToken?: string;
+  githubLogin?: string;
 }
 
 interface ExtendedSession extends Session {
@@ -23,6 +26,15 @@ export const {
 } = NextAuth({
   ...authConfig,
   providers: [
+    GitHub({
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          scope: 'read:user user:email repo', // Request repo access
+        },
+      },
+    }),
     Credentials({
       credentials: {},
       async authorize({ email, password }: any) {
@@ -51,14 +63,91 @@ export const {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        // Store paprUserId in a separate field in the token
-        if ('_paprUserId' in user) {
-          token._paprUserId = user._paprUserId;
+    async signIn({ user, account, profile }) {
+      console.log(`[Auth] signIn callback called with provider: ${account?.provider}`);
+      console.log(`[Auth] User email: ${user.email}`);
+      
+      // Handle GitHub OAuth sign-in
+      if (account?.provider === 'github') {
+        try {
+          const email = user.email;
+          if (!email) {
+            console.error('[Auth] No email provided by GitHub');
+            return false;
+          }
+
+          console.log(`[Auth] Checking if GitHub user exists: ${email}`);
+          // Check if user already exists
+          const existingUsers = await getUser(email);
+          if (existingUsers.length > 0) {
+            const existingUser = existingUsers[0];
+            console.log(`[Auth] Existing GitHub user found: ${email} (ID: ${existingUser.id})`);
+            
+            // Ensure the existing user has a paprUserId
+            console.log(`[Auth] Ensuring paprUserId for existing user: ${existingUser.id}`);
+            await ensurePaprUserId(existingUser.id, email, user.name || undefined);
+            
+            return true;
+          }
+
+          // Create new OAuth user
+          console.log(`[Auth] Creating new GitHub user: ${email}`);
+          const newUser = await createOAuthUser(email, user.name || undefined);
+          console.log(`[Auth] Successfully created new GitHub user with ID: ${newUser.id}`);
+          
+          return true;
+        } catch (error) {
+          console.error('[Auth] Error in GitHub sign-in callback:', error);
+          console.error('[Auth] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+          return false;
         }
       }
+
+      // For other providers (like credentials), allow sign-in
+      console.log(`[Auth] Allowing sign-in for provider: ${account?.provider || 'unknown'}`);
+      return true;
+    },
+    async jwt({ token, user, account }) {
+      console.log(`[Auth] JWT callback called with provider: ${account?.provider}`);
+      
+      if (user) {
+        console.log(`[Auth] JWT callback user:`, { id: user.id, email: user.email });
+        
+        // For GitHub OAuth, we need to get the database user ID, not the GitHub user ID
+        if (account?.provider === 'github') {
+          try {
+            console.log(`[Auth] Looking up database user for GitHub OAuth user: ${user.email}`);
+            const dbUsers = await getUser(user.email!);
+            if (dbUsers.length > 0) {
+              const dbUser = dbUsers[0];
+              console.log(`[Auth] Found database user:`, { id: dbUser.id, email: dbUser.email, paprUserId: dbUser.paprUserId });
+              
+              token.id = dbUser.id;  // Use database user ID, not GitHub user ID
+              token._paprUserId = dbUser.paprUserId;
+            } else {
+              console.error(`[Auth] No database user found for GitHub email: ${user.email}`);
+              token.id = user.id;  // Fallback to GitHub user ID
+            }
+          } catch (error) {
+            console.error(`[Auth] Error looking up database user in JWT callback:`, error);
+            token.id = user.id;  // Fallback to GitHub user ID
+          }
+        } else {
+          // For other providers (like credentials), use the provided user ID
+          token.id = user.id;
+          if ('_paprUserId' in user) {
+            token._paprUserId = user._paprUserId;
+          }
+        }
+      }
+      
+      // Store GitHub access token
+      if (account?.provider === 'github') {
+        token.githubAccessToken = account.access_token;
+        token.githubLogin = account.login;
+      }
+      
+      console.log(`[Auth] JWT token final state:`, { id: token.id, _paprUserId: token._paprUserId });
       return token;
     },
     async session({ session, token }) {
@@ -68,6 +157,11 @@ export const {
         if ('_paprUserId' in token) {
           (session.user as ExtendedUser).paprUserId =
             token._paprUserId as string;
+        }
+        // Add GitHub info to session
+        if (token.githubAccessToken) {
+          (session.user as ExtendedUser).githubAccessToken = token.githubAccessToken as string;
+          (session.user as ExtendedUser).githubLogin = token.githubLogin as string;
         }
       }
       return session;

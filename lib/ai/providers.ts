@@ -14,6 +14,7 @@ import {
   reasoningModel,
   titleModel,
 } from './models.test';
+import { google } from '@ai-sdk/google';
 
 export const myProvider = isTestEnvironment
   ? customProvider({
@@ -26,29 +27,30 @@ export const myProvider = isTestEnvironment
     })
   : customProvider({
       languageModels: {
+        // Old model mappings - keep for backward compatibility
         'chat-model': groq('llama3-70b-8192'),
-        'chat-model-reasoning': (() => {
-          try {
-            //console.log('Initializing reasoning model with openai');
-            const model = openai('o4-mini');
-            //console.log('Model initialized successfully:', model);
-            //console.log('Setting up middleware with tag: think');
-            const middleware = extractReasoningMiddleware({ tagName: 'think' });
-            //console.log('Middleware set up successfully');
-            const wrappedModel = wrapLanguageModel({
-              model,
-              middleware,
-            });
-            //console.log('Model wrapped successfully');
-            return wrappedModel;
-          } catch (error) {
-            console.error('Error initializing reasoning model:', error);
-            // Fallback to regular model in case of error
-            return groq('llama3-70b-8192');
-          }
-        })(),
+        'chat-model-reasoning': openai('o4-mini'),
         'title-model': groq('llama3-70b-8192'),
         'artifact-model': anthropic('claude-3-5-sonnet-20240620'),
+        
+        // OpenAI Models
+        'gpt-4.1': openai('gpt-4.1'),
+        'gpt-4.1-mini': openai('gpt-4.1-mini'),
+        'o4-mini': openai('o4-mini'),
+        
+        // Groq Models
+        'deepseek-r1-distill-llama-70b': groq('deepseek-r1-distill-llama-70b'),
+        'llama-3.3-70b-versatile': groq('llama-3.3-70b-versatile'),
+        
+        // Anthropic Models
+        'claude-sonnet-4-20250514': anthropic('claude-sonnet-4-20250514'),
+        'claude-3-7-sonnet-20250219': anthropic('claude-3-7-sonnet-20250219'),
+        'claude-4-opus-20250514': anthropic('claude-4-opus-20250514'),
+        
+        // Google Models
+        'gemini-2.5-flash': google('gemini-2.5-flash'),
+        'gemini-2.5-flash-lite': google('gemini-2.5-flash-lite'),
+        'gemini-2.5-pro': google('gemini-2.5-pro'),
       },
       imageModels: {
         'small-model': xai.image('grok-2-image'),

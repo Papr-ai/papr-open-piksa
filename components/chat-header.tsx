@@ -72,12 +72,12 @@ function PureChatHeader({
         asChild
       >
         <Link
-          href="https://platform.papr.ai/chat"
+          href="https://platform.papr.ai/"
           target="_blank"
           rel="noopener noreferrer"
         >
-          <img src="/images/papr-logo.svg" alt="Papr Logo" className="w-4 h-4 mr-2" />
-          Documentation
+          <img src="/images/papr-logo.svg" alt="Papr Logo" className="size-4 mr-2" />
+          Docs
         </Link>
       </Button>
     </header>

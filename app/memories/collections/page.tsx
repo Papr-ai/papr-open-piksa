@@ -23,6 +23,7 @@ import {
   getAllCollections,
   type Collection,
 } from '../chat-categorizer';
+import { ChatBreadcrumb } from '@/components/chat-breadcrumb';
 
 interface ChatInfo {
   id: string;
@@ -145,16 +146,27 @@ export default function CollectionsPage() {
         const collectionsData = await getAllCollections(uid);
 
         // Sort collections to ensure Saved Chats is first
-        const sortedCollections = [...collectionsData].sort((a, b) => {
-          // First check for systemType === 'saved_chats'
-          if (a.systemType === 'saved_chats') return -1;
-          if (b.systemType === 'saved_chats') return 1;
-          // Then check for isSystem
-          if (a.isSystem && !b.isSystem) return -1;
-          if (!a.isSystem && b.isSystem) return 1;
-          // Finally sort by title
-          return a.title.localeCompare(b.title);
-        });
+        // And deduplicate collections by title to avoid showing duplicates
+        const seenTitles = new Set<string>();
+        const sortedCollections = [...collectionsData]
+          .filter(collection => {
+            // Keep system collections or first occurrence of each title
+            if (collection.isSystem || !seenTitles.has(collection.title.toLowerCase())) {
+              seenTitles.add(collection.title.toLowerCase());
+              return true;
+            }
+            return false;
+          })
+          .sort((a, b) => {
+            // First check for systemType === 'saved_chats'
+            if (a.systemType === 'saved_chats') return -1;
+            if (b.systemType === 'saved_chats') return 1;
+            // Then check for isSystem
+            if (a.isSystem && !b.isSystem) return -1;
+            if (!a.isSystem && b.isSystem) return 1;
+            // Finally sort by title
+            return a.title.localeCompare(b.title);
+          });
 
         setCollections(sortedCollections);
         // Cache the collections
@@ -208,103 +220,100 @@ export default function CollectionsPage() {
   }, [isClient, fetchCollections]);
 
   return (
-    <div className="flex flex-col h-full">
-      <header className="flex sticky top-0 bg-background py-1.5 items-center px-2 md:px-2 gap-2">
-        <SidebarToggle />
-        <div className="flex-1 overflow-hidden flex items-center gap-2">
-          <h1 className="text-lg font-semibold truncate">Chat Collections</h1>
-        </div>
-      </header>
+    <div className="flex flex-col h-full w-full">
+      <ChatBreadcrumb title="Collections" />
 
-      <div className="flex-1 overflow-auto p-4">
-        {isLoading && collections.length === 0 && (
-          <div className="flex justify-center items-center py-12">
-            <p>Loading collections...</p>
-          </div>
-        )}
+      <div className="flex-1 overflow-auto p-2 pt-5 w-full">
+        <div className="w-[70%] mx-auto">
+          {isLoading && collections.length === 0 && (
+            <div className="flex justify-center items-center py-12">
+              <p>Loading collections...</p>
+            </div>
+          )}
 
-        {error && (
-          <div className="bg-red-100 text-red-800 p-4 rounded-md mb-4">
-            <p className="mb-2">{error}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-              onClick={() => {
-                if (userId) fetchCollections(userId);
-              }}
-            >
-              <div className="mr-2">
-                <RefreshIcon size={14} />
-              </div>
-              <span>Retry</span>
-            </Button>
-          </div>
-        )}
+          {error && (
+            <div className="bg-red-100 text-red-800 p-4 rounded-md mb-4">
+              <p className="mb-2">{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={() => {
+                  if (userId) fetchCollections(userId);
+                }}
+              >
+                <div className="mr-2">
+                  <RefreshIcon size={14} />
+                </div>
+                <span>Retry</span>
+              </Button>
+            </div>
+          )}
 
-        {!isLoading && !error && (
-          <>
-            {/* Chat Collections Section */}
-            <section className="mb-8">
-              {collections.length > 0 ? (
-                <Accordion type="multiple" className="space-y-4">
-                  {collections.map((collection) => {
-                    const collectionChats = collection.chatIds
-                      .map((id) => allChats.get(id))
-                      .filter((chat): chat is ChatInfo => chat !== undefined);
+          {!isLoading && !error && (
+            <>
+              {/* Chat Collections Section */}
+              <section className="mb-8">
+                {collections.length > 0 ? (
+                  <Accordion type="multiple" className="space-y-4">
+                    {collections.map((collection) => {
+                      const collectionChats = collection.chatIds
+                        .map((id) => allChats.get(id))
+                        .filter((chat): chat is ChatInfo => chat !== undefined);
 
-                    return (
-                      <AccordionItem
-                        key={collection.id}
-                        value={collection.id}
-                        className="border rounded-lg p-1"
-                      >
-                        <AccordionTrigger className="px-4">
-                          <div className="flex flex-col items-start text-left">
-                            <h3 className="text-lg font-semibold">
-                              {collection.title}
-                            </h3>
-                            <p className="text-sm text-muted-foreground">
-                              {collection.description}
-                            </p>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-4 pt-2">
-                          <div className="grid gap-2">
-                            {collectionChats.length > 0 ? (
-                              collectionChats.map((chat) => (
-                                <Link
-                                  key={chat.id}
-                                  href={`/chat/${chat.id}`}
-                                  className="block p-2 hover:bg-accent rounded transition-colors"
-                                >
-                                  {chat.title}
-                                </Link>
-                              ))
-                            ) : (
-                              <p className="text-sm text-muted-foreground py-2">
-                                No chats in this collection
+                      return (
+                        <AccordionItem
+                          key={collection.id}
+                          value={collection.id}
+                          className="border rounded-lg p-1"
+                        >
+                          <AccordionTrigger className="px-4">
+                            <div className="flex flex-col items-start text-left">
+                              <h3 className="text-lg font-semibold">
+                                {collection.title}
+                              </h3>
+                              <p className="text-sm text-muted-foreground">
+                                {collection.description}
                               </p>
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    );
-                  })}
-                </Accordion>
-              ) : (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>No Collections Yet</CardTitle>
-                    <CardDescription>
-                      Start chatting more to generate collections automatically.
-                    </CardDescription>
-                  </CardHeader>
-                </Card>
-              )}
-            </section>
-          </>
-        )}
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="px-4 pt-2">
+                            <div className="grid gap-2">
+                              {collectionChats.length > 0 ? (
+                                collectionChats.map((chat) => (
+                                  <Link
+                                    key={chat.id}
+                                    href={`/chat/${chat.id}`}
+                                    className="block p-2 hover:bg-accent rounded transition-colors"
+                                  >
+                                    {chat.title}
+                                  </Link>
+                                ))
+                              ) : (
+                                <p className="text-sm text-muted-foreground py-2">
+                                  No chats in this collection
+                                </p>
+                              )}
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      );
+                    })}
+                  </Accordion>
+                ) : (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>No Collections Yet</CardTitle>
+                      <CardDescription>
+                        Start chatting more to generate collections automatically.
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                )}
+              </section>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

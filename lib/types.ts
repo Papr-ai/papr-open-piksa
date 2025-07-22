@@ -1,4 +1,4 @@
-import type { UIMessage } from 'ai';
+import type { UIMessage, DataStreamWriter } from 'ai';
 
 // Extended UI message type that includes tool_calls
 export interface ExtendedUIMessage extends UIMessage {
@@ -10,4 +10,7 @@ export interface ExtendedUIMessage extends UIMessage {
     id?: string;
   }>;
   memories?: Array<any>;
+  modelId?: string;
 }
+
+export type { DataStreamWriter };

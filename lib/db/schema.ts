@@ -96,6 +96,7 @@ export const message = pgTable('Message_v2', {
   tool_calls: json('tool_calls').default(null),
   attachments: json('attachments').notNull(),
   memories: jsonb('memories').default(null),
+  modelId: varchar('modelId'),
   createdAt: timestamp('createdAt').notNull(),
 });
 
@@ -153,7 +154,7 @@ export const document = pgTable(
     title: text('title').notNull(),
     content: text('content'),
     kind: varchar('text', {
-      enum: ['text', 'code', 'image', 'sheet', 'memory'],
+      enum: ['text', 'code', 'image', 'sheet', 'memory', 'github-code'],
     })
       .notNull()
       .default('text'),
@@ -211,3 +212,10 @@ export const messageMemory = pgTable(
 );
 
 export type MessageMemory = InferSelectModel<typeof messageMemory>;
+
+// Add the following comment to understand the current schema
+// We need to understand the document schema to implement a Git-like structure
+// Currently, we're looking at:
+// - What fields exist on documents
+// - How document relationships are stored
+// - What types of documents are currently supported

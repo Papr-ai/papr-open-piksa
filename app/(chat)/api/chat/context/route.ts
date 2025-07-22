@@ -43,16 +43,10 @@ export async function POST(request: Request) {
     console.log(`[Memory] User ID: ${userId}`);
     console.log(`[Memory] Max results: ${maxResults}`);
 
-    // Use the exact same query that works in the test script
-    const effectiveQuery = 'test message';
-    console.log(
-      `[Memory] IGNORING user query. Using test query: "${effectiveQuery}" that works in test script`,
-    );
-
-    // Search for memories
+    // Search for memories using the actual query
     const memories = await searchUserMemories({
       userId,
-      query: effectiveQuery,
+      query,
       maxResults,
       apiKey: PAPR_MEMORY_API_KEY,
     });

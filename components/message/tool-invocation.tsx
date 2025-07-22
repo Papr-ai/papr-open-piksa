@@ -2,17 +2,19 @@
 
 import { Weather } from '../weather';
 import { DocumentToolCall, DocumentToolResult } from '../document';
-import { GitHubRepoResults } from '../github-repo-results';
-import { GitHubFileResults, type GitHubFile } from '../github-file-results';
+// Remove GitHub file results imports
 import { GitHubSearchResults } from '../github-search-results';
 import { TruncatedFileDisplay } from './truncated-file';
-import { GitBranchIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react';
+import { GitBranchIcon, ChevronDownIcon, ChevronUpIcon, ServerIcon, TerminalIcon } from 'lucide-react';
 import cx from 'classnames';
-import { GitHubFileExplorer } from '../github-file-explorer';
 import { GitHubRepoCard, type Repository as RepoCardRepository } from '../github-repo-card';
 import { useState, useEffect } from 'react';
 import { FileIcon } from 'lucide-react';
 import { AlertTriangleIcon, XCircleIcon, RefreshCwIcon } from 'lucide-react';
+import { useArtifact } from '@/hooks/use-artifact';
+import { generateUUID } from '@/lib/utils';
+import { toast } from 'sonner';
+import { Button } from '../ui/button';
 
 // Type for the file explorer repository
 interface FileExplorerRepository {
@@ -34,6 +36,17 @@ interface ToolInvocationProps {
   isReadonly?: boolean;
 }
 
+// Define a simplified GitHub file interface to replace the imported one
+interface GitHubFile {
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  sha: string;
+  size?: number;
+  download_url?: string;
+  content?: string;
+}
+
 function getToolIcon(toolName: string) {
   switch (toolName) {
     case 'getWeather':
@@ -46,7 +59,11 @@ function getToolIcon(toolName: string) {
     case 'searchMemories':
     case 'get_memory':
       return '🔍';
-    case 'taskTracker':
+    case 'createTaskPlan':
+    case 'updateTask':
+    case 'completeTask':
+    case 'getTaskStatus':
+    case 'addTask':
       return '📋';
     case 'listRepositories':
     case 'createProject':
@@ -110,7 +127,7 @@ function getToolLabel(toolName: string, args?: any) {
   }
 }
 
-function getToolResult(toolName: string, result: any) {
+function getToolResult(toolName: string, result: any, args?: any) {
   if (!result.success) {
     return `Error: ${result.error}`;
   }
@@ -126,23 +143,125 @@ function getToolResult(toolName: string, result: any) {
       return result.message || 'Task updated';
     case 'listRepositories':
       return `Found ${result.repositories?.length || 0} repositories`;
+    case 'createRepository':
+      return result.requiresApproval ? 'Awaiting approval' : `Created repository "${result.repository?.name}"`;
     case 'createProject':
       return `Created project "${result.project?.name}" with ${result.stagedFiles?.length || 0} files`;
     case 'getRepositoryFiles':
       return `Loaded ${result.files?.length || 0} files from ${result.currentPath || '/'}`;
     case 'searchFiles':
       return `Found ${result.searchResults?.length || 0} matching files`;
-    case 'createRepository':
-      return result.requiresApproval ? 'Awaiting approval' : `Created repository "${result.repository?.name}"`;
     case 'updateStagedFile':
-      return `Updated ${result.filePath || 'file'} in staging area`;
+      return `Created/Updated file "${result.filePath || result.path || 'file'}" in staging area`;
     case 'getBranchStatus':
       return result.branchName ? `On branch: ${result.branchName}` : result.message;
     case 'openFileExplorer':
       return `Opened file explorer for ${result.repository?.full_name}`;
+    case 'getFileContent':
+      return `File "${result.path || args?.path || 'file'}" read successfully`;
     default:
-      return 'Operation completed successfully';
+      // Try to provide a more specific message if possible
+      if (toolName.includes('File') || toolName.includes('file')) {
+        return `File operation completed successfully`;
+      }
+      if (result.message) {
+        return result.message;
+      }
+      return `${toolName} completed successfully`;
   }
+}
+
+// Create a separate component for the repository approval UI
+function RepositoryApprovalCard({ repository }: { repository: any }) {
+  const [isApproving, setIsApproving] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  
+  const handleApprove = async () => {
+    setIsApproving(true);
+    try {
+      const response = await fetch('/api/github/create-repository', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: repository.name,
+          description: repository.description,
+          isPrivate: repository.private
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        toast.success(`Repository "${data.repository.name}" created successfully!`);
+        setIsApproved(true);
+        // Open the repository in a new tab
+        if (data.repository.html_url) {
+          window.open(data.repository.html_url, '_blank');
+        }
+      } else {
+        toast.error(`Failed to create repository: ${data.error}`);
+      }
+    } catch (error) {
+      console.error('[GitHub] Error creating repository:', error);
+      toast.error('Failed to create repository. Please try again.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  return (
+    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+      <div className="flex items-center gap-2 mb-2">
+        <GitBranchIcon className="w-5 h-5 text-blue-600" />
+        <span className="text-sm font-medium text-blue-800">Repository Creation Request</span>
+      </div>
+      <p className="text-sm text-blue-700 mb-3">
+        Approve creating a new repository with these details:
+      </p>
+      <div className="space-y-1 mb-3">
+        <div className="text-sm"><span className="font-medium">Name:</span> {repository.name}</div>
+        <div className="text-sm"><span className="font-medium">Description:</span> {repository.description}</div>
+        <div className="text-sm">
+          <span className="font-medium">Visibility:</span> {repository.private ? 'Private' : 'Public'}
+        </div>
+      </div>
+      {isApproved ? (
+        <div className="text-sm text-green-600 font-medium">
+          ✓ Repository created successfully
+        </div>
+      ) : (
+        <div className="flex justify-end gap-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="bg-white text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700"
+            onClick={() => {
+              toast.error('Repository creation cancelled');
+            }}
+            disabled={isApproving}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="default"
+            size="sm"
+            className="bg-blue-600 text-white hover:bg-blue-700"
+            onClick={handleApprove}
+            disabled={isApproving}
+          >
+            {isApproving ? (
+              <>
+                <RefreshCwIcon className="w-4 h-4 mr-1 animate-spin" />
+                Creating...
+              </>
+            ) : 'Approve'}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function getToolResultDetails(toolName: string, result: any) {
@@ -151,6 +270,12 @@ function getToolResultDetails(toolName: string, result: any) {
   }
 
   switch (toolName) {
+    case 'createRepository':
+      if (result.requiresApproval && result.repository) {
+        return <RepositoryApprovalCard repository={result.repository} />;
+      }
+      return null;
+    
     case 'createProject':
       if (result.stagedFiles?.length) {
         return (
@@ -162,7 +287,7 @@ function getToolResultDetails(toolName: string, result: any) {
                   <FileIcon className="w-4 h-4 text-blue-500" />
                   <span className="text-gray-600">{file.path}</span>
                   {file.isStaged && (
-                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Staged</span>
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Created & Staged</span>
                   )}
                 </div>
               ))}
@@ -180,8 +305,11 @@ function getToolResultDetails(toolName: string, result: any) {
         <div className="mt-2">
           <div className="flex items-center gap-2 text-sm bg-gray-50 p-2 rounded">
             <FileIcon className="w-4 h-4 text-green-500" />
-            <span className="text-gray-600">{result.filePath || 'File updated'}</span>
-            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Updated</span>
+            <span className="text-gray-600">{result.filePath || result.path || 'File updated'}</span>
+            <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">Updated & Staged</span>
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            File &quot;{result.filePath || result.path || 'file'}&quot; has been updated in staging area
           </div>
         </div>
       );
@@ -199,6 +327,9 @@ function getToolResultDetails(toolName: string, result: any) {
                   <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Staged</span>
                 </div>
               ))}
+              <div className="text-xs text-gray-500 mt-1">
+                {result.stagedFiles.length} file{result.stagedFiles.length !== 1 ? 's' : ''} in staging area
+              </div>
             </div>
           </div>
         );
@@ -255,6 +386,11 @@ function getOwnerString(owner: string | { login: string } | undefined): string {
   return typeof owner === 'string' ? owner : owner.login;
 }
 
+// Update the GitHubFile type to include content
+interface ExtendedGitHubFile extends GitHubFile {
+  content?: string;
+}
+
 export function ToolInvocation({ 
   toolName, 
   state, 
@@ -265,6 +401,8 @@ export function ToolInvocation({
 }: ToolInvocationProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  // Move the useArtifact hook outside of conditional rendering
+  const { setArtifact } = useArtifact();
 
   // Add logging for props
   useEffect(() => {
@@ -276,6 +414,71 @@ export function ToolInvocation({
       result
     });
   }, [toolName, state, toolCallId, args, result]);
+
+  // Auto-expand file explorer when it's rendered
+  useEffect(() => {
+    if (state === 'result' && toolName === 'openFileExplorer' && result?.success) {
+      console.log('[ToolInvocation] Auto-expanding file explorer');
+      setIsExpanded(true);
+    }
+  }, [state, toolName, result]);
+
+  // Create GitHub artifact effect for file explorer
+  useEffect(() => {
+    if (state === 'result' && toolName === 'openFileExplorer' && result?.success && result?.repository) {
+      const ownerLogin = getOwnerString(result.repository.owner);
+      
+      if (ownerLogin) {
+        console.log('[ToolInvocation] Creating GitHub code artifact for repository:', {
+          owner: ownerLogin,
+          name: result.repository.name,
+          initialFilePath: result.initialFilePath || ''
+        });
+        
+        try {
+          // Create the artifact with proper initialization data
+          const metadata = {
+            initialRepository: {
+              owner: ownerLogin,
+              name: result.repository.name
+            },
+            initialFilePath: result.initialFilePath || '',
+            stagedFiles: result.stagedFiles || []
+          };
+          
+          // Create a proper UUID instead of timestamp-based ID
+          const documentId = generateUUID();
+          
+          console.log('[ToolInvocation] Setting artifact with metadata:', metadata);
+          
+          setArtifact({
+            title: `GitHub File Explorer: Repository ${ownerLogin}/${result.repository.name}`,
+            documentId: documentId,
+            kind: 'text',  // Change from 'github-code' to 'text' as a valid type
+            content: JSON.stringify(metadata),
+            isVisible: true,
+            status: 'idle',
+            boundingBox: {
+              top: 100,
+              left: 100,
+              width: 1000, // Wider to accommodate all panels
+              height: 600
+            },
+            language: 'typescript' // Default language
+          });
+          
+          // Log success message
+          console.log('[ToolInvocation] GitHub artifact created successfully with documentId:', documentId);
+        } catch (error) {
+          console.error('[ToolInvocation] Error creating GitHub artifact:', error);
+          toast.error('Failed to create GitHub file explorer');
+        }
+      } else {
+        console.error('[ToolInvocation] Invalid repository owner format');
+        toast.error('Invalid repository format');
+      }
+    }
+  }, [state, toolName, result, setArtifact]);
 
   // Safety check for undefined result
   const safeResult = result || {};
@@ -326,8 +529,9 @@ export function ToolInvocation({
     );
   }
 
-  // Special handling for task tracker - keep the detailed UI
-  if (toolName === 'taskTracker') {
+  // Special handling for task tracker tools - keep the detailed UI
+  if (toolName === 'createTaskPlan' || toolName === 'updateTask' || 
+      toolName === 'completeTask' || toolName === 'getTaskStatus' || toolName === 'addTask') {
     if (state === 'call') {
       return (
         <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
@@ -336,14 +540,15 @@ export function ToolInvocation({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
             <span className="text-purple-800">
-              {args.action === 'create_plan' ? 'Creating task plan...' :
-               args.action === 'complete_task' ? 'Completing task...' :
-               args.action === 'update_task' ? 'Updating task status...' :
-               args.action === 'get_status' ? 'Checking task progress...' :
+              {toolName === 'createTaskPlan' ? 'Creating task plan...' :
+               toolName === 'completeTask' ? 'Completing task...' :
+               toolName === 'updateTask' ? 'Updating task status...' :
+               toolName === 'getTaskStatus' ? 'Checking task progress...' :
+               toolName === 'addTask' ? 'Adding tasks to plan...' :
                'Managing tasks...'}
             </span>
           </div>
-          {args.action === 'create_plan' && args.tasks?.length > 0 && (
+          {toolName === 'createTaskPlan' && args.tasks?.length > 0 && (
             <p className="text-sm text-purple-700 mt-1">Planning {args.tasks.length} tasks</p>
           )}
         </div>
@@ -390,6 +595,32 @@ export function ToolInvocation({
     );
   }
 
+  // Render GitHub File Explorer placeholder for openFileExplorer tool
+  if (state === 'result' && toolName === 'openFileExplorer' && safeResult?.success) {
+    const ownerLogin = getOwnerString(safeResult.repository?.owner);
+    
+    if (!ownerLogin) {
+      return (
+        <div className="text-red-500 text-sm">
+          Error: Invalid repository owner format
+        </div>
+      );
+    }
+    
+    // Show a placeholder while the artifact is being created
+    return (
+      <div className="w-full border rounded-lg overflow-hidden p-4 bg-blue-50">
+        <div className="flex items-center gap-2 mb-2">
+          <GitBranchIcon className="w-5 h-5 text-blue-600" />
+          <span className="font-medium">Opening GitHub File Explorer</span>
+        </div>
+        <p className="text-sm text-gray-600">
+          Creating code artifact for {ownerLogin}/{safeResult.repository.name}...
+        </p>
+      </div>
+    );
+  }
+
   // Compact tool invocation display with expand/collapse for details
   return (
     <div className={cx(
@@ -410,7 +641,7 @@ export function ToolInvocation({
                 <div className="animate-pulse w-2 h-2 bg-blue-400 rounded-full" />
               </div>
             ) : (
-              getToolResult(toolName, safeResult)
+              getToolResult(toolName, safeResult, args)
             )}
           </div>
         </div>
@@ -527,14 +758,31 @@ export function ToolInvocation({
             />
           )}
           {safeResult?.success && safeResult?.files && (
-            <GitHubFileResults
-              files={safeResult.files}
-              currentPath={safeResult.currentPath}
-              repositoryName={safeResult.repositoryName}
-              onFileSelect={(file: GitHubFile) => {
-                console.log('File selected:', file);
-              }}
-            />
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+              <h3 className="text-sm font-medium mb-2">
+                {safeResult.repositoryName || "Repository"} Files
+                {safeResult.currentPath && <span className="text-xs text-gray-500 ml-2">Path: {safeResult.currentPath}</span>}
+              </h3>
+              <div className="space-y-2">
+                {safeResult.files.map((file: GitHubFile) => (
+                  <div key={file.path} 
+                    className="flex items-center gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer"
+                    onClick={() => console.log('File selected:', file)}
+                  >
+                    {file.type === 'dir' ? (
+                      <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    )}
+                    <span className="text-sm">{file.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
           {safeResult?.success && safeResult?.file && (
             <TruncatedFileDisplay 
@@ -542,38 +790,6 @@ export function ToolInvocation({
               editSuggestion={safeResult.editSuggestion}
             />
           )}
-          {safeResult?.success && safeResult?.repository && toolName === 'openFileExplorer' && (() => {
-            console.log('[ToolInvocation] Opening file explorer with repo:', safeResult.repository);
-            
-            // Handle both string and object formats for owner using our helper function
-            const ownerLogin = getOwnerString(safeResult.repository.owner);
-            
-            if (!ownerLogin) {
-              console.error('[ToolInvocation] Invalid owner format in repository:', safeResult.repository);
-              return (
-                <div className="text-red-500 text-sm">
-                  Error: Invalid repository owner format
-                </div>
-              );
-            }
-            
-            return (
-              <div className="w-full border rounded-lg overflow-hidden">
-                <GitHubFileExplorer
-                  onFileSelect={(file: GitHubFile, repo: FileExplorerRepository) => {
-                    console.log('File selected:', file, 'from repo:', repo);
-                  }}
-                  onFileChange={(file: GitHubFile, content: string, repo: FileExplorerRepository) => {
-                    console.log('File changed:', file, 'in repo:', repo);
-                  }}
-                  initialRepository={{
-                    owner: ownerLogin,
-                    name: safeResult.repository.name
-                  }}
-                />
-              </div>
-            );
-          })()}
         </div>
       )}
     </div>

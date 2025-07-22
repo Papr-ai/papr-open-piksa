@@ -1,19 +1,23 @@
-import { useState, useEffect } from 'react';
-import { GitHubClient } from '@/lib/github/client';
+import { useState, useCallback } from 'react';
 import { toast } from 'sonner';
 
 interface Repository {
-  owner: string;
+  owner: string | { login: string };
   name: string;
   defaultBranch?: string;
   branches?: Array<{ name: string; sha: string }>;
 }
 
-export function useGitBranch(repository: Repository | null, accessToken: string | null) {
+export function useGitBranch(
+  repository: Repository | null,
+  accessToken: string | null
+) {
   const [branchName, setBranchName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
-  const createStagingBranch = async () => {
+  const createStagingBranch = useCallback(async () => {
+    // Check if repository is selected
     if (!repository) {
       const errorMsg = 'No repository selected';
       console.error(`[Git Branch] ${errorMsg}`);
@@ -22,95 +26,133 @@ export function useGitBranch(repository: Repository | null, accessToken: string 
       return null;
     }
 
+    // Validate repository object has required properties
+    if (!repository.owner || !repository.name) {
+      const errorMsg = 'Invalid repository object';
+      console.error(`[Git Branch] ${errorMsg}`, repository);
+      toast.error(errorMsg);
+      setError(errorMsg);
+      return null;
+    }
+
+    // Check if already creating a branch to prevent duplicate calls
+    if (isCreating) {
+      console.log('[Git Branch] Branch creation already in progress');
+      return branchName;
+    }
+
+    // Check if we already have a branch name
+    if (branchName) {
+      console.log('[Git Branch] Using existing branch:', branchName);
+      return branchName;
+    }
+
+    // Check if access token is available
+    if (!accessToken) {
+      const errorMsg = 'GitHub access token not available';
+      console.error(`[Git Branch] ${errorMsg}`);
+      toast.error(errorMsg);
+      setError(errorMsg);
+      return null;
+    }
+
+    setIsCreating(true);
+    setError(null);
+
     try {
-      // Clear previous errors
-      setError(null);
+      console.log('[Git Branch] Creating staging branch for repository:', repository.name);
       
-      console.log('[Git Branch] Creating staging branch for', {
-        owner: repository.owner,
-        name: repository.name,
-        defaultBranch: repository.defaultBranch,
-        hasBranches: Array.isArray(repository.branches) && repository.branches.length > 0
-      });
+      // Extract owner string from repository object
+      const owner = typeof repository.owner === 'string' ? repository.owner : repository.owner.login;
       
-      // Get the owner string safely
-      let owner: string;
-      if (typeof repository.owner === 'string') {
-        owner = repository.owner;
-      } else {
-        // Handle object case
-        const ownerObj = repository.owner as any;
-        owner = ownerObj.login || String(repository.owner);
-      }
-      
-      // Call the server-side API instead of using the client directly
+      // Call the API endpoint to create a branch
       const response = await fetch('/api/github/branch', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          owner,
+          owner: owner,
           repo: repository.name,
           defaultBranch: repository.defaultBranch
         }),
       });
-      
-      const result = await response.json();
-      
-      if (!response.ok || !result.success) {
-        const errorMsg = result.error || 'Failed to create staging branch';
-        console.error(`[Git Branch] ${errorMsg}`);
-        toast.error(errorMsg);
-        setError(errorMsg);
-        return null;
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create branch');
       }
 
-      const newBranch = result.branchName;
-      console.log('[Git Branch] Created staging branch:', newBranch);
-      setBranchName(newBranch);
-      return newBranch;
+      const data = await response.json();
+      console.log('[Git Branch] Branch created successfully:', data.branchName);
+      
+      setBranchName(data.branchName);
+      return data.branchName;
     } catch (error: any) {
-      const errorMsg = error.message || 'Unknown error creating staging branch';
-      console.error('[Git Branch] Error creating staging branch:', error);
+      const errorMsg = error.message || 'Failed to create staging branch';
+      console.error('[Git Branch] Error:', errorMsg);
       toast.error(errorMsg);
       setError(errorMsg);
       return null;
+    } finally {
+      setIsCreating(false);
     }
-  };
+  }, [repository, accessToken, branchName, isCreating]);
 
-  const stageChanges = async (files: Array<{ path: string; content: string }>) => {
-    if (!repository || !branchName) {
-      console.error('[Git Branch] Missing required data for staging changes');
+  const stageChanges = useCallback(async (filePath: string, content: string) => {
+    if (!repository) {
+      const errorMsg = 'No repository selected';
+      console.error(`[Git Branch] ${errorMsg}`);
+      toast.error(errorMsg);
+      setError(errorMsg);
       return false;
+    }
+
+    if (!branchName) {
+      const newBranch = await createStagingBranch();
+      if (!newBranch) {
+        return false;
+      }
     }
 
     try {
-      // Get the owner string safely
-      let owner: string;
-      if (typeof repository.owner === 'string') {
-        owner = repository.owner;
-      } else {
-        // Handle object case
-        const ownerObj = repository.owner as any;
-        owner = ownerObj.login || String(repository.owner);
-      }
+      // Extract owner string from repository object
+      const owner = typeof repository.owner === 'string' ? repository.owner : repository.owner.login;
       
-      // Use client directly for now, but this could be moved to an API endpoint as well
-      const client = new GitHubClient(accessToken || '');
-      await client.stageChanges(owner, repository.name, branchName, files);
+      // Call API to stage changes (removed branch parameter, now uses branch-based storage)
+      const response = await fetch('/api/github/stage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          owner: owner,
+          repo: repository.name,
+          filePath,
+          content
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to stage changes');
+      }
+
       return true;
     } catch (error: any) {
-      console.error('[Git Branch] Error staging changes:', error);
-      setError(error.message);
+      const errorMsg = error.message || 'Failed to stage changes';
+      console.error('[Git Branch] Error staging changes:', errorMsg);
+      toast.error(errorMsg);
+      setError(errorMsg);
       return false;
     }
-  };
+  }, [repository, branchName, createStagingBranch]);
 
   return {
     branchName,
     error,
     createStagingBranch,
-    stageChanges
+    stageChanges,
+    isCreating
   };
 } 

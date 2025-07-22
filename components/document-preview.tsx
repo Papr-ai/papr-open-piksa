@@ -16,11 +16,21 @@ import { InlineDocumentSkeleton } from './document-skeleton';
 import useSWR from 'swr';
 import { Editor } from './text-editor';
 import { DocumentToolCall, DocumentToolResult } from './document';
-import { CodeEditor } from './code-editor';
 import { useArtifact } from '@/hooks/use-artifact';
 import equal from 'fast-deep-equal';
 import { SpreadsheetEditor } from './sheet-editor';
 import { ImageEditor } from './image-editor';
+
+// Helper function to map database document kinds to valid artifact kinds
+function mapDocumentKindToArtifactKind(kind: string): ArtifactKind {
+  // Map old kinds to new valid ones
+  if (kind === 'code' || kind === 'github-code') {
+    return 'text';
+  }
+  
+  // Return as-is for valid kinds
+  return kind as ArtifactKind;
+}
 
 interface DocumentPreviewProps {
   isReadonly: boolean;
@@ -81,7 +91,7 @@ export function DocumentPreview({
   }
 
   if (isDocumentsFetching) {
-    return <LoadingSkeleton artifactKind={result.kind ?? args.kind} />;
+    return <LoadingSkeleton artifactKind={mapDocumentKindToArtifactKind(result.kind ?? args.kind)} />;
   }
 
   const document: Document | null = previewDocument
@@ -113,10 +123,10 @@ export function DocumentPreview({
       />
       <DocumentHeader
         title={document.title}
-        kind={document.kind}
+        kind={mapDocumentKindToArtifactKind(document.kind)}
         isStreaming={artifact.status === 'streaming'}
       />
-      <DocumentContent document={document} />
+      <DocumentContent document={{...document, kind: mapDocumentKindToArtifactKind(document.kind) as any}} />
     </div>
   );
 }
@@ -255,7 +265,7 @@ const DocumentContent = ({ document }: { document: Document }) => {
     'h-[257px] overflow-y-scroll border rounded-b-2xl dark:bg-muted border-t-0 dark:border-zinc-700',
     {
       'p-4 sm:px-14 sm:py-16': document.kind === 'text',
-      'p-0': document.kind === 'code',
+      'p-0': false, // Removed code artifact kind check
     },
   );
 
@@ -272,12 +282,6 @@ const DocumentContent = ({ document }: { document: Document }) => {
     <div className={containerClassName}>
       {document.kind === 'text' ? (
         <Editor {...commonProps} onSaveContent={() => {}} />
-      ) : document.kind === 'code' ? (
-        <div className="flex flex-1 relative w-full">
-          <div className="absolute inset-0">
-            <CodeEditor {...commonProps} onSaveContent={() => {}} />
-          </div>
-        </div>
       ) : document.kind === 'sheet' ? (
         <div className="flex flex-1 relative size-full p-4">
           <div className="absolute inset-0">

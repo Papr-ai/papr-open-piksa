@@ -2,7 +2,7 @@
 
 import useSWR from 'swr';
 import type { UIArtifact } from '@/components/artifact';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect } from 'react';
 
 export const initialArtifactData: UIArtifact = {
   documentId: 'init',
@@ -34,9 +34,12 @@ export function useArtifactSelector<Selected>(selector: Selector<Selected>) {
   return selectedValue;
 }
 
-export function useArtifact() {
+export function useArtifact(chatId?: string) {
+  // Use chat-specific key if chatId is provided
+  const artifactKey = chatId ? `artifact-${chatId}` : 'artifact';
+  
   const { data: localArtifact, mutate: setLocalArtifact } = useSWR<UIArtifact>(
-    'artifact',
+    artifactKey,
     null,
     {
       fallbackData: initialArtifactData,
@@ -48,12 +51,12 @@ export function useArtifact() {
   const artifact = useMemo(() => {
     if (!localArtifact) {
       console.log(
-        '[ARTIFACT HOOK] No local artifact found, using initial data',
+        `[ARTIFACT HOOK] No local artifact found for ${artifactKey}, using initial data`,
       );
       return initialArtifactData;
     }
     return localArtifact;
-  }, [localArtifact]);
+  }, [localArtifact, artifactKey]);
 
   const setArtifact = useCallback(
     (updaterFn: UIArtifact | ((currentArtifact: UIArtifact) => UIArtifact)) => {
@@ -68,7 +71,7 @@ export function useArtifact() {
             updated.status !== artifactToUpdate.status ||
             updated.isVisible !== artifactToUpdate.isVisible
           ) {
-            console.log('[ARTIFACT HOOK] Artifact state change:', {
+            console.log(`[ARTIFACT HOOK] Artifact state change for ${artifactKey}:`, {
               documentId: {
                 from: artifactToUpdate.documentId,
                 to: updated.documentId,
@@ -88,18 +91,32 @@ export function useArtifact() {
         return updaterFn;
       });
     },
-    [setLocalArtifact],
+    [setLocalArtifact, artifactKey],
   );
 
   const { data: localArtifactMetadata, mutate: setLocalArtifactMetadata } =
     useSWR<any>(
       () =>
-        artifact.documentId ? `artifact-metadata-${artifact.documentId}` : null,
+        artifact.documentId ? `artifact-metadata-${chatId || 'global'}-${artifact.documentId}` : null,
       null,
       {
         fallbackData: null,
       },
     );
+
+  // Ensure artifact metadata is stored in localStorage for persistent access
+  useEffect(() => {
+    if (artifact.documentId && localArtifactMetadata) {
+      // Store metadata in localStorage for persistent access between messages
+      const metadataKey = `artifact-metadata-${chatId || 'global'}-${artifact.documentId}`;
+      try {
+        localStorage.setItem(metadataKey, JSON.stringify(localArtifactMetadata));
+        console.log(`[useArtifact] Saved artifact metadata to localStorage for chat ${chatId || 'global'}`);
+      } catch (error) {
+        console.error('[useArtifact] Error saving artifact metadata to localStorage:', error);
+      }
+    }
+  }, [artifact.documentId, localArtifactMetadata, chatId]);
 
   return useMemo(
     () => ({

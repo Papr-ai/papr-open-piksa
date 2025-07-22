@@ -49,8 +49,24 @@ export default defineConfig({
     timeout: 60 * 1000,
   },
 
-  /* Configure projects */
+  /* Configure projects for different scenarios */
   projects: [
+    // Setup project for authentication
+    {
+      name: 'setup',
+      testMatch: /.*\.setup\.ts/,
+    },
+    
+    // Test project that depends on authentication being set up
+    {
+      name: 'authenticated',
+      use: {
+        storageState: 'playwright/.auth/user.json',
+      },
+      dependencies: ['setup'],
+      testMatch: /reasoning\.test\.ts/,
+    },
+    
     {
       name: 'setup:auth',
       testMatch: /auth.setup.ts/,

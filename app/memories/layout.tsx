@@ -1,30 +1,25 @@
-import { cookies } from 'next/headers';
+import React from 'react';
 import { redirect } from 'next/navigation';
-
-import { AppSidebar } from '@/components/app-sidebar';
-import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { auth } from '@/app/(auth)/auth';
+import { MemoriesNav } from '@/components/memories-nav';
 
 export default async function MemoriesLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [session, cookieStore] = await Promise.all([auth(), cookies()]);
-  const isCollapsed = cookieStore.get('sidebar:state')?.value !== 'true';
+  const session = await auth();
 
   if (!session?.user) {
-    redirect('/sign-in');
+    redirect('/login');
   }
 
   return (
-    <SidebarProvider defaultOpen={!isCollapsed}>
-      <AppSidebar user={session?.user} />
-      <SidebarInset>
-        <div className="flex-1">
-          <div className="p-4">{children}</div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    <div className="min-h-screen bg-gray-50">
+      <MemoriesNav />
+      <div className="container mx-auto py-6 px-4">
+        {children}
+      </div>
+    </div>
   );
 }

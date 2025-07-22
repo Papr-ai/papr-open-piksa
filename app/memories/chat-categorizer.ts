@@ -76,7 +76,7 @@ export async function categorizeAndSaveChats(userId: string): Promise<void> {
       return;
     }
 
-    // Format existing collections for the AI model
+    // Format existing collections for the AI model with complete information
     const existingCollections = await Promise.all(
       dbCollections.map(async (col) => {
         const chats = await getCollectionChats({ collectionId: col.id });
@@ -107,13 +107,18 @@ export async function categorizeAndSaveChats(userId: string): Promise<void> {
           If a chat fits an existing collection, add it there. If chats don't fit existing collections, create new ones.
           Keep new collection titles short (max 3 words), and keep descriptions concise (one sentence).
           Don't use catch-all titles like 'Misc' or titles with one or two letters.
+          Don't create new collections with the same title as existing collections.
           Return your analysis as a JSON object matching the schema provided.`,
         },
         {
           role: 'user',
           content: `
           Chats to organize: ${JSON.stringify(chatData)}
-          Existing collections: ${JSON.stringify(existingCollections)}
+          Existing collections: ${JSON.stringify(existingCollections.map(col => ({
+            collectionId: col.id,
+            title: col.title,
+            description: col.description
+          })))}
           `,
         },
       ],

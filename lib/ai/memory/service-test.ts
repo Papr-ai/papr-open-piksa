@@ -137,9 +137,8 @@ async function runServiceTest() {
     // Check if our test message is in the results
     const foundTestMessage = memories.some(
       (memory) =>
-        (memory.content?.includes('This is a test message') ||
-          memory.text?.includes('This is a test message')) &&
-        (memory.content?.includes(testId) || memory.text?.includes(testId)),
+        memory.content?.includes('This is a test message') &&
+        memory.content?.includes(testId),
     );
 
     if (foundTestMessage) {

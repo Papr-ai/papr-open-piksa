@@ -153,3 +153,24 @@ Papr Chat is open-source software licensed under the MIT license.
 - Documentation: [platform.papr.ai/papr-chat-template](platform.papr.ai/papr-chat-template)
 - Discord: [Join our community](https://discord.gg/tGzshWDg)
 - Issues: [GitHub Issues](https://github.com/papr/chat/issues)
+
+# Container App Runner Configuration
+
+## Vercel Sandbox Integration
+
+This project uses Vercel Sandbox for running applications in secure container environments.
+
+### Setup
+
+The Vercel Sandbox integration is automatically configured when you deploy to Vercel using OpenID Connect (OIDC) for secure authentication. No additional API keys or tokens need to be manually configured.
+
+### Benefits
+
+- Run Node.js and Python applications in isolated environments
+- Full language and dependency support in real container environments
+- Secure isolation via microVMs and iframes
+- Preview apps with real networking and system dependencies
+- Seamless integration with Vercel deployments
+- Turbopack-powered HMR for fast code updates
+
+## Running the App

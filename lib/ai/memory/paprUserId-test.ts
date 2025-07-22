@@ -81,7 +81,7 @@ async function testPaprMemorySearch() {
         );
         console.log(`ID: ${memory.id || 'Not available'}`);
         console.log(
-          `User ID: ${memory.user_id || memory.metadata?.user_id || 'Not found'}`,
+          `User ID: ${memory.metadata?.user_id || 'Not found'}`,
         );
       });
     }
@@ -117,6 +117,9 @@ async function testPaprMemorySearch() {
           `Content: ${memory.content?.substring(0, 100) || '(no content)'}`,
         );
         console.log(`ID: ${memory.id || 'Not available'}`);
+        console.log(
+          `User ID: ${memory.metadata?.user_id || 'Not found'}`,
+        );
       });
     }
 

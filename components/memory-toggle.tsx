@@ -22,7 +22,7 @@ const MemoryIcon = ({
   return (
     <svg
       width={size}
-      height={size * 1.18}
+      height={size * 1.2}
       viewBox="0 0 20 20"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"

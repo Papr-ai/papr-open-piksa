@@ -16,14 +16,14 @@ export function CodeBlock({
 }: CodeBlockProps) {
   if (!inline) {
     return (
-      <div className="not-prose flex flex-col">
+      <span className="not-prose inline-flex flex-col">
         <pre
           {...props}
-          className={`text-sm w-full overflow-x-auto dark:bg-zinc-900 p-4 border border-zinc-200 dark:border-zinc-700 rounded-xl dark:text-zinc-50 text-zinc-900`}
+          className={`inline-block whitespace-pre-wrap w-fit text-sm overflow-x-auto dark:bg-zinc-900 p-1 px-2 bg-muted-foreground rounded-xl dark:text-zinc-50 text-zinc-50`}
         >
-          <code className="whitespace-pre-wrap break-words">{children}</code>
+          <code className="inline-block whitespace-pre-wrap break-words">{children}</code>
         </pre>
-      </div>
+      </span>
     );
   } else {
     return (

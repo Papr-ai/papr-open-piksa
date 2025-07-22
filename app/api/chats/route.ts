@@ -1,4 +1,4 @@
-import { getChatsByUserId } from '@/lib/db/queries';
+import { getChatById, getChatsByUserId } from '@/lib/db/queries';
 import { auth } from '@/app/(auth)/auth';
 import { NextResponse } from 'next/server';
 
@@ -12,7 +12,25 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const userId = searchParams.get('userId');
+    const id = searchParams.get('id');
 
+    // If an ID is provided, return the specific chat
+    if (id) {
+      const chat = await getChatById({ id });
+      // If chat not yet created or only has default title, return 204 to avoid polling errors
+      if (!chat || chat.title === 'New Chat') {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      // Verify the authenticated user owns this chat or the chat is public
+      if (chat.userId !== session.user.id && chat.visibility !== 'public') {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
+      return NextResponse.json(chat);
+    }
+
+    // Otherwise, handle the list request
     if (!userId) {
       return NextResponse.json(
         { error: 'Missing userId parameter' },

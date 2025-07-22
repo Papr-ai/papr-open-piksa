@@ -93,87 +93,84 @@ export default function SavedPagesPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <header className="flex sticky top-0 bg-background py-1.5 items-center px-2 md:px-2 gap-2">
-        <SidebarToggle />
-        <div className="flex-1 overflow-hidden">
-          <h1 className="text-lg font-semibold truncate">Artifacts</h1>
-        </div>
-      </header>
 
-      <div className="flex-1 overflow-auto p-2">
-        {isLoading && savedPages.length === 0 && (
-          <div className="flex justify-center items-center py-12">
-            <p>Loading artifacts...</p>
-          </div>
-        )}
 
-        {error && (
-          <div className="bg-red-100 text-red-800 p-4 rounded-md mb-4">
-            <p className="mb-2">{error}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="flex items-center gap-2"
-              onClick={fetchSavedPages}
-            >
-              <RefreshIcon size={14} />
-              <span>Retry</span>
-            </Button>
-          </div>
-        )}
-
-        {!isLoading && !error && savedPages.length === 0 && (
-          <div className="bg-muted p-8 rounded-lg text-center">
-            <div className="flex justify-center mb-4">
-              <FileIcon size={40} />
+      <div className="flex-1 overflow-auto p-2 pt-5 w-full">
+        <div className="w-[70%] mx-auto">
+          {isLoading && savedPages.length === 0 && (
+            <div className="flex justify-center items-center py-12">
+              <p>Loading artifacts...</p>
             </div>
-            <h2 className="text-xl font-semibold mb-2">No Saved Pages</h2>
-            <p className="text-muted-foreground mb-4">
-              You haven&apos;t saved any documents or pages yet.
-            </p>
-            <Button onClick={() => router.push('/')}>Start a new chat</Button>
-          </div>
-        )}
+          )}
 
-        {savedPages.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mx-auto w-full px-0 md:px-2 lg:px-4">
-            {savedPages.map((page) => (
-              <Card
-                key={page.id}
-                className="hover:bg-muted/50 transition-colors"
+          {error && (
+            <div className="bg-red-100 text-red-800 p-4 rounded-md mb-4">
+              <p className="mb-2">{error}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex items-center gap-2"
+                onClick={fetchSavedPages}
               >
-                <Link
-                  href={
-                    page.chatId
-                      ? `/chat/${page.chatId}?documentId=${page.id}&directOpen=true`
-                      : '/'
-                  }
-                  className="block"
+                <RefreshIcon size={14} />
+                <span>Retry</span>
+              </Button>
+            </div>
+          )}
+
+          {!isLoading && !error && savedPages.length === 0 && (
+            <div className="bg-muted p-8 rounded-lg text-center">
+              <div className="flex justify-center mb-4">
+                <FileIcon size={40} />
+              </div>
+              <h2 className="text-xl font-semibold mb-2">No Saved Pages</h2>
+              <p className="text-muted-foreground mb-4">
+                You haven&apos;t saved any documents or pages yet.
+              </p>
+              <Button onClick={() => router.push('/')}>Start a new chat</Button>
+            </div>
+          )}
+
+          {savedPages.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mx-auto w-full px-0 md:px-2 lg:px-4">
+              {savedPages.map((page) => (
+                <Card
+                  key={page.id}
+                  className="hover:bg-muted/50 transition-colors"
                 >
-                  <CardHeader className="pb-1 pt-3 px-4">
-                    <CardTitle className="text-lg font-medium">
-                      {page.title ||
-                        `Document from ${new Date(page.createdAt).toLocaleDateString()}`}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="pt-0 pb-3 px-4">
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <span className="capitalize">{page.kind}</span>
-                      {!page.chatId && (
-                        <span className="text-yellow-600">
-                          (Original chat not found)
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Created on {new Date(page.createdAt).toLocaleString()}
-                    </p>
-                  </CardContent>
-                </Link>
-              </Card>
-            ))}
-          </div>
-        )}
+                  <Link
+                    href={
+                      page.chatId
+                        ? `/chat/${page.chatId}?documentId=${page.id}&directOpen=true`
+                        : '/'
+                    }
+                    className="block"
+                  >
+                    <CardHeader className="pb-1 pt-3 px-4">
+                      <CardTitle className="text-lg font-medium">
+                        {page.title ||
+                          `Document from ${new Date(page.createdAt).toLocaleDateString()}`}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pt-0 pb-3 px-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <span className="capitalize">{page.kind}</span>
+                        {!page.chatId && (
+                          <span className="text-yellow-600">
+                            (Original chat not found)
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Created on {new Date(page.createdAt).toLocaleString()}
+                      </p>
+                    </CardContent>
+                  </Link>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

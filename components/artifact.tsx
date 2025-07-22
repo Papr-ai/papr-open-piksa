@@ -22,12 +22,12 @@ import { ArtifactMessages } from './artifact-messages';
 import { useSidebar } from './ui/sidebar';
 import { useArtifact } from '@/hooks/use-artifact';
 import { imageArtifact } from '@/artifacts/image/client';
-import { codeArtifact } from '@/artifacts/code/client';
 import { sheetArtifact } from '@/artifacts/sheet/client';
 import { textArtifact } from '@/artifacts/text/client';
 import { memoryArtifact } from '@/artifacts/memory/client';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import type { VisibilityType } from '@/components/visibility-selector';
 
 export interface ArtifactContentProps {
   content: any;
@@ -47,7 +47,6 @@ export interface ArtifactContentProps {
 
 export const artifactDefinitions = [
   textArtifact,
-  codeArtifact,
   imageArtifact,
   sheetArtifact,
   memoryArtifact,
@@ -85,6 +84,8 @@ function PureArtifact({
   reload,
   votes,
   isReadonly,
+  selectedModelId,
+  selectedVisibilityType,
 }: {
   chatId: string;
   input: string;
@@ -100,8 +101,21 @@ function PureArtifact({
   handleSubmit: UseChatHelpers['handleSubmit'];
   reload: UseChatHelpers['reload'];
   isReadonly: boolean;
+  selectedModelId: string;
+  selectedVisibilityType: VisibilityType;
 }) {
   const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
+
+  // Handle chat stop - ensure artifact status is updated when chat is stopped
+  useEffect(() => {
+    if (status !== 'streaming' && artifact.status === 'streaming') {
+      console.log('[ARTIFACT] Chat stopped, updating artifact status to idle');
+      setArtifact((currentArtifact) => ({
+        ...currentArtifact,
+        status: 'idle',
+      }));
+    }
+  }, [status, artifact.status, setArtifact]);
 
   const {
     data: documents,
@@ -429,11 +443,11 @@ function PureArtifact({
 
           {!isMobile && (
             <motion.div
-              className="relative w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
-              initial={{ opacity: 0, x: 10, scale: 1 }}
+              className="fixed w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
+              initial={{ opacity: 0, x: windowWidth, scale: 1 }}
               animate={{
                 opacity: 1,
-                x: 0,
+                x: windowWidth - 400,
                 scale: 1,
                 transition: {
                   delay: 0.2,
@@ -444,7 +458,7 @@ function PureArtifact({
               }}
               exit={{
                 opacity: 0,
-                x: 0,
+                x: windowWidth,
                 scale: 1,
                 transition: { duration: 0 },
               }}
@@ -460,7 +474,7 @@ function PureArtifact({
                 )}
               </AnimatePresence>
 
-              <div className="flex flex-col h-full justify-between items-center gap-4">
+              <div className="flex flex-col h-full justify-between items-center">
                 <ArtifactMessages
                   chatId={chatId}
                   status={status}
@@ -470,9 +484,10 @@ function PureArtifact({
                   reload={reload}
                   isReadonly={isReadonly}
                   artifactStatus={artifact.status}
+                  selectedModelId={selectedModelId}
                 />
 
-                <form className="flex flex-row gap-2 relative items-end w-full px-4 pb-4">
+                <form className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
                   <MultimodalInput
                     chatId={chatId}
                     input={input}
@@ -486,6 +501,8 @@ function PureArtifact({
                     append={append}
                     className="bg-background dark:bg-muted"
                     setMessages={setMessages}
+                    selectedModelId={selectedModelId}
+                    selectedVisibilityType={selectedVisibilityType}
                   />
                 </form>
               </div>
@@ -493,7 +510,7 @@ function PureArtifact({
           )}
 
           <motion.div
-            className="fixed dark:bg-muted bg-background h-dvh flex flex-col overflow-y-scroll md:border-l dark:border-zinc-700 border-zinc-200"
+            className="fixed dark:bg-muted bg-background h-dvh flex flex-col overflow-y-scroll md:border-r dark:border-zinc-700 border-zinc-200 w-full"
             initial={
               isMobile
                 ? {
@@ -532,7 +549,7 @@ function PureArtifact({
                   }
                 : {
                     opacity: 1,
-                    x: 400,
+                    x: 0,
                     y: 0,
                     height: windowHeight,
                     width: windowWidth
@@ -559,42 +576,45 @@ function PureArtifact({
               },
             }}
           >
-            <div className="p-2 flex flex-row justify-between items-start">
-              <div className="flex flex-row gap-4 items-start">
-                <ArtifactCloseButton />
+            <div className="p-2 flex flex-row justify-between items-start w-full">
+              <div className="w-full mx-auto flex flex-row justify-between items-start">
+                <div className="flex flex-row gap-4 items-start">
+                  <ArtifactCloseButton />
 
-                <div className="flex flex-col">
-                  <div className="font-medium">{artifact.title}</div>
+                  <div className="flex flex-col">
+                    <div className="font-medium">{artifact.title}</div>
 
-                  {isContentDirty ? (
-                    <div className="text-sm text-muted-foreground">
-                      Saving changes...
-                    </div>
-                  ) : document ? (
-                    <div className="text-sm text-muted-foreground">
-                      {`Updated ${formatDistance(
-                        new Date(document.createdAt),
-                        new Date(),
-                        {
-                          addSuffix: true,
-                        },
-                      )}`}
-                    </div>
-                  ) : (
-                    <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
-                  )}
+                    {isContentDirty ? (
+                      <div className="text-sm text-muted-foreground">
+                        Saving changes...
+                      </div>
+                    ) : document ? (
+                      <div className="text-sm text-muted-foreground">
+                        {`Updated ${formatDistance(
+                          new Date(document.createdAt),
+                          new Date(),
+                          {
+                            addSuffix: true,
+                          },
+                        )}`}
+                      </div>
+                    ) : (
+                      <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              <ArtifactActions
-                artifact={artifact}
-                currentVersionIndex={currentVersionIndex}
-                handleVersionChange={handleVersionChange}
-                isCurrentVersion={isCurrentVersion}
-                mode={mode}
-                metadata={metadata}
-                setMetadata={setMetadata}
-              />
+                <ArtifactActions
+                  artifact={artifact}
+                  currentVersionIndex={currentVersionIndex}
+                  handleVersionChange={handleVersionChange}
+                  isCurrentVersion={isCurrentVersion}
+                  mode={mode}
+                  metadata={metadata}
+                  setMetadata={setMetadata}
+                  appendMessage={append}
+                />
+              </div>
             </div>
 
             <div className="dark:bg-muted bg-background h-full overflow-y-scroll !max-w-full items-center">
@@ -655,6 +675,8 @@ export const Artifact = memo(PureArtifact, (prevProps, nextProps) => {
   if (!equal(prevProps.votes, nextProps.votes)) return false;
   if (prevProps.input !== nextProps.input) return false;
   if (!equal(prevProps.messages, nextProps.messages.length)) return false;
+  if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
+  if (prevProps.selectedVisibilityType !== nextProps.selectedVisibilityType) return false;
 
   return true;
 });

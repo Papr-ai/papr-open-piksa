@@ -116,12 +116,12 @@ export function MemoryCard({ memory, onClick }: MemoryCardProps) {
       onClick={onClick}
     >
       <CardHeader className="pb-1 pt-3 px-4 flex flex-row items-center gap-2">
-        <div className="flex-shrink-0">
+        <div className="shrink-0">
           <MemoryIcon size={18} isEnabled={true} gradientId={gradientId} />
         </div>
         <div className="text-xs text-muted-foreground">{formattedDate}</div>
       </CardHeader>
-      <CardContent className="px-4 py-2 flex-grow">
+      <CardContent className="px-4 py-2 grow">
         {typeof cleanContent === 'string' ? (
           <p className="text-sm line-clamp-3">{cleanContent}</p>
         ) : (

@@ -7,6 +7,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import type { ArtifactActionContext } from './create-artifact';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import type { UseChatHelpers } from '@ai-sdk/react';
 
 // Import the detectLanguage function from code artifact
 function detectLanguage(
@@ -60,6 +61,7 @@ interface ArtifactActionsProps {
   mode: 'edit' | 'diff';
   metadata: any;
   setMetadata: Dispatch<SetStateAction<any>>;
+  appendMessage?: UseChatHelpers['append'];
 }
 
 function PureArtifactActions({
@@ -70,6 +72,7 @@ function PureArtifactActions({
   mode,
   metadata,
   setMetadata,
+  appendMessage,
 }: ArtifactActionsProps) {
   const [isLoading, setIsLoading] = useState(false);
 
@@ -89,6 +92,7 @@ function PureArtifactActions({
     mode,
     metadata,
     setMetadata,
+    appendMessage,
   };
 
   return (
@@ -147,6 +151,8 @@ function PureArtifactActions({
                       ? action.isDisabled(actionContext)
                       : false
                 }
+                data-tooltip-content={action.description}
+                data-artifact-action={action.label}
               >
                 {action.icon}
                 {buttonLabel}

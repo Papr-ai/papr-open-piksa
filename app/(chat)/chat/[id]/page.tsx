@@ -1,6 +1,5 @@
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
-
 import { auth } from '@/app/(auth)/auth';
 import { Chat } from '@/components/chat';
 import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
@@ -8,6 +7,7 @@ import { DataStreamHandler } from '@/components/data-stream-handler';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import type { DBMessage } from '@/lib/db/schema';
 import type { Attachment, UIMessage } from 'ai';
+import { ChatBreadcrumb } from '@/components/chat-breadcrumb';
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -82,6 +82,7 @@ export default async function Page({ params, searchParams }: PageProps) {
           (message.attachments as Array<Attachment>) ?? [],
         tool_calls: message.tool_calls as any,
         memories: message.memories as any, // Include memories from the message
+        modelId: message.modelId, // Include model ID
       };
     });
   }
@@ -89,33 +90,35 @@ export default async function Page({ params, searchParams }: PageProps) {
   const cookieStore = await cookies();
   const chatModelFromCookie = cookieStore.get('chat-model');
 
-  if (!chatModelFromCookie) {
-    return (
-      <>
-        <Chat
-          id={chat.id}
-          initialMessages={convertToUIMessages(messagesFromDb)}
-          selectedChatModel={DEFAULT_CHAT_MODEL}
-          selectedVisibilityType={chat.visibility}
-          isReadonly={session?.user?.id !== chat.userId}
-          documentId={documentId}
-        />
-        <DataStreamHandler id={id} />
-      </>
-    );
-  }
-
   return (
     <>
-      <Chat
-        id={chat.id}
-        initialMessages={convertToUIMessages(messagesFromDb)}
-        selectedChatModel={chatModelFromCookie.value}
-        selectedVisibilityType={chat.visibility}
-        isReadonly={session?.user?.id !== chat.userId}
-        documentId={documentId}
-      />
-      <DataStreamHandler id={id} />
+      <ChatBreadcrumb title={chat.title || `Chat ${id.substring(0, 8)}...`} chatId={id} />
+      
+      {!chatModelFromCookie ? (
+        <>
+          <Chat
+            id={chat.id}
+            initialMessages={convertToUIMessages(messagesFromDb)}
+            selectedChatModel={DEFAULT_CHAT_MODEL}
+            selectedVisibilityType={chat.visibility}
+            isReadonly={session?.user?.id !== chat.userId}
+            documentId={documentId}
+          />
+          <DataStreamHandler id={id} />
+        </>
+      ) : (
+        <>
+          <Chat
+            id={chat.id}
+            initialMessages={convertToUIMessages(messagesFromDb)}
+            selectedChatModel={chatModelFromCookie.value}
+            selectedVisibilityType={chat.visibility}
+            isReadonly={session?.user?.id !== chat.userId}
+            documentId={documentId}
+          />
+          <DataStreamHandler id={id} />
+        </>
+      )}
     </>
   );
 }
