@@ -95,6 +95,10 @@ export const {
           const newUser = await createOAuthUser(email, user.name || undefined);
           console.log(`[Auth] Successfully created new GitHub user with ID: ${newUser.id}`);
           
+          // Ensure the new user has a paprUserId
+          console.log(`[Auth] Ensuring paprUserId for new user: ${newUser.id}`);
+          await ensurePaprUserId(newUser.id, email, user.name || undefined);
+          
           return true;
         } catch (error) {
           console.error('[Auth] Error in GitHub sign-in callback:', error);

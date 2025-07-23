@@ -877,7 +877,7 @@ export default function LandingPage() {
                 <img src="/images/papr-logo.svg" alt="Papr Logo" className="h-6 mr-2" />
                 <span className="text-xl font-bold">Papr</span>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">© 2024 Papr AI</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">© 2025 Papr AI</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Headquartered in San Francisco</p>
             </div>
             
@@ -904,9 +904,9 @@ export default function LandingPage() {
             <div>
               <h3 className="font-medium mb-4">Community</h3>
               <ul className="space-y-3">
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Events</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Campus</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Fellows</Link></li>
+                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Discord</Link></li>
+                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">LinkedIn</Link></li>
+                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">X</Link></li>
               </ul>
             </div>
           </div>
