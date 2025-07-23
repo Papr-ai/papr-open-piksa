@@ -153,10 +153,7 @@ export default function Page(): JSX.Element {
                   window.location.href = '/';
                 } else {
                   console.log('Unexpected result:', result);
-                  toast({
-                    type: 'error',
-                    description: 'Unexpected response from GitHub sign-in',
-                  });
+
                 }
               } catch (error) {
                 console.error('Error during GitHub sign-in:', error);

@@ -3,8 +3,7 @@ import NextAuth, { type User, type Session } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import GitHub from 'next-auth/providers/github';
 
-import { getUser, createOAuthUser, ensurePaprUserId } from '@/lib/db/queries';
-
+import { getUser, createOAuthUser, updateUserProfile } from '@/lib/db/queries';
 import { authConfig } from './auth.config';
 
 interface ExtendedUser extends User {
@@ -70,6 +69,9 @@ export const {
       // Handle GitHub OAuth sign-in
       if (account?.provider === 'github') {
         try {
+          console.log(`[Auth] GitHub profile:`, profile);
+          console.log(`[Auth] GitHub user:`, user);
+          
           const email = user.email;
           if (!email) {
             console.error('[Auth] No email provided by GitHub');
@@ -83,21 +85,26 @@ export const {
             const existingUser = existingUsers[0];
             console.log(`[Auth] Existing GitHub user found: ${email} (ID: ${existingUser.id})`);
             
-            // Ensure the existing user has a paprUserId
-            console.log(`[Auth] Ensuring paprUserId for existing user: ${existingUser.id}`);
-            await ensurePaprUserId(existingUser.id, email, user.name || undefined);
+            // Update user's name and image if not already set
+            if ((user.name && !existingUser.name) || (user.image && !existingUser.image)) {
+              console.log(`[Auth] Updating GitHub user profile info: ${existingUser.id}`);
+              await updateUserProfile(
+                existingUser.id,
+                existingUser.name || user.name,
+                existingUser.image || user.image
+              );
+            }
+            
+            // For existing users, no need to do anything as they should already have a paprUserId
+            console.log(`[Auth] Using existing GitHub user: ${existingUser.id}`);
             
             return true;
           }
 
           // Create new OAuth user
           console.log(`[Auth] Creating new GitHub user: ${email}`);
-          const newUser = await createOAuthUser(email, user.name || undefined);
+          const newUser = await createOAuthUser(email, user.name || undefined, user.image || undefined);
           console.log(`[Auth] Successfully created new GitHub user with ID: ${newUser.id}`);
-          
-          // Ensure the new user has a paprUserId
-          console.log(`[Auth] Ensuring paprUserId for new user: ${newUser.id}`);
-          await ensurePaprUserId(newUser.id, email, user.name || undefined);
           
           return true;
         } catch (error) {

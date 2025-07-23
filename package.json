@@ -18,6 +18,7 @@
     "db:up": "drizzle-kit up",
     "db:create-memory-table": "npx tsx scripts/create-message-memory-table.ts",
     "db:add-memories-column": "tsx lib/db/migrations/add-memories-column.ts",
+    "db:add-created-at": "tsx lib/db/migrations/add-created-at.ts",
     "test": "export PLAYWRIGHT=True && pnpm exec playwright test --workers=4",
     "memory:migrate": "tsx lib/db/helpers/memory-migration.ts",
     "memory:test": "node scripts/run-memory-test.js",

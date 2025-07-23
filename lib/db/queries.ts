@@ -19,7 +19,9 @@ import {
 } from './schema';
 import type { User, Suggestion, DBMessage, Chat } from './schema';
 import type { ArtifactKind } from '@/components/artifact';
+// Update imports to get Papr namespace
 import { initPaprMemory } from '../ai/memory/index';
+import Papr from '@papr/memory';
 
 // Optionally, if not using email/pass login, you can
 // use the Drizzle adapter for Auth.js / NextAuth
@@ -79,7 +81,7 @@ export async function createUser(email: string, password: string) {
           });
 
           // If successful, store the Papr user ID in our database
-          if (paprUserResponse?.user_id) {
+          if (paprUserResponse && paprUserResponse.user_id) {
             paprUserId = paprUserResponse.user_id;
             console.log(
               `[Memory] Created Papr Memory user with ID: ${paprUserId}`,
@@ -150,8 +152,8 @@ export async function createUser(email: string, password: string) {
   }
 }
 
-export async function createOAuthUser(email: string, name?: string) {
-  console.log(`[DB] createOAuthUser called for email: ${email}, name: ${name}`);
+export async function createOAuthUser(email: string, name?: string, image?: string) {
+  console.log(`[DB] createOAuthUser called for email: ${email}, name: ${name}, image: ${image}`);
   
   try {
     console.log(`[DB] Attempting to create OAuth user in database`);
@@ -161,13 +163,17 @@ export async function createOAuthUser(email: string, name?: string) {
       .insert(user)
       .values({ 
         email, 
-        password: null  // OAuth users don't have passwords
+        password: null,  // OAuth users don't have passwords
+        name: name || null,
+        image: image || null
       })
       .returning();
 
     console.log(`[DB] User created successfully:`, {
       id: userResult[0].id,
       email: userResult[0].email,
+      name: userResult[0].name,
+      image: userResult[0].image,
       paprUserId: userResult[0].paprUserId,
     });
 
@@ -194,8 +200,8 @@ export async function createOAuthUser(email: string, name?: string) {
         let paprUserId = null;
 
         try {
-          // Try to create a user in Papr Memory
-          const paprUserResponse = await paprClient.user.create({
+          // Properly define request params with SDK type
+          const userParams: Papr.UserCreateParams = {
             external_id: `PaprChat-user-${userId}`,
             email: email,
             metadata: {
@@ -203,20 +209,19 @@ export async function createOAuthUser(email: string, name?: string) {
               app_user_id: userId,
               name: name || null,
             },
-          });
+          };
+
+          // Try to create a user in Papr Memory
+          const paprUserResponse: Papr.UserResponse = await paprClient.user.create(userParams);
 
           console.log(`[Memory] Papr user creation response:`, paprUserResponse);
 
-          // If successful, store the Papr user ID in our database
-          if (paprUserResponse?.user_id) {
+          // Extract user_id from response using the SDK's type
+          if (paprUserResponse && paprUserResponse.user_id) {
             paprUserId = paprUserResponse.user_id;
-            console.log(
-              `[Memory] Created Papr Memory user with ID: ${paprUserId}`,
-            );
+            console.log(`[Memory] Created Papr Memory user with ID: ${paprUserId}`);
           } else {
-            console.error(
-              `[Memory] Failed to create Papr Memory user - no user_id in response`,
-            );
+            console.error(`[Memory] Failed to create Papr Memory user - no user_id in response`);
           }
         } catch (createError: any) {
           console.log(`[Memory] User creation failed:`, createError);
@@ -231,7 +236,8 @@ export async function createOAuthUser(email: string, name?: string) {
             const alternativeExternalId = `PaprChat-user-${userId}-${timestamp}`;
             
             try {
-              const alternativeUserResponse = await paprClient.user.create({
+              // Properly define request params with SDK type
+              const alternativeParams: Papr.UserCreateParams = {
                 external_id: alternativeExternalId,
                 email: `${timestamp}-${email}`, // Use a different email to avoid conflict
                 metadata: {
@@ -241,13 +247,15 @@ export async function createOAuthUser(email: string, name?: string) {
                   original_email: email,
                   note: 'Created with alternative ID due to existing user conflict'
                 },
-              });
+              };
               
-              if (alternativeUserResponse?.user_id) {
+              const alternativeUserResponse: Papr.UserResponse = await paprClient.user.create(alternativeParams);
+              
+              if (alternativeUserResponse && alternativeUserResponse.user_id) {
                 paprUserId = alternativeUserResponse.user_id;
                 console.log(`[Memory] Created alternative Papr Memory user with ID: ${paprUserId}`);
               } else {
-                console.error(`[Memory] Failed to create alternative Papr Memory user`);
+                console.error(`[Memory] Failed to create alternative Papr Memory user - no user_id in response`);
               }
             } catch (alternativeError) {
               console.error(`[Memory] Failed to create alternative user:`, alternativeError);
@@ -285,131 +293,23 @@ export async function createOAuthUser(email: string, name?: string) {
   }
 }
 
-export async function ensurePaprUserId(userId: string, email: string, name?: string) {
-  console.log(`[DB] ensurePaprUserId called for user: ${userId}, email: ${email}`);
+export async function updateUserProfile(userId: string, name?: string | null, image?: string | null) {
+  console.log(`[DB] Updating user profile for ${userId}, name: ${name}, image: ${image}`);
   
   try {
-    // First check if user already has a paprUserId
-    const existingUsers = await db.select().from(user).where(eq(user.id, userId));
+    await db
+      .update(user)
+      .set({
+        name: name || null,
+        image: image || null,
+      })
+      .where(eq(user.id, userId));
     
-    if (existingUsers.length === 0) {
-      console.error(`[DB] User not found: ${userId}`);
-      return null;
-    }
-    
-    const existingUser = existingUsers[0];
-    console.log(`[DB] Current user paprUserId: ${existingUser.paprUserId}`);
-    
-    if (existingUser.paprUserId) {
-      console.log(`[DB] User already has paprUserId: ${existingUser.paprUserId}`);
-      return existingUser.paprUserId;
-    }
-    
-    // User doesn't have paprUserId, create one
-    console.log(`[DB] Creating paprUserId for existing user: ${userId}`);
-    
-    const paprApiKey = process.env.PAPR_MEMORY_API_KEY;
-    if (!paprApiKey) {
-      console.log(`[Memory] No Papr API key available, skipping paprUserId creation`);
-      return null;
-    }
-    
-    try {
-      // Initialize the Papr SDK
-      const API_BASE_URL = process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
-      const paprClient = initPaprMemory(paprApiKey, {
-        baseURL: API_BASE_URL,
-      });
-
-      console.log(`[Memory] Creating Papr Memory user for existing user ${email} (App user ID: ${userId})`);
-
-      let paprUserId = null;
-
-      try {
-        // Try to create a user in Papr Memory
-        const paprUserResponse = await paprClient.user.create({
-          external_id: `PaprChat-user-${userId}`,
-          email: email,
-          metadata: {
-            source: 'PaprChat-OAuth-Retroactive',
-            app_user_id: userId,
-            name: name || null,
-          },
-        });
-
-        console.log(`[Memory] Papr user creation response:`, paprUserResponse);
-
-        if (paprUserResponse?.user_id) {
-          paprUserId = paprUserResponse.user_id;
-          console.log(`[Memory] Created Papr Memory user with ID: ${paprUserId}`);
-        } else {
-          console.error(`[Memory] Failed to create Papr Memory user - no user_id in response`);
-          return null;
-        }
-      } catch (createError: any) {
-        console.log(`[Memory] User creation failed:`, createError);
-        
-        // Check if this is a 409 "User already exists" error
-        if (createError.status === 409) {
-          console.log(`[Memory] User already exists in Papr Memory with email: ${email}`);
-          console.log(`[Memory] Attempting to create with different external_id to work around existing user`);
-          
-          // Try with a timestamp-based external_id to avoid conflicts
-          const timestamp = Date.now();
-          const alternativeExternalId = `PaprChat-user-${userId}-${timestamp}`;
-          
-          try {
-            const alternativeUserResponse = await paprClient.user.create({
-              external_id: alternativeExternalId,
-              email: `${timestamp}-${email}`, // Use a different email to avoid conflict
-              metadata: {
-                source: 'PaprChat-OAuth-Retroactive-Alternative',
-                app_user_id: userId,
-                name: name || null,
-                original_email: email,
-                note: 'Created with alternative ID due to existing user conflict'
-              },
-            });
-            
-            if (alternativeUserResponse?.user_id) {
-              paprUserId = alternativeUserResponse.user_id;
-              console.log(`[Memory] Created alternative Papr Memory user with ID: ${paprUserId}`);
-            } else {
-              console.error(`[Memory] Failed to create alternative Papr Memory user`);
-              return null;
-            }
-          } catch (alternativeError) {
-            console.error(`[Memory] Failed to create alternative user:`, alternativeError);
-            return null;
-          }
-        } else {
-          // Re-throw non-409 errors
-          throw createError;
-        }
-      }
-
-      if (paprUserId) {
-        // Update the user record with the Papr user ID
-        await db
-          .update(user)
-          .set({ paprUserId: paprUserId })
-          .where(eq(user.id, userId));
-
-        console.log(`[Memory] Updated local user record with Papr user ID: ${paprUserId}`);
-        return paprUserId;
-      } else {
-        console.error(`[Memory] Failed to obtain Papr user ID`);
-        return null;
-      }
-    } catch (paprError) {
-      console.error('[Memory] Error creating Papr Memory user for existing user:', paprError);
-      console.error('[Memory] Papr error stack:', paprError instanceof Error ? paprError.stack : 'No stack trace');
-      return null;
-    }
+    console.log(`[DB] User profile updated successfully`);
+    return true;
   } catch (error) {
-    console.error('[DB] Error in ensurePaprUserId:', error);
-    console.error('[DB] Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-    return null;
+    console.error('[DB] Failed to update user profile:', error);
+    return false;
   }
 }
 
