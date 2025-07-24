@@ -1,4 +1,6 @@
-import { NextResponse } from 'next/server';
+// This file is not used in the project, but is kept here for reference
+
+/*import { NextResponse } from 'next/server';
 import { auth } from '@/app/(auth)/auth';
 import { Papr } from '@papr/memory';
 
@@ -32,9 +34,7 @@ export async function POST(request: Request) {
     }
 
     const client = getPaprClient();
-    
-    // Add document as memory using the SDK
-    const response = await client.memory.add({
+    const memoryParams: Papr.MemoryAddParams = {
       content,
       type: 'document',
       metadata: {
@@ -42,9 +42,11 @@ export async function POST(request: Request) {
         filename: filename || `document_${Date.now()}.txt`,
         user_id: session.user.id,
         created_at: new Date().toISOString(),
-        source: 'PaprChat',
+        sourceType: 'PaprChat',
       },
-    });
+    };
+    // Add document as memory using the SDK
+    const response: Papr.AddMemoryResponse = await client.memory.add(memoryParams);
 
     return NextResponse.json({
       success: true,
@@ -77,12 +79,13 @@ export async function GET(request: Request) {
     const client = getPaprClient();
     
     try {
-      // Search for documents using metadata to find the specific document
-      const response = await client.memory.search({
+      const searchParams: Papr.MemorySearchParams = {
         query: `Get document with ID: ${documentId}`,
         max_memories: 1,
         user_id: session.user.id,
-      });
+      };
+      // Search for documents using metadata to find the specific document
+      const response: Papr.SearchResponse = await client.memory.search(searchParams);
       
       if (response.data && 
           response.data.memories && 
@@ -128,7 +131,7 @@ export async function DELETE(request: Request) {
     const client = getPaprClient();
     
     // Delete memory item
-    const response = await client.memory.delete(documentId);
+    const response: Papr.MemoryDeleteResponse = await client.memory.delete(documentId);
 
     return NextResponse.json({
       success: true,
@@ -141,4 +144,4 @@ export async function DELETE(request: Request) {
       { status: 500 },
     );
   }
-} 
+} */

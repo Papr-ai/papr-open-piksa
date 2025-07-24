@@ -1,5 +1,6 @@
 import { formatDistanceToNow } from 'date-fns';
-import { Card, CardContent, CardHeader } from './ui/card';
+import { Card, CardContent, CardHeader, CardFooter } from './ui/card';
+import { Badge } from './ui/badge';
 
 // Custom Memory Icon component
 const MemoryIcon = ({
@@ -48,7 +49,15 @@ const MemoryIcon = ({
 export interface MemoryItem {
   content: string;
   id: string;
-  timestamp: string;
+  timestamp?: string;
+  createdAt?: string;
+  emoji_tags?: string[];
+  topics?: string[];
+  hierarchical_structure?: string;
+  category?: string;
+  customMetadata?: {
+    category?: string;
+  };
 }
 
 interface MemoryCardProps {
@@ -56,14 +65,31 @@ interface MemoryCardProps {
   onClick?: () => void;
 }
 
+// Get category colors
+function getCategoryColor(category?: string): { bg: string; text: string } {
+  switch (category?.toLowerCase()) {
+    case 'preferences':
+      return { bg: 'bg-blue-100', text: 'text-blue-800' };
+    case 'goals':
+      return { bg: 'bg-green-100', text: 'text-green-800' };
+    case 'tasks':
+      return { bg: 'bg-purple-100', text: 'text-purple-800' };
+    case 'knowledge':
+      return { bg: 'bg-amber-100', text: 'text-amber-800' };
+    default:
+      return { bg: 'bg-gray-100', text: 'text-gray-800' };
+  }
+}
+
 export function MemoryCard({ memory, onClick }: MemoryCardProps) {
-  // Format the timestamp
+  // Format the timestamp - use createdAt if available, otherwise timestamp
   const formattedDate = (() => {
     try {
-      if (!memory.timestamp) return 'unknown time';
+      const dateStr = memory.createdAt || memory.timestamp;
+      if (!dateStr) return 'unknown time';
 
       // Try parsing the timestamp
-      const date = new Date(memory.timestamp);
+      const date = new Date(dateStr);
 
       // Check if date is valid
       if (Number.isNaN(date.getTime())) return 'unknown time';
@@ -109,6 +135,13 @@ export function MemoryCard({ memory, onClick }: MemoryCardProps) {
 
   // Create a unique gradient ID for this memory card
   const gradientId = `memory-gradient-${memory.id.substring(0, 8)}`;
+  
+  // Get category from either direct property or customMetadata
+  const category = memory.category || memory.customMetadata?.category;
+  const categoryColors = getCategoryColor(category);
+  
+  // Check if we have enhanced metadata fields
+  const hasEnhancedFields = !!(memory.emoji_tags?.length || memory.topics?.length || memory.hierarchical_structure);
 
   return (
     <Card
@@ -116,10 +149,15 @@ export function MemoryCard({ memory, onClick }: MemoryCardProps) {
       onClick={onClick}
     >
       <CardHeader className="pb-1 pt-3 px-4 flex flex-row items-center gap-2">
-        <div className="shrink-0">
+        <div className="shrink-0 flex items-center gap-2">
           <MemoryIcon size={18} isEnabled={true} gradientId={gradientId} />
+          {category && (
+            <Badge variant="outline" className={`${categoryColors.bg} ${categoryColors.text} text-xs`}>
+              {category}
+            </Badge>
+          )}
         </div>
-        <div className="text-xs text-muted-foreground">{formattedDate}</div>
+        <div className="text-xs text-muted-foreground ml-auto">{formattedDate}</div>
       </CardHeader>
       <CardContent className="px-4 py-2 grow">
         {typeof cleanContent === 'string' ? (
@@ -127,7 +165,41 @@ export function MemoryCard({ memory, onClick }: MemoryCardProps) {
         ) : (
           cleanContent
         )}
+        
+        {memory.emoji_tags && memory.emoji_tags.length > 0 && (
+          <div className="text-lg mt-1">
+            {memory.emoji_tags.join(' ')}
+          </div>
+        )}
       </CardContent>
+      
+      {hasEnhancedFields && (
+        <CardFooter className="px-4 py-2 flex flex-col items-start gap-1 border-t border-border">
+          {memory.topics && memory.topics.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {memory.topics.slice(0, 3).map((topic, i) => (
+                <Badge key={i} variant="secondary" className="text-xs">
+                  {topic}
+                </Badge>
+              ))}
+              {memory.topics.length > 3 && (
+                <Badge variant="outline" className="text-xs">
+                  +{memory.topics.length - 3}
+                </Badge>
+              )}
+            </div>
+          )}
+          
+          {memory.hierarchical_structure && (
+            <div className="text-xs text-muted-foreground flex items-center gap-1">
+              <span>Path:</span>
+              <code className="bg-muted p-1 rounded text-xs truncate max-w-[200px]">
+                {memory.hierarchical_structure}
+              </code>
+            </div>
+          )}
+        </CardFooter>
+      )}
     </Card>
   );
 }

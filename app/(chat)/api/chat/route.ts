@@ -22,6 +22,7 @@ import { updateDocument } from '@/lib/ai/tools/update-document';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { searchMemories } from '@/lib/ai/tools/search-memories';
+import { addMemory } from '@/lib/ai/tools/add-memory';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
 import { 
   createListRepositoriesTool,
@@ -144,6 +145,8 @@ function getToolCallStartMessage(toolName: string, args: Record<string, any>): s
   switch (toolName) {
     case 'searchMemories':
       return `🔍 Searching your memories for: "${args.query}"`;
+    case 'addMemory':
+      return `💾 Saving ${args.category} memory`;
     case 'getWeather':
       return `🌤️ Getting weather information for ${args.location}`;
     case 'createDocument':
@@ -197,6 +200,10 @@ function getToolCallResultMessage(toolName: string, result: Record<string, any>)
       return memoryCount > 0 
         ? `✅ Found ${memoryCount} relevant ${memoryCount === 1 ? 'memory' : 'memories'}`
         : `📭 No relevant memories found`;
+    case 'addMemory':
+      return result.success 
+        ? `✅ Added ${result.message ? result.message.replace('Added ', '').replace(' memory successfully', '') : ''} memory` 
+        : `❌ Failed to add memory: ${result.error}`;
     case 'getWeather':
       return `✅ Weather information retrieved`;
     case 'createDocument':
@@ -640,6 +647,12 @@ const toolConfig = {
       errorMessage: 'Memory search failed, continuing without it',
     }
   },
+  addMemory: {
+    errorHandling: {
+      nonFatal: true,
+      errorMessage: 'Adding memory failed, continuing without it',
+    }
+  },
   getWeather: {
     errorHandling: {
       nonFatal: true,
@@ -951,7 +964,10 @@ AVAILABLE STAGING TOOLS:
             addTask: createToolWrapper('addTask')(createTaskTrackerTools(dataStream).addTask),
             
             ...(isMemoryEnabled
-              ? { searchMemories: createToolWrapper('searchMemories')(searchMemories({ session, dataStream })) }
+              ? { 
+                  searchMemories: createToolWrapper('searchMemories')(searchMemories({ session, dataStream })),
+                  addMemory: createToolWrapper('addMemory')(addMemory({ session, dataStream }))
+                }
               : {}),
           };
 
@@ -1017,7 +1033,7 @@ AVAILABLE STAGING TOOLS:
               'completeTask',
               'getTaskStatus',
               'addTask',
-              ...(isMemoryEnabled ? (['searchMemories'] as const) : []),
+              ...(isMemoryEnabled ? (['searchMemories', 'addMemory'] as const) : []),
             ],
             experimental_generateMessageId: generateUUID,
             onFinish: async ({ response }) => {

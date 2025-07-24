@@ -302,42 +302,45 @@ export async function ensurePaprUser(
   userId: string,
   apiKey: string,
 ): Promise<string | null> {
-  if (!apiKey) {
-    console.log('[Memory] No API key provided for Papr user creation');
+  if (!userId || !apiKey) {
+    console.error('[Memory] Missing userId or apiKey for ensurePaprUser');
     return null;
   }
 
   try {
     // Import the db-related code
     const { db, user, eq } = await import('@/lib/db/queries-minimal');
+    
+    console.log(`[Memory] Ensuring Papr user for app user: ${userId}`);
 
-    // First check if the user already has a Papr user ID
+    // Check if the user already has a Papr user ID
     const userResult = await db
       .select({ paprUserId: user.paprUserId, email: user.email })
       .from(user)
-      .where(eq(user.id, userId))
-      .limit(1);
+      .where(eq(user.id, userId));
 
-    // If the user has a Papr user ID, return it
-    if (userResult.length > 0 && userResult[0].paprUserId) {
+    if (userResult.length === 0) {
+      console.error(`[Memory] No user found with ID ${userId}`);
+      return null;
+    }
+
+    // If user already has a Papr user ID, return it
+    if (userResult[0].paprUserId) {
       console.log(
         `[Memory] User ${userId} already has Papr user ID: ${userResult[0].paprUserId}`,
       );
       return userResult[0].paprUserId;
     }
 
-    // User doesn't have a Papr user ID, need to create one
     console.log(`[Memory] Creating Papr user for app user: ${userId}`);
 
     const userEmail = userResult.length > 0 ? userResult[0].email : null;
 
-    // Initialize Papr SDK
-    const { initPaprMemory } = await import('@/lib/ai/memory');
-    const API_BASE_URL =
-      process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
-    const paprClient = initPaprMemory(apiKey, {
-      baseURL: API_BASE_URL,
-    });
+    // Import the createMemoryService function
+    const { createMemoryService } = await import('@/lib/ai/memory/service');
+    
+    // Create a memory service instance instead of direct client
+    const memoryService = createMemoryService(apiKey);
 
     let paprUserId = null;
 
@@ -351,6 +354,14 @@ export async function ensurePaprUser(
           app_user_id: userId,
         }
       };
+
+      // We need to use direct API access for user operations since the memory service
+      // doesn't expose user-related methods
+      const { initPaprMemory } = await import('@/lib/ai/memory');
+      const API_BASE_URL = process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
+      const paprClient = initPaprMemory(apiKey, {
+        baseURL: API_BASE_URL,
+      });
 
       // Try to create a user in Papr Memory with properly structured parameters
       const userResponse = await paprClient.user.create(createParams);
@@ -378,6 +389,13 @@ export async function ensurePaprUser(
         // Try with a timestamp-based external_id to avoid conflicts
         const timestamp = Date.now();
         const alternativeExternalId = `PaprChat-user-${userId}-${timestamp}`;
+        
+        // We need to use direct API access for user operations
+        const { initPaprMemory } = await import('@/lib/ai/memory');
+        const API_BASE_URL = process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
+        const paprClient = initPaprMemory(apiKey, {
+          baseURL: API_BASE_URL,
+        });
         
         try {
           const alternativeUserResponse = await paprClient.user.create({

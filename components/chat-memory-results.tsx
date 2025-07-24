@@ -15,9 +15,24 @@ const HAS_MEMORY_MESSAGES = new Set<string>();
 // Track rendered memory components by message ID
 const RENDERED_MEMORY_COMPONENTS = new Set<string>();
 
+// Enhanced memory item interface
+interface MemoryItem {
+  content: string;
+  timestamp?: string;
+  createdAt?: string;
+  id?: string;
+  emoji_tags?: string[];
+  topics?: string[];
+  hierarchical_structure?: string;
+  category?: string;
+  customMetadata?: {
+    category?: string;
+  };
+}
+
 export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [memories, setMemories] = useState<Array<any>>([]);
+  const [memories, setMemories] = useState<Array<MemoryItem>>([]);
   const [memoryCount, setMemoryCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const { setThinkingState } = useThinkingState();
@@ -73,6 +88,46 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
     };
   }, [messageId]);
 
+  // Process memories to ensure consistent format
+  const processMemories = (rawMemories: any[]): MemoryItem[] => {
+    return rawMemories.map(memory => {
+      // Handle memory structure differences
+      const processedMemory: MemoryItem = {
+        content: memory.content || memory.text || '',
+        id: memory.id || memory._id || undefined,
+        // Use standardized date fields
+        timestamp: memory.timestamp || memory.created_at || memory.createdAt || new Date().toISOString(),
+        createdAt: memory.createdAt || memory.created_at || memory.timestamp || new Date().toISOString(),
+      };
+      
+      // Handle emoji tags
+      if (memory['emoji tags'] || memory.emoji_tags) {
+        processedMemory.emoji_tags = memory['emoji tags'] || memory.emoji_tags;
+      }
+      
+      // Handle topics
+      if (memory.topics) {
+        processedMemory.topics = memory.topics;
+      }
+      
+      // Handle hierarchical structure
+      if (memory.hierarchical_structures || memory.hierarchical_structure) {
+        processedMemory.hierarchical_structure = 
+          memory.hierarchical_structures || memory.hierarchical_structure;
+      }
+      
+      // Handle category - either at top level or in customMetadata
+      if (memory.category) {
+        processedMemory.category = memory.category;
+      } else if (memory.customMetadata?.category) {
+        processedMemory.category = memory.customMetadata.category;
+        processedMemory.customMetadata = { category: memory.customMetadata.category };
+      }
+      
+      return processedMemory;
+    });
+  };
+
   // Load memories directly from the message object or localStorage
   useEffect(() => {
     if (!message) return;
@@ -97,11 +152,12 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
       const memoriesFromMessage = (message as any).memories;
       console.log(`[MEMORY] Found ${memoriesFromMessage.length} memories directly in message object`);
       
-      setMemories(memoriesFromMessage);
-      setMemoryCount(memoriesFromMessage.length);
+      const processedMemories = processMemories(memoriesFromMessage);
+      setMemories(processedMemories);
+      setMemoryCount(processedMemories.length);
       
       // Store in localStorage for faster future access
-      storeMemoriesInLocalStorage(messageId, memoriesFromMessage);
+      storeMemoriesInLocalStorage(messageId, processedMemories);
       
       setIsLoading(false);
       setThinkingState('Thinking...', 'memory_direct_found');
@@ -113,8 +169,9 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
     if (localStorageMemories && localStorageMemories.length > 0) {
       console.log(`[MEMORY] Using ${localStorageMemories.length} memories from localStorage`);
       
-      setMemories(localStorageMemories);
-      setMemoryCount(localStorageMemories.length);
+      const processedMemories = processMemories(localStorageMemories);
+      setMemories(processedMemories);
+      setMemoryCount(processedMemories.length);
       
       setIsLoading(false);
       setThinkingState('Thinking...', 'memory_local_found');
@@ -135,11 +192,13 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
             if (memoriesFromTool && memoriesFromTool.length > 0) {
               console.log(`[MEMORY] Found ${memoriesFromTool.length} memories in tool invocation`);
               
-              // Store in localStorage for future access
-              storeMemoriesInLocalStorage(messageId, memoriesFromTool);
+              const processedMemories = processMemories(memoriesFromTool);
               
-              setMemories(memoriesFromTool);
-              setMemoryCount(memoriesFromTool.length);
+              // Store in localStorage for future access
+              storeMemoriesInLocalStorage(messageId, processedMemories);
+              
+              setMemories(processedMemories);
+              setMemoryCount(processedMemories.length);
               
               setIsLoading(false);
               setThinkingState('Processing information...', 'memory_tool_found');
@@ -170,11 +229,13 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
               const memoriesFromCall = output.memories;
               console.log(`[MEMORY] Found ${memoriesFromCall.length} memories in tool_calls output`);
               
-              // Store in localStorage for future access
-              storeMemoriesInLocalStorage(messageId, memoriesFromCall);
+              const processedMemories = processMemories(memoriesFromCall);
               
-              setMemories(memoriesFromCall);
-              setMemoryCount(memoriesFromCall.length);
+              // Store in localStorage for future access
+              storeMemoriesInLocalStorage(messageId, processedMemories);
+              
+              setMemories(processedMemories);
+              setMemoryCount(processedMemories.length);
               
               setIsLoading(false);
               setThinkingState('Processing information...', 'memory_call_found');

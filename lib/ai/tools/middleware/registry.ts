@@ -42,6 +42,16 @@ export class ToolRegistry {
       }
     });
 
+    // Register the addMemory tool
+    this.register('addMemory', {
+      getStartMessage: (args) => `💾 Saving ${args.category} memory: "${args.content.substring(0, 30)}${args.content.length > 30 ? '...' : ''}"`,
+      getResultMessage: (result) => {
+        return result.success
+          ? `✅ Added ${result.category} memory successfully`
+          : `❌ Failed to add memory: ${result.error || 'Unknown error'}`;
+      }
+    });
+
     // Add more default handlers as needed
   }
 } 

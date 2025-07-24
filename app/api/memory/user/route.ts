@@ -54,7 +54,7 @@ export async function GET(request: Request) {
         external_id: externalId,
         email: session.user.email || '',
         metadata: {
-          source: 'PaprChat',
+          sourceType: 'PaprChat',
           app_user_id: session.user.id,
           name: session.user.name || '',
         },
@@ -95,7 +95,7 @@ export async function PUT(request: Request) {
     const updateParams = {
       metadata: {
         ...metadata,
-        source: 'PaprChat',
+        sourceType: 'PaprChat',
         app_user_id: session.user.id,
       },
     };

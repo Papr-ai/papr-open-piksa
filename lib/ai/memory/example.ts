@@ -8,6 +8,7 @@ import {
   initPaprMemory,
   type MemoryAddParams,
   type MemorySearchParams,
+  Papr,
 } from './index';
 
 // Base API URL for all calls
@@ -84,14 +85,14 @@ const addMemoryExample = async (paprUserId: string, content: string) => {
     content,
     type: 'text',
     metadata: {
-      source: 'v0-app',
+      source: 'PaprChat',
       user_id: paprUserId, // Use the Papr-generated user ID
-      tags: ['test', 'v0', 'example'],
+      tags: ['test', 'PaprChat', 'example'],
     },
   };
 
   try {
-    const response = await paprClient.memory.add(memoryParams);
+    const response: Papr.AddMemoryResponse = await paprClient.memory.add(memoryParams);
     console.log(`Memory added successfully for Papr user ID: ${paprUserId}`);
     return response;
   } catch (error) {
@@ -111,7 +112,7 @@ const searchMemoriesExample = async (paprUserId: string, query: string) => {
   };
 
   try {
-    const response = await paprClient.memory.search(searchParams);
+    const response: Papr.SearchResponse = await paprClient.memory.search(searchParams);
     console.log(`Search results for Papr user ID: ${paprUserId}`);
     return response;
   } catch (error) {
@@ -125,7 +126,7 @@ const updateMemoryExample = async (memoryId: string, newContent: string) => {
   const paprClient = initializeSDK();
 
   try {
-    const response = await paprClient.memory.update(memoryId, {
+    const response: Papr.MemoryUpdateResponse = await paprClient.memory.update(memoryId, {
       content: newContent,
     });
     console.log('Memory updated successfully:', response);
@@ -141,7 +142,7 @@ const deleteMemoryExample = async (memoryId: string) => {
   const paprClient = initializeSDK();
 
   try {
-    const response = await paprClient.memory.delete(memoryId);
+    const response: Papr.MemoryDeleteResponse = await paprClient.memory.delete(memoryId);
     console.log('Memory deleted successfully:', response);
     return response;
   } catch (error) {

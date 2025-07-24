@@ -10,7 +10,8 @@ import type {
   MemoryAddParams, 
   MemorySearchParams,
   AddMemoryResponse,
-  SearchResponse
+  SearchResponse,
+  MemoryMetadata
 } from '@papr/memory/resources/memory';
 import type { UIMessage } from 'ai';
 import { Papr } from '@papr/memory';
@@ -69,24 +70,49 @@ export function createMemoryService(apiKey: string) {
         return false;
       }
 
+      // Check if userId format matches Papr user ID format (not a UUID)
+      if (userId.includes('-')) {
+        console.warn(
+          `[Memory WARNING] storeMessage is using what appears to be an app UUID (${userId}) instead of a Papr user ID.`,
+        );
+      }
+
       // Prepare memory parameters using SDK type
-      const memoryParams: Papr.MemoryAddParams = {
+      const metadata: MemoryMetadata = {
+        sourceType: 'PaprChat',
+        user_id: userId,
+        createdAt: new Date().toISOString(),
+        topics: ['chat', 'conversation'],
+        hierarchical_structures: `chat/${chatId}`,
+        sourceUrl: `/chat/${chatId}`,
+        conversationId: chatId,
+        customMetadata: {
+          chat_id: chatId,
+          message_id: message.id,
+          role: message.role
+        }
+      };
+
+      const memoryParams: MemoryAddParams = {
         content,
         type: 'text',
-        metadata: {
-          sourceType: 'PaprChat',
-          user_id: userId, // Include user_id in metadata
-          customMetadata: {
-            chat_id: chatId,
-            message_id: message.id,
-            role: message.role
-          }
-        },
+        metadata,
         skip_background_processing: false
       };
 
+      console.log('[Memory] Adding message with params:', {
+        content: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+        type: 'text',
+        metadata: {
+          sourceType: metadata.sourceType,
+          conversationId: metadata.conversationId,
+          createdAt: metadata.createdAt,
+          customMetadata: metadata.customMetadata || {}
+        },
+      });
+
       // Add memory using SDK
-      const response = await paprClient.memory.add(memoryParams);
+      const response: AddMemoryResponse = await paprClient.memory.add(memoryParams);
 
       // Check if response indicates success
       if (!response || !response.data?.[0]?.memoryId) {
@@ -116,26 +142,67 @@ export function createMemoryService(apiKey: string) {
     userId: string,
     content: string,
     type: MemoryType = 'text',
-    metadata: Record<string, any> = {},
+    metadata: Partial<MemoryMetadata> = {},
   ): Promise<boolean> => {
     try {
+      // Check if userId format matches Papr user ID format (not a UUID)
+      if (userId.includes('-')) {
+        console.warn(
+          `[Memory WARNING] storeContent is using what appears to be an app UUID (${userId}) instead of a Papr user ID.`,
+        );
+      }
+
+      // Initialize proper metadata structure ensuring standard fields are at top level
+      const fullMetadata: MemoryMetadata = {
+        // Standard fields
+        sourceType: metadata.sourceType || 'PaprChat',
+        user_id: userId,
+        createdAt: metadata.createdAt || new Date().toISOString(),
+        
+        // Optional standard fields - copy if provided
+        sourceUrl: metadata.sourceUrl,
+        external_user_id: metadata.external_user_id,
+        topics: metadata.topics,
+        'emoji tags': metadata['emoji tags'],
+        'emotion tags': metadata['emotion tags'],
+        hierarchical_structures: metadata.hierarchical_structures,
+        conversationId: metadata.conversationId,
+        workspace_id: metadata.workspace_id,
+        
+        // Custom metadata
+        customMetadata: metadata.customMetadata || {}
+      };
+
+      // Copy over any custom metadata from createdAt if it was incorrectly placed there
+      if (metadata.customMetadata?.createdAt && !metadata.createdAt) {
+        fullMetadata.createdAt = String(metadata.customMetadata.createdAt);
+      }
+      if (metadata.customMetadata?.created_at && !metadata.createdAt) {
+        fullMetadata.createdAt = String(metadata.customMetadata.created_at);
+      }
+
       // Prepare memory parameters using SDK type
-      const memoryParams: Papr.MemoryAddParams = {
+      const memoryParams: MemoryAddParams = {
         content,
         type,
-        metadata: {
-          ...metadata,
-          source: 'PaprChat',
-          user_id: userId, // Include user_id in metadata
-          createdAt: new Date().toISOString()
-        },
+        metadata: fullMetadata,
         skip_background_processing: false
       };
 
-      console.log('add memory params in service.ts', memoryParams)
+      console.log('[Memory] Adding memory with params:', {
+        content: content.substring(0, 50) + (content.length > 50 ? '...' : ''),
+        type,
+        metadata: {
+          sourceType: fullMetadata.sourceType,
+          createdAt: fullMetadata.createdAt,
+          topics: fullMetadata.topics,
+          hierarchical_structures: fullMetadata.hierarchical_structures,
+          customMetadata: fullMetadata.customMetadata
+        },
+      });
 
       // Add memory using SDK
-      const response = await paprClient.memory.add(memoryParams);
+      const response: AddMemoryResponse = await paprClient.memory.add(memoryParams);
 
       // Check if response indicates success
       if (!response || !response.data?.[0]?.memoryId) {
@@ -183,7 +250,7 @@ export function createMemoryService(apiKey: string) {
       );
 
       // Use SDK to search with proper parameter placement
-      const response = await paprClient.memory.search(searchParams, {
+      const response: Papr.SearchResponse = await paprClient.memory.search(searchParams, {
         query: {
           max_memories: 25
         }

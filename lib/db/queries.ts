@@ -60,9 +60,13 @@ export async function createUser(email: string, password: string) {
           `[Memory] Creating Papr Memory user for ${email} (App user ID: ${userId})`,
         );
 
-        // Initialize the Papr SDK
-        const API_BASE_URL =
-          process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
+        // Use createMemoryService instead of directly initializing a client
+        const { createMemoryService } = await import('@/lib/ai/memory/service');
+        
+        // For user creation, we still need direct API access since the memory service
+        // doesn't expose user-related methods
+        const { initPaprMemory } = await import('@/lib/ai/memory');
+        const API_BASE_URL = process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
         const paprClient = initPaprMemory(paprApiKey, {
           baseURL: API_BASE_URL,
         });

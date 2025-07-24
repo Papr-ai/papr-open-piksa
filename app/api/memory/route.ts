@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/app/(auth)/auth';
 import { Papr } from '@papr/memory';
+import type { MemoryMetadata } from '@papr/memory/resources/memory';
 
 // Initialize the Papr client
 const getPaprClient = () => {
@@ -33,17 +34,55 @@ export async function POST(request: Request) {
 
     const client = getPaprClient();
     
-    // Add memory using the SDK
-    const response = await client.memory.add({
+    // Ensure we have customMetadata for custom fields
+    if (!metadata.customMetadata) {
+      metadata.customMetadata = {};
+    }
+    
+    // Create properly typed metadata with standard fields at the top level
+    const memoryMetadata: MemoryMetadata = {
+      // Standard fields
+      sourceType: metadata.sourceType || 'PaprChat',
+      user_id: session.user.id,
+      external_user_id: session.user.id, // Both user_id and external_user_id
+      createdAt: metadata.createdAt || new Date().toISOString(),
+      
+      // Copy standard fields if provided
+      sourceUrl: metadata.sourceUrl,
+      conversationId: metadata.conversationId,
+      topics: metadata.topics || [],
+      'emoji tags': metadata['emoji tags'] || [],
+      hierarchical_structures: metadata.hierarchical_structures,
+      workspace_id: metadata.workspace_id,
+      
+      // Custom metadata
+      customMetadata: {
+        ...metadata.customMetadata,
+        api_source: 'memory_route',
+        app_user_id: session.user.id
+      }
+    };
+    
+    const memoryParams: Papr.MemoryAddParams = {
       content,
       type,
+      metadata: memoryMetadata,
+    };
+    
+    console.log('[Memory API] Adding memory:', {
+      type,
+      contentLength: content.length,
       metadata: {
-        ...metadata,
-        user_id: session.user.id,
-        created_at: new Date().toISOString(),
-        source: 'PaprChat',
-      },
+        sourceType: memoryMetadata.sourceType,
+        createdAt: memoryMetadata.createdAt,
+        topics: memoryMetadata.topics,
+        hierarchical_structures: memoryMetadata.hierarchical_structures,
+        customMetadata: memoryMetadata.customMetadata
+      }
     });
+    
+    // Add memory using the SDK
+    const response: Papr.AddMemoryResponse = await client.memory.add(memoryParams);
 
     return NextResponse.json({
       success: true,
@@ -75,12 +114,11 @@ export async function GET(request: Request) {
     }
 
     const client = getPaprClient();
-    
-    // Search memories using the SDK
-    const response = await client.memory.search({
+    const searchParams: Papr.MemorySearchParams = {
       query,
       user_id: session.user.id,
-    }, {
+    };
+    const response: Papr.SearchResponse = await client.memory.search(searchParams, {
       query: {
         max_memories: 25
       }
@@ -117,7 +155,7 @@ export async function DELETE(request: Request) {
     const client = getPaprClient();
     
     // Delete memory using the SDK
-    const response = await client.memory.delete(memoryId);
+    const response: Papr.MemoryDeleteResponse = await client.memory.delete(memoryId);
 
     return NextResponse.json({
       success: true,
@@ -149,7 +187,7 @@ export async function PUT(request: Request) {
     const client = getPaprClient();
     
     // Update memory using the SDK
-    const response = await client.memory.update(memory_id, {
+    const response: Papr.MemoryUpdateResponse = await client.memory.update(memory_id, {
       content,
       metadata,
       type,

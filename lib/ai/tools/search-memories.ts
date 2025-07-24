@@ -6,6 +6,7 @@ import { tool } from 'ai';
 import type { DataStreamWriter } from 'ai';
 import type { Session } from 'next-auth';
 import { ensurePaprUser } from '@/lib/ai/memory/middleware';
+import { createMemoryService } from '@/lib/ai/memory/service';
 
 // Use SDK types for formatted memory
 type FormattedMemory = {
@@ -96,12 +97,9 @@ export const searchMemories = ({ session, dataStream }: SearchMemoriesProps) =>
       }
 
       try {
-        // Initialize SDK client
+        // Initialize memory service instead of direct client
         const initStartTime = Date.now();
-        const API_BASE_URL = process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai';
-        const paprClient = initPaprMemory(apiKey, {
-          baseURL: API_BASE_URL,
-        });
+        const memoryService = createMemoryService(apiKey);
 
         // Emit initialization event with duration
         const initDuration = Date.now() - initStartTime;
@@ -119,77 +117,33 @@ export const searchMemories = ({ session, dataStream }: SearchMemoriesProps) =>
         const userIdDuration = Date.now() - userIdStartTime;
         console.log('[Memory Tool] Papr user ID:', paprUserId);
         
-        // Create search parameters using SDK types
-        const searchParams: MemorySearchParams = {
-          query,
-          user_id: paprUserId,
-          rank_results: false,
-        };
-        
         // Emit search start event
         const searchStartTime = Date.now();
         emitReasoningEvent(`🔍 Executing memory search for "${query.substring(0, 50)}${query.length > 50 ? '...' : ''}" ..`, 'search', userIdDuration);
 
-        // Use SDK to search
-        console.log('[Memory Tool] Executing search with params:', searchParams);
+        // Use memory service for search
+        console.log('[Memory Tool] Executing search with query:', query);
         const searchApiStartTime = Date.now();
-        const response = await paprClient.memory.search(searchParams, {
-          query: {
-            max_memories: 25
-          }
-        });
+        const memories = await memoryService.searchMemories(paprUserId, query, 25);
         const searchApiDuration = Date.now() - searchApiStartTime;
-        console.log('[Memory Tool] Search response:', response);
-
-        // Handle different response formats
-        let memories: SearchResponse.Data.Memory[] = [];
-        
-        if (response && response.data) {
-          if (Array.isArray(response.data.memories)) {
-            memories = response.data.memories;
-          }
-        }
-
-        // Format memories for display
-        const formattedMemories = memories
-          .filter(memory => memory.id) // Only keep memories with IDs
-          .map((memory): FormattedMemory => {
-            // Parse metadata if it's a string
-            const metadata = typeof memory.metadata === 'string' 
-              ? JSON.parse(memory.metadata)
-              : memory.metadata;
-
-            // Get the timestamp, defaulting to current time if none exists
-            const timestamp = memory.created_at || 
-              (metadata && typeof metadata === 'object' && 'createdAt' in metadata ? metadata.createdAt : null) || 
-              new Date().toISOString();
-            
-            return {
-              id: memory.id,
-              content: memory.content,
-              timestamp,
-              metadata
-            };
-          });
+        console.log('[Memory Tool] Search complete, found memories:', memories.length);
 
         // Calculate total duration and emit completion event
         const totalDuration = Date.now() - startTime;
         const searchDuration = Date.now() - searchStartTime;
         
-        console.log('[Memory Tool] Search complete, found memories:', formattedMemories.length);
-        
         // First emit completion event
         emitReasoningEvent(
-          `✅ Found ${formattedMemories.length} relevant memories (API: ${(searchApiDuration / 1000).toFixed(2)}s, Total: ${(totalDuration / 1000).toFixed(2)}s)`,
+          `✅ Found ${memories.length} relevant memories (API: ${(searchApiDuration / 1000).toFixed(2)}s, Total: ${(totalDuration / 1000).toFixed(2)}s)`,
           'complete',
           searchDuration
         );
 
         return {
-          memories: formattedMemories,
-          memoryData: formattedMemories,
-          memoryIds: formattedMemories.map(m => m.id).join(', '),
-          count: formattedMemories.length,
+          memories: memories,
+          memoryData: memories,
+          memoryIds: memories.map(m => m.id).join(', '),
+          count: memories.length,
           timing: {
             total: totalDuration,
             search: searchDuration,

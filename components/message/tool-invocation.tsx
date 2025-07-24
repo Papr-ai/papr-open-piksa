@@ -59,6 +59,8 @@ function getToolIcon(toolName: string) {
     case 'searchMemories':
     case 'get_memory':
       return '🔍';
+    case 'addMemory':
+      return '💾';
     case 'createTaskPlan':
     case 'updateTask':
     case 'completeTask':
@@ -96,6 +98,8 @@ function getToolLabel(toolName: string, args?: any) {
     case 'searchMemories':
     case 'get_memory':
       return `Searching memories: "${args?.query || '...'}"`;
+    case 'addMemory':
+      return `Adding ${args?.category || '...'} memory`;
     case 'taskTracker':
       if (args?.action === 'create_plan') return `Creating task plan (${args.tasks?.length || 0} tasks)`;
       if (args?.action === 'complete_task') return 'Completing task';
@@ -136,6 +140,8 @@ function getToolResult(toolName: string, result: any, args?: any) {
     case 'searchMemories':
     case 'get_memory':
       return `Found ${result.memories?.length || 0} relevant memories`;
+    case 'addMemory':
+      return `Added ${args?.category || ''} memory`;
     case 'taskTracker':
       if (result.error) return `Error: ${result.error}`;
       if (result.allCompleted) return '🎉 All tasks completed!';

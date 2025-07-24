@@ -13,10 +13,6 @@ interface ExtendedUser extends User {
   githubLogin?: string;
 }
 
-interface ExtendedSession extends Session {
-  user: ExtendedUser;
-}
-
 export const {
   handlers: { GET, POST },
   auth,

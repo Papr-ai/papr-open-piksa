@@ -12,7 +12,7 @@
  * 3. Only one auth method should be used (X-API-Key takes precedence over Bearer token)
  */
 
-import { initPaprMemory } from './index';
+import { initPaprMemory, Papr } from './index';
 import dotenv from 'dotenv';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -140,7 +140,7 @@ async function runTest() {
       );
 
       // Try to add a memory using the SDK
-      const sdkResponse = await paprClient.memory.add({
+      const sdkResponse: Papr.AddMemoryResponse = await paprClient.memory.add({
         content: sdkMemoryContent,
         type: 'text',
         metadata: {
@@ -179,7 +179,7 @@ async function runTest() {
 
         try {
           console.log('Attempt #1: Using user_id as a top-level parameter');
-          const searchResponse = await paprClient.memory.search({
+          const searchResponse: Papr.SearchResponse = await paprClient.memory.search({
             query: 'Find my test memories',
             max_memories: 10, // Increase to find more potential matches
             user_id: userId, // Filter by user ID
@@ -237,7 +237,7 @@ async function runTest() {
 
           // Cast the search params to any to bypass the type checking
           // since the actual API accepts metadata but the type definition doesn't include it
-          const searchWithMetadataResponse = await paprClient.memory.search({
+          const searchWithMetadataResponse: Papr.SearchResponse = await paprClient.memory.search({
             query: 'Find my test memories',
             max_memories: 10,
             metadata: {
