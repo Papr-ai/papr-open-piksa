@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { ThinkBlock } from './think-block';
+import { ThinkBlock } from './message/think-block';
 import { ChevronDownIcon } from 'lucide-react';
-import { Markdown } from './markdown';
+import { Markdown } from './common/markdown';
 
 interface ReasoningEvent {
   type: 'reasoning';

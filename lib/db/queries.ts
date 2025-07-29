@@ -18,7 +18,7 @@ import {
   messageMemory,
 } from './schema';
 import type { User, Suggestion, DBMessage, Chat } from './schema';
-import type { ArtifactKind } from '@/components/artifact';
+import type { ArtifactKind } from '@/components/artifact/artifact';
 // Update imports to get Papr namespace
 import { initPaprMemory } from '../ai/memory/index';
 import Papr from '@papr/memory';

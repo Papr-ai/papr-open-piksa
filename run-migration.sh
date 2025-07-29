@@ -1,1 +1,0 @@
-export POSTGRES_URL=''

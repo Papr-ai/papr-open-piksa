@@ -1,15 +1,15 @@
 import { Toaster } from 'sonner';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
-import { ThemeProvider } from '@/components/theme-provider';
-import { BreadcrumbProvider } from '@/components/breadcrumb-context';
-import { Breadcrumb } from '@/components/breadcrumb';
+import { ThemeProvider } from '@/components/layout/theme-provider';
+import { BreadcrumbProvider } from '@/components/layout/breadcrumb-context';
+import { Breadcrumb } from '@/components/layout/breadcrumb';
 import { cookies } from 'next/headers';
-import { AppSidebar } from '@/components/app-sidebar';
+import { AppSidebar } from '@/components/sidebar/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { auth } from '@/app/(auth)/auth';
 import Script from 'next/script';
-import { HeaderActions } from '@/components/header-actions';
+import { HeaderActions } from '@/components/layout/header-actions';
 import Link from 'next/link';
 import { SessionProvider } from 'next-auth/react';
 

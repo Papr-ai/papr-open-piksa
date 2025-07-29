@@ -1,6 +1,6 @@
 'use client';
 
-import { PreviewAttachment } from '../preview-attachment';
+import { PreviewAttachment } from "./preview-attachment";
 import type { Attachment } from 'ai';
 
 interface AttachmentGridProps {

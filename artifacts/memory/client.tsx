@@ -1,5 +1,5 @@
-import { Artifact } from '@/components/create-artifact';
-import { Editor } from '@/components/text-editor';
+import { Artifact } from '@/components/artifact/create-artifact';
+import { Editor } from '@/components/editor/text-editor';
 
 export const memoryArtifact = new Artifact<'memory'>({
   kind: 'memory',

@@ -1,9 +1,9 @@
 import { cookies } from 'next/headers';
-import { Chat } from '@/components/chat';
+import { Chat } from '@/components/message/chat';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import { generateUUID } from '@/lib/utils';
-import { DataStreamHandler } from '@/components/data-stream-handler';
-import { ChatBreadcrumb } from '@/components/chat-breadcrumb';
+import { DataStreamHandler } from '@/components/message/data-stream-handler';
+import { ChatBreadcrumb } from '@/components/chat/chat-breadcrumb';
 import { UseCasesSection } from '@/components/use-cases-section';
 
 export default async function Page() {

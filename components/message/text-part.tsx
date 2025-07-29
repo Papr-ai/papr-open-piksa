@@ -1,10 +1,10 @@
 'use client';
 
-import { ProcessedMessage } from '../processed-message';
+import { ProcessedMessage } from './processed-message';
 import { Button } from '../ui/button';
-import { CopyIcon, PencilEditIcon } from '../icons';
+import { CopyIcon, PencilEditIcon } from '../common/icons';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
-import { Markdown } from '../markdown';
+import { Markdown } from '../common/markdown';
 
 interface TextPartProps {
   content: string;

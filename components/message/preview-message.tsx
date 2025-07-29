@@ -17,9 +17,9 @@ import { TextPart } from './text-part';
 import { ToolInvocation } from './tool-invocation';
 import { AttachmentGrid } from './attachment-grid';
 import { MemorySection } from './memory-section';
-import { MessageActions } from '../message-actions';
-import { MessageEditor } from '../message-editor';
-import { MessageReasoning } from '../message-reasoning';
+import { MessageActions } from './message-actions';
+import { MessageEditor } from './message-editor';
+import { MessageReasoning } from './message-reasoning';
 
 // Helper function to find the user query that preceded this assistant message
 function findUserQuery(message: UIMessage): string {

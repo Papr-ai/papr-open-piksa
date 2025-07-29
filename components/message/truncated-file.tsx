@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button } from '../ui/button';
-import { CopyIcon } from '../icons';
+import { CopyIcon } from '../common/icons';
 
 interface EditSuggestion {
   message: string;

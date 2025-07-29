@@ -3,11 +3,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FileIcon, RefreshIcon } from '@/components/icons';
+import { FileIcon, RefreshIcon } from '@/components/common/icons';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { fetcher } from '@/lib/utils';
-import { SidebarToggle } from '@/components/sidebar-toggle';
+import { SidebarToggle } from '@/components/sidebar/sidebar-toggle';
 
 interface SavedDocument {
   id: string;

@@ -6,11 +6,11 @@ import { useActionState, useEffect, useState } from 'react';
 import { signIn } from 'next-auth/react';
 
 import { AuthForm } from '@/components/auth-form';
-import { SubmitButton } from '@/components/submit-button';
+import { SubmitButton } from '@/components/common/submit-button';
 import { Button } from '@/components/ui/button';
 
 import { register, type RegisterActionState } from '../actions';
-import { toast } from '@/components/toast';
+import { toast } from '@/components/common/toast';
 
 export default function Page() {
   const router = useRouter();

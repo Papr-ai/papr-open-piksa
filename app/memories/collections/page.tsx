@@ -3,9 +3,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { RefreshIcon } from '@/components/icons';
+import { RefreshIcon } from '@/components/common/icons';
 import { Button } from '@/components/ui/button';
-import { SidebarToggle } from '@/components/sidebar-toggle';
+import { SidebarToggle } from '@/components/sidebar/sidebar-toggle';
 import {
   Card,
   CardDescription,
@@ -23,7 +23,7 @@ import {
   getAllCollections,
   type Collection,
 } from '../chat-categorizer';
-import { ChatBreadcrumb } from '@/components/chat-breadcrumb';
+import { ChatBreadcrumb } from '@/components/chat/chat-breadcrumb';
 
 interface ChatInfo {
   id: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import { ChatMemoryResults } from '../chat-memory-results';
+import { ChatMemoryResults } from '../memory/chat-memory-results';
 import type { UIMessage } from 'ai';
 
 interface MemorySectionProps {

@@ -1,13 +1,13 @@
 'use client';
 
 import { Weather } from '../weather';
-import { DocumentToolCall, DocumentToolResult } from '../document';
+import { DocumentToolCall, DocumentToolResult } from '@/components/document/document';
 // Remove GitHub file results imports
 import { GitHubSearchResults } from '../github-search-results';
 import { TruncatedFileDisplay } from './truncated-file';
 import { GitBranchIcon, ChevronDownIcon, ChevronUpIcon, ServerIcon, TerminalIcon } from 'lucide-react';
 import cx from 'classnames';
-import { GitHubRepoCard, type Repository as RepoCardRepository } from '../github-repo-card';
+import { GitHubRepoCard, type Repository as RepoCardRepository } from '@/components/github/github-repo-card';
 import { useState, useEffect } from 'react';
 import { FileIcon } from 'lucide-react';
 import { AlertTriangleIcon, XCircleIcon, RefreshCwIcon } from 'lucide-react';

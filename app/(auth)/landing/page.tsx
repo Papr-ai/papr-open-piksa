@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { ArrowUpIcon, PaperclipIcon, BrainIcon, ChevronDownIcon } from '@/components/icons';
-import { LoginModal } from '@/components/login-modal';
+import { ArrowUpIcon, PaperclipIcon, BrainIcon, ChevronDownIcon } from '@/components/common/icons';
+import { LoginModal } from '@/components/auth/login-modal';
 import { Plus, ChevronUp, FileText, Layers, MonitorSmartphone, BarChart2, MessageSquare, FileCode } from 'lucide-react';
 
 // Simple tooltip component
@@ -488,7 +488,7 @@ export default function LandingPage() {
           <Link href="#" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Overview</Link>
           <Link href="#usecases" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Use cases</Link>
           <Link href="#benchmark" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Benchmark</Link>
-          <Link href="https://github.com/Papr-ai/PaprWork" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Open Source</Link>
+          <Link href="https://github.com/Papr-ai/papr-chat" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Open Source</Link>
           <Link href="https://platform.papr.ai" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Developers</Link>
 
         </nav>

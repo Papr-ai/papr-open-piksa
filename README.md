@@ -6,7 +6,7 @@
 </a>
 
 <p align="center">
-    Papr Chat is an open-source AI chatbot with built-in memory capabilities, powered by Papr. Built on Next.js 14 and based on Vercel's AI chatbot template, Papr Chat demonstrates how to build powerful, context-aware chatbot applications that remember past conversations.
+    Papr Chat is an open-source AI chatbot with powerful memory capabilities, powered by Papr. Built on Next.js 14 and based on Vercel's AI chatbot template, Papr Chat demonstrates how to build context-aware, personalized chatbot applications with long-term memory.
 </p>
 
 <p align="center">
@@ -20,24 +20,49 @@
 
 ## Features
 
-- **Memory-Powered Chat**
+- **Advanced Memory System**
   - Long-term memory for personalized chat experiences powered by [Papr](https://platform.papr.ai)
   - Automatic storage and retrieval of relevant conversations
   - RAG (Retrieval-Augmented Generation) capabilities
   - Semantic search across conversation history
+  - Organized memory with emoji tags, topics, and hierarchical structures
+  - Memory categorization (preferences, goals, tasks, knowledge)
   - Persistent memory storage in the cloud
+
+- **Rich Artifact System**
+  - Create and edit code with syntax highlighting
+  - Generate and visualize data using spreadsheets
+  - Create and edit text documents
+  - Generate and display images
+  - Save artifacts to collections
+
+- **GitHub Integration**
+  - OAuth authentication for repository access
+  - Repository browser with IDE-like file explorer
+  - Live code editor with syntax highlighting
+  - Run Python, HTML, and React applications
+  - Save changes back to GitHub with commit messages
+
+- **Container Runner**
+  - Execute code in isolated, secure environments
+  - Support for various application types (Node.js, Python, React, etc.)
+  - Vercel Sandbox integration with OIDC authentication
+  - Run applications with real networking and system dependencies
+  - Turbopack-powered hot module replacement (HMR)
 
 - **Modern Tech Stack**
   - Built with [Next.js 14](https://nextjs.org) App Router
   - [AI SDK](https://sdk.vercel.ai/docs) for unified LLM interactions
   - Beautiful UI with [shadcn/ui](https://ui.shadcn.com) and [Tailwind CSS](https://tailwindcss.com)
   - Component primitives from [Radix UI](https://radix-ui.com)
+  - TypeScript for type safety
 
 - **Production Ready**
-  - [Neon Serverless Postgres](https://neon.tech) for chat history
+  - [Neon Serverless Postgres](https://neon.tech) for chat history and memory
   - [Vercel Blob](https://vercel.com/storage/blob) for file storage
   - [Auth.js](https://authjs.dev) for authentication
   - Easy deployment to Vercel
+  - Comprehensive test suite with Jest and Playwright
 
 ## About Papr Chat
 
@@ -48,14 +73,35 @@ The key enhancement is the integration of Papr's Memory SDK, which allows your c
 - Retrieve relevant context automatically
 - Build a knowledge base from chat interactions
 - Provide more consistent and personalized responses
+- Organize memories with tags, topics, and hierarchical structures
 
 ## Model Providers
 
 Papr Chat ships with [xAI](https://x.ai) `grok-2-1212` as the default chat model, but supports multiple providers through the [AI SDK](https://sdk.vercel.ai/docs). You can easily switch to:
-- [OpenAI](https://openai.com)
-- [Anthropic](https://anthropic.com)
+- [OpenAI](https://openai.com) (GPT-4, GPT-3.5)
+- [Anthropic](https://anthropic.com) (Claude 3)
+- [Google](https://ai.google.dev) (Gemini)
 - [Cohere](https://cohere.com/)
+- [Groq](https://groq.com)
 - [And many more](https://sdk.vercel.ai/providers/ai-sdk-providers)
+
+## Memory Architecture
+
+Papr Chat implements a sophisticated memory system that:
+
+1. **Automatically stores** important information from conversations
+2. **Retrieves relevant memories** when needed for context
+3. **Organizes memories** using:
+   - Categories (preferences, goals, tasks, knowledge)
+   - Emoji tags for visual identification
+   - Topics for improved searchability
+   - Hierarchical structures for organization
+
+The memory system is powered by the Papr Memory SDK, which provides:
+- Semantic vector search capabilities
+- Long-term persistent storage
+- User-specific memory isolation
+- Advanced memory organization tools
 
 ## Deploy Your Own
 
@@ -76,7 +122,7 @@ Click the button below to clone and deploy:
 3. A Neon PostgreSQL database will be automatically provisioned
 4. Vercel Blob Storage will be set up for file uploads
 5. You'll be prompted to add the required environment variables:
-   - `PAPR_MEMORY_API_KEY`: Get this from [Papr Dashboard](https://app.papr.ai/) -> Settings -> API Key
+   - `PAPR_MEMORY_API_KEY`: Get this from [Papr Dashboard](https://app.papr.ai/) → Settings → API Key
    - `AUTH_SECRET`: A random string for authentication (we'll generate one for you)
    - `OPENAI_API_KEY`: Your OpenAI API key (or another provider's key)
 
@@ -118,6 +164,10 @@ XAI_API_KEY=your_xai_api_key
 # OR
 OPENAI_API_KEY=your_openai_api_key
 # OR another provider
+
+# GitHub Integration (optional)
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
 ```
 
 ### Installation
@@ -125,7 +175,7 @@ OPENAI_API_KEY=your_openai_api_key
 1. Clone the repository:
 ```bash
 git clone https://github.com/Papr-ai/PaprChat 
-cd chat
+cd PaprChat
 ```
 
 2. Install dependencies:
@@ -133,12 +183,45 @@ cd chat
 pnpm install
 ```
 
-3. Run the development server:
+3. Set up the database:
+```bash
+pnpm db:migrate
+```
+
+4. Run the development server:
 ```bash
 pnpm dev
 ```
 
 Visit [localhost:3000](http://localhost:3000) to see your chatbot in action.
+
+## Advanced Features
+
+### GitHub Integration
+
+To set up GitHub integration for code editing and execution:
+
+1. Create a GitHub OAuth app at GitHub Settings → Developer settings → OAuth Apps
+2. Set the callback URL to `http://localhost:3000/api/auth/callback/github` (for local) or your deployed URL
+3. Add the client ID and secret to your environment variables
+4. Restart the application
+
+### Container Runner
+
+The Vercel Sandbox integration provides secure container environments for running code:
+
+- When deployed to Vercel, it's automatically configured via OIDC
+- For local development, use `vercel link` and `vercel env pull` to get the necessary tokens
+- Supports running Node.js, Python, React, and static HTML applications
+
+### Custom Memory Organization
+
+You can customize how memories are stored and retrieved:
+
+1. Use emoji tags for visual categorization: `'emoji tags': ['💡', '🔧', '⚙️']`
+2. Add topics for better searchability: `topics: ['typescript', 'configuration', 'preferences']`
+3. Create hierarchical structures: `hierarchical_structures: 'knowledge/development/typescript'`
+4. Categorize memories as preferences, goals, tasks, or knowledge
 
 ## Contributing
 
@@ -150,27 +233,6 @@ Papr Chat is open-source software licensed under the MIT license.
 
 ## Support
 
-- Documentation: [platform.papr.ai/papr-chat-template](platform.papr.ai/papr-chat-template)
+- Documentation: [platform.papr.ai/papr-chat-template](https://platform.papr.ai/papr-chat-template)
 - Discord: [Join our community](https://discord.gg/tGzshWDg)
 - Issues: [GitHub Issues](https://github.com/papr/chat/issues)
-
-# Container App Runner Configuration
-
-## Vercel Sandbox Integration
-
-This project uses Vercel Sandbox for running applications in secure container environments.
-
-### Setup
-
-The Vercel Sandbox integration is automatically configured when you deploy to Vercel using OpenID Connect (OIDC) for secure authentication. No additional API keys or tokens need to be manually configured.
-
-### Benefits
-
-- Run Node.js and Python applications in isolated environments
-- Full language and dependency support in real container environments
-- Secure isolation via microVMs and iframes
-- Preview apps with real networking and system dependencies
-- Seamless integration with Vercel deployments
-- Turbopack-powered HMR for fast code updates
-
-## Running the App

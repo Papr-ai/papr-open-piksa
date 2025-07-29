@@ -1,7 +1,7 @@
 import React from 'react';
 import { redirect } from 'next/navigation';
 import { auth } from '@/app/(auth)/auth';
-import { MemoriesNav } from '@/components/memories-nav';
+import { MemoriesNav } from '@/components/memory/memories-nav';
 
 export default async function MemoriesLayout({
   children,

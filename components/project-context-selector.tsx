@@ -15,7 +15,7 @@ import {
   TerminalIcon,
   ImageIcon,
   LineChartIcon,
-} from '@/components/icons';
+} from '@/components/common/icons';
 
 export interface ProjectContext {
   type: 'new' | 'existing';
