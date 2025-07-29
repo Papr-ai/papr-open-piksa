@@ -3,7 +3,7 @@ import {
   SidebarGroupContent,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { FileIcon, BoxIcon } from './icons';
+import { FileIcon, BoxIcon } from '@/components/common/icons';
 import type { User } from 'next-auth';
 import Link from 'next/link';
 

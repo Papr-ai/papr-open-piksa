@@ -16,10 +16,10 @@ import {
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
 
-import { ArrowUpIcon, PaperclipIcon, StopIcon } from '../common/icons';
-import { PreviewAttachment } from './preview-attachment';
-import { Button } from '../ui/button';
-import { Textarea } from '../ui/textarea';
+import { ArrowUpIcon, PaperclipIcon, StopIcon } from '@/components/common/icons';
+import { PreviewAttachment } from '@/components/message/preview-attachment';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { MemoryToggle } from '@/components/memory/memory-toggle';
@@ -35,7 +35,7 @@ import {
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from '../ui/tooltip';
+} from '@/components/ui/tooltip';
 
 // Define interaction modes - simplified to just chat
 export type InteractionMode = 'chat';

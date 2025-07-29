@@ -15,7 +15,7 @@ import {
   ChevronDownIcon,
   GlobeIcon,
   LockIcon,
-} from './common/icons';
+} from '@/components/common/icons';
 import { useChatVisibility } from '@/hooks/use-chat-visibility';
 
 export type VisibilityType = 'private' | 'public';

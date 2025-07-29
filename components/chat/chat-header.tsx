@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation';
 import { useWindowSize } from 'usehooks-ts';
 
 import { ModelSelector } from '@/components/message/model-selector';
-import { SidebarToggle } from '@/components/sidebar-toggle';
+import { SidebarToggle } from '@/components/sidebar/sidebar-toggle';
 import { Button } from '@/components/ui/button';
-import { PlusIcon } from './icons';
-import { useSidebar } from './ui/sidebar';
+import { PlusIcon } from '@/components/common/icons';
+import { useSidebar } from '@/components/ui/sidebar';
 import { memo } from 'react';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
-import { type VisibilityType, VisibilitySelector } from './visibility-selector';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { type VisibilityType, VisibilitySelector } from '@/components/message/visibility-selector';
 
 function PureChatHeader({
   chatId,

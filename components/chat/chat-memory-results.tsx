@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import type { ExtendedUIMessage } from '@/lib/types';
-import { FileIcon } from './icons';
-import { MemoryDrawer } from './memory-drawer';
+import { FileIcon } from '@/components/common/icons';
+import { MemoryDrawer } from '@/components/memory/memory-drawer';
 import { useThinkingState } from '@/lib/thinking-state';
 
 interface ChatMemoryResultsProps {

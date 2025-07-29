@@ -8,18 +8,18 @@ import {
   useRef,
   type MouseEvent,
 } from 'react';
-import type { ArtifactKind, UIArtifact } from './artifact';
-import { FileIcon, FullscreenIcon, ImageIcon, LoaderIcon } from './icons';
+import type { ArtifactKind, UIArtifact } from '@/components/artifact/artifact';
+import { FileIcon, FullscreenIcon, ImageIcon, LoaderIcon } from '@/components/common/icons';
 import { cn, fetcher } from '@/lib/utils';
 import type { Document } from '@/lib/db/schema';
-import { InlineDocumentSkeleton } from './document-skeleton';
+import { InlineDocumentSkeleton } from '@/components/document/document-skeleton';
 import useSWR from 'swr';
-import { Editor } from './text-editor';
+import { Editor } from '@/components/editor/text-editor';
 import { DocumentToolCall, DocumentToolResult } from './document';
 import { useArtifact } from '@/hooks/use-artifact';
 import equal from 'fast-deep-equal';
-import { SpreadsheetEditor } from './sheet-editor';
-import { ImageEditor } from './image-editor';
+import { SpreadsheetEditor } from '@/components/editor/sheet-editor';
+import { ImageEditor } from '@/components/editor/image-editor';
 
 // Helper function to map database document kinds to valid artifact kinds
 function mapDocumentKindToArtifactKind(kind: string): ArtifactKind {

@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from 'date-fns';
-import { Card, CardContent, CardHeader, CardFooter } from './ui/card';
-import { Badge } from './ui/badge';
+import { Card, CardContent, CardHeader, CardFooter } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 // Custom Memory Icon component
 const MemoryIcon = ({

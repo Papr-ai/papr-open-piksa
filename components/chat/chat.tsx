@@ -6,18 +6,18 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import type { Vote } from '@/lib/db/schema';
 import { fetcher, generateUUID } from '@/lib/utils';
-import { Artifact } from './artifact';
-import { MultimodalInput } from './multimodal-input';
-import { Messages } from './messages';
-import type { VisibilityType } from './visibility-selector';
+import { Artifact } from '@/components/artifact/artifact';
+import { MultimodalInput } from '@/components/message/multimodal-input';
+import { Messages } from '@/components/message/messages';
+import type { VisibilityType } from '@/components/message/visibility-selector';
 import { useArtifact, useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
 import { unstable_serialize } from 'swr/infinite';
-import { getChatHistoryPaginationKey } from './sidebar-history';
-import { DocumentOpener } from './document-opener';
+import { getChatHistoryPaginationKey } from '@/components/sidebar/sidebar-history';
+import { DocumentOpener } from '@/components/document/document-opener';
 import { useStreamChat } from '@/hooks/useStreamChat';
 import { useSession } from 'next-auth/react';
-import { useBreadcrumb } from '@/components/breadcrumb-context';
+import { useBreadcrumb } from '@/components/layout/breadcrumb-context';
 import { useLocalStorage } from 'usehooks-ts';
 
 // Define types for the artifacts

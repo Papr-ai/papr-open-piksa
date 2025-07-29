@@ -3,7 +3,7 @@
 import { Weather } from '../weather';
 import { DocumentToolCall, DocumentToolResult } from '@/components/document/document';
 // Remove GitHub file results imports
-import { GitHubSearchResults } from '../github-search-results';
+import { GitHubSearchResults } from '../github/github-search-results';
 import { TruncatedFileDisplay } from './truncated-file';
 import { GitBranchIcon, ChevronDownIcon, ChevronUpIcon, ServerIcon, TerminalIcon } from 'lucide-react';
 import cx from 'classnames';

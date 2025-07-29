@@ -6,7 +6,7 @@ import { useActionState, useEffect, useState } from 'react';
 import { toast } from '@/components/common/toast';
 import { signIn } from 'next-auth/react';
 
-import { AuthForm } from '@/components/auth-form';
+import { AuthForm } from '@/components/auth/auth-form';
 import { SubmitButton } from '@/components/common/submit-button';
 import { Button } from '@/components/ui/button';
 
