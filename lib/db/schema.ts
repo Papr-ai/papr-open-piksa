@@ -20,9 +20,30 @@ export const user = pgTable('User', {
   name: varchar('name', { length: 255 }),
   image: varchar('image', { length: 255 }),
   createdAt: timestamp('createdAt').notNull().defaultNow(),
+  // Stripe customer ID for payment processing
+  stripeCustomerId: varchar('stripeCustomerId', { length: 255 }),
 });
 
 export type User = InferSelectModel<typeof user>;
+
+export const subscription = pgTable('Subscription', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  stripeSubscriptionId: varchar('stripeSubscriptionId', { length: 255 }),
+  status: varchar('status', { length: 50 }).notNull().default('free'), // free, active, canceled, past_due, unpaid, trialing
+  plan: varchar('plan', { length: 50 }).notNull().default('free'), // free, basic, pro
+  currentPeriodStart: timestamp('currentPeriodStart'),
+  currentPeriodEnd: timestamp('currentPeriodEnd'),
+  cancelAtPeriodEnd: boolean('cancelAtPeriodEnd').default(false),
+  trialStart: timestamp('trialStart'),
+  trialEnd: timestamp('trialEnd'),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+});
+
+export type Subscription = InferSelectModel<typeof subscription>;
 
 export const chat = pgTable('Chat', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),

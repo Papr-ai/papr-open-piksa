@@ -47,6 +47,7 @@ import type { ExtendedUIMessage } from '@/lib/types';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 import { createToolFeedbackMiddleware } from '@/lib/ai/tools/middleware/feedback';
 import { ToolRegistry } from '@/lib/ai/tools/middleware/registry';
+import { checkModelAccess } from '@/lib/subscription/utils';
 
 export const maxDuration = 60;
 
@@ -688,6 +689,18 @@ export async function POST(request: Request) {
       return new Response('Unauthorized', { status: 401 });
     }
 
+    // Check if user has access to the selected model
+    const modelAccess = await checkModelAccess(session.user.id, selectedChatModel);
+    if (!modelAccess.allowed) {
+      return new Response(JSON.stringify({ 
+        error: modelAccess.reason || 'Model access denied',
+        code: 'MODEL_ACCESS_DENIED'
+      }), { 
+        status: 403,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     const userMessage = getMostRecentUserMessage(messages);
 
     if (!userMessage) {
@@ -994,7 +1007,7 @@ AVAILABLE STAGING TOOLS:
           const resultWithFeedback = await streamText({
             model: myProvider.languageModel(selectedChatModel), // Always use selectedChatModel
             system: enhancedSystemPrompt,
-            messages: messages.map(sanitizeMessageForAI),
+            messages: messages.slice(-15).map(sanitizeMessageForAI), // Limit to last 15 messages
             tools: tools,  // Use original tools
             providerOptions: {
               anthropic: {

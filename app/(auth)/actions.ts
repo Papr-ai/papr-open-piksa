@@ -75,6 +75,12 @@ export const register = async (
 
     return { status: 'success' };
   } catch (error) {
+    console.error('Registration error:', error);
+    console.error('Registration error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : 'No stack trace'
+    });
+    
     if (error instanceof z.ZodError) {
       return { status: 'invalid_data' };
     }

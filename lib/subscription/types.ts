@@ -1,0 +1,29 @@
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  interval: 'month' | 'year';
+  features: {
+    premium: boolean;
+    basicInteractions: number;
+    memoriesAdded: number;
+    memoriesSearched: number;
+  };
+  stripePriceId: string;
+  isPopular?: boolean;
+}
+
+export interface UserSubscription {
+  id: string;
+  userId: string;
+  stripeCustomerId?: string;
+  subscriptionStatus: 'free' | 'active' | 'canceled' | 'past_due' | 'unpaid' | 'trialing';
+  subscriptionPlan: string;
+  subscriptionId?: string;
+  subscriptionCurrentPeriodEnd?: Date;
+  subscriptionCreatedAt?: Date;
+  subscriptionUpdatedAt?: Date;
+}
+
+export type SubscriptionStatus = 'free' | 'active' | 'canceled' | 'past_due' | 'unpaid' | 'trialing';

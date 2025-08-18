@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 
 import { PlusIcon } from '@/components/common/icons';
 import { SidebarHistory } from '@/components/sidebar/sidebar-history';
-import { SidebarMemories } from '@/components/sidebar/sidebar-memories';
+import { SidebarPrimaryNav } from '@/components/sidebar/sidebar-memories';
 import { SidebarUserNav } from '@/components/sidebar/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/sidebar';
 import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import Image from 'next/image';
 
 export function AppSidebar({ user }: { user: User | undefined }) {
   const router = useRouter();
@@ -35,8 +36,9 @@ export function AppSidebar({ user }: { user: User | undefined }) {
               }}
               className="flex flex-row gap-3 items-center"
             >
-              <span className="text-lg font-semibold px-2 hover:bg-muted rounded-md cursor-pointer">
-                Papr AI Chat
+              <img src="/images/papr-logo.svg" alt="Papr Logo" className="size-6 ml-2" />
+              <span className="text-lg font-semibold pr-2 hover:bg-muted rounded-md cursor-pointer">
+                Papr Chat
               </span>
             </Link>
             <Tooltip>
@@ -60,7 +62,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        {/*<SidebarMemories user={user} />*/}
+        <SidebarPrimaryNav user={user} />
         <SidebarHistory user={user} />
       </SidebarContent>
       <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>

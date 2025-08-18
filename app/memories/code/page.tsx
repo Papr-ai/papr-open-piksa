@@ -150,7 +150,7 @@ function groupRelatedCodeArtifacts(messages: Message[]): ProjectGroup[] {
 
 async function getMessages(userId?: string) {
   // Fetch all messages with artifacts from the database
-  const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/chats`, {
+  const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/chats`, {
     cache: "no-store",
   });
   

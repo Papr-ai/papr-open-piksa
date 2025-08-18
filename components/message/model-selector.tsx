@@ -1,6 +1,8 @@
 'use client';
 
 import { startTransition, useMemo, useOptimistic, useState } from 'react';
+import Link from 'next/link';
+import { useCanUsePremiumModels } from '@/hooks/use-subscription';
 
 import { saveChatModelAsCookie } from '@/app/(chat)/actions';
 import { Button } from '@/components/ui/button';
@@ -12,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { chatModels, modelSupportsReasoning } from '@/lib/ai/models';
+import { chatModels, modelSupportsReasoning, modelIsPremium } from '@/lib/ai/models';
 import { cn } from '@/lib/utils';
 
 import { BrainIcon, CheckCircleFillIcon, ChevronDownIcon } from '../common/icons';
@@ -26,6 +28,7 @@ export function ModelSelector({
   const [open, setOpen] = useState(false);
   const [optimisticModelId, setOptimisticModelId] =
     useOptimistic(selectedModelId);
+  const canUsePremiumModels = useCanUsePremiumModels();
 
   const selectedChatModel = useMemo(
     () => chatModels.find((chatModel) => chatModel.id === optimisticModelId),
@@ -79,6 +82,36 @@ export function ModelSelector({
             
             {models.map((chatModel) => {
               const { id, supportsReasoning } = chatModel;
+              const isPremiumModel = modelIsPremium(id);
+              const hasAccess = !isPremiumModel || canUsePremiumModels;
+
+              if (!hasAccess) {
+                return (
+                  <DropdownMenuItem
+                    key={id}
+                    disabled
+                    className="py-1 px-2 opacity-50"
+                    asChild
+                  >
+                    <div className="gap-2 group/item flex flex-row justify-between items-center w-full text-xs">
+                      <div className="flex items-center">
+                        {chatModel.name}
+                        <span className="ml-1 text-blue-500 flex items-center">
+                          <BrainIcon size={8} />
+                        </span>
+                        <span className="ml-2 text-xs text-orange-500 bg-orange-100 px-1 py-0.5 rounded">
+                          Premium
+                        </span>
+                      </div>
+                      <Link href="/subscription" onClick={() => setOpen(false)}>
+                        <Button size="sm" variant="outline" className="text-xs h-6 px-2">
+                          Upgrade
+                        </Button>
+                      </Link>
+                    </div>
+                  </DropdownMenuItem>
+                );
+              }
 
               return (
                 <DropdownMenuItem

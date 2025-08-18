@@ -6,6 +6,7 @@ interface ChatModel {
   description: string;
   supportsReasoning: boolean;
   group: 'OpenAI' | 'Groq' | 'Anthropic' | 'Google';
+  isPremium?: boolean;
 }
 
 export const chatModels: Array<ChatModel> = [
@@ -29,6 +30,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'OpenAI o4-mini',
     description: 'Optimized reasoning model',
     supportsReasoning: true,
+    isPremium: true,
     group: 'OpenAI',
   },
   
@@ -54,6 +56,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'Claude Sonnet 4',
     description: 'Balanced performance and reasoning',
     supportsReasoning: true,
+    isPremium: true,
     group: 'Anthropic',
   },
   {
@@ -61,6 +64,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'Claude 3.7',
     description: 'Anthropic\'s powerful reasoning model',
     supportsReasoning: true,
+    isPremium: true,
     group: 'Anthropic',
   },
   {
@@ -68,6 +72,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'Claude 4 Opus',
     description: 'Most advanced model for complex reasoning',
     supportsReasoning: true,
+    isPremium: true,
     group: 'Anthropic',
   },
   
@@ -91,6 +96,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'Gemini 2.5 Pro',
     description: 'Advanced reasoning for complex tasks',
     supportsReasoning: true,
+    isPremium: true,
     group: 'Google',
   },
 ];
@@ -98,4 +104,9 @@ export const chatModels: Array<ChatModel> = [
 export function modelSupportsReasoning(modelId: string): boolean {
   const model = chatModels.find(model => model.id === modelId);
   return model?.supportsReasoning || false;
+}
+
+export function modelIsPremium(modelId: string): boolean {
+  const model = chatModels.find(model => model.id === modelId);
+  return model?.isPremium || model?.supportsReasoning || false;
 }

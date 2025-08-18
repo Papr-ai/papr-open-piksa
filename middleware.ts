@@ -8,6 +8,8 @@ export const config = {
   matcher: [
     '/',
     '/:id',
+    '/subscription',
+    '/memories/:path*',
     '/api/((?!auth|_next/static|_next/image|favicon.ico).*)',
     '/login',
     '/register',
