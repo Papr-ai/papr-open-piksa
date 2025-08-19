@@ -90,7 +90,19 @@ export function PricingCard({
                 <CheckCircleFillIcon size={16} />
               </div>
               <span className="text-sm">
-                {formatFeatureValue(plan.features.memoriesAdded)} memories can be added per month
+                {plan.features.premiumInteractions === 0 
+                  ? 'No premium interactions' 
+                  : `${formatFeatureValue(plan.features.premiumInteractions)} premium interactions per month`
+                }
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <div className="text-green-500 flex-shrink-0">
+                <CheckCircleFillIcon size={16} />
+              </div>
+              <span className="text-sm">
+                {formatFeatureValue(plan.features.memoriesAdded)} memories storage capacity
               </span>
             </div>
             

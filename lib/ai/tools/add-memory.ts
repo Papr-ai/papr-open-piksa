@@ -62,6 +62,18 @@ export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
       }
 
       try {
+        // Check usage limits before proceeding
+        const { checkMemoryAddLimit } = await import('@/lib/subscription/usage-middleware');
+        const usageCheck = await checkMemoryAddLimit(session.user.id);
+        if (!usageCheck.allowed) {
+          console.log('[Memory Tool] Memory add limit exceeded for user:', session.user.id);
+          return { 
+            success: false,
+            error: usageCheck.reason,
+            shouldShowUpgrade: usageCheck.shouldShowUpgrade
+          };
+        }
+
         // Get Papr user ID first
         const paprUserId = await ensurePaprUser(session.user.id, apiKey);
         if (!paprUserId) {
@@ -105,6 +117,17 @@ export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
           type,
           metadata
         );
+
+        // Track memory addition usage
+        if (success) {
+          try {
+            const { trackMemoryAdd } = await import('@/lib/subscription/usage-middleware');
+            await trackMemoryAdd(session.user.id);
+            console.log('[Memory Tool] Tracked memory addition for user:', session.user.id);
+          } catch (error) {
+            console.error('[Memory Tool] Failed to track memory usage:', error);
+          }
+        }
 
         // Notify the UI that a memory was added (optional)
         if (dataStream) {

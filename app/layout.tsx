@@ -12,6 +12,9 @@ import Script from 'next/script';
 import { HeaderActions } from '@/components/layout/header-actions';
 import Link from 'next/link';
 import { SessionProvider } from 'next-auth/react';
+import { UsageWarning } from '@/components/subscription/usage-warning';
+import { OnboardingGuard } from '@/components/auth/onboarding-guard';
+import { ConditionalLayout } from '@/components/layout/conditional-layout';
 
 import './globals.css';
 
@@ -62,40 +65,11 @@ export default async function RootLayout({
           >
             <BreadcrumbProvider>
               <Toaster position="top-center" />
-              <SidebarProvider defaultOpen={!isCollapsed} className="h-full">
-                <AppSidebar user={session?.user} />
-                <SidebarInset className="h-full overflow-hidden flex flex-col bg-sidebar">
-                  {session?.user ? (
-                  <div className="flex items-center h-12 px-4 py-2 bg-transparent z-10 shrink-0 justify-between">
-                    <div className="flex items-center">
-                      <HeaderActions />
-                    </div>
-                    
-                    <Breadcrumb />
-                    
-                    <div className="flex items-center">
-                      <Link
-                        href="https://platform.papr.ai/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="bg-zinc-900 dark:bg-zinc-100 hover:bg-zinc-800 dark:hover:bg-zinc-200 text-zinc-50 dark:text-zinc-900 hidden md:flex py-1.5 px-3 rounded-md h-[34px] items-center"
-                      >
-                        <img src="/images/papr-logo.svg" alt="Papr Logo" className="size-4 mr-2" />
-                        Docs
-                      </Link>
-                    </div>
-                  </div>
-                  ) : (
-                    <div className="flex items-center h-2 px-4 py-2 bg-transparent z-10 shrink-0 justify-between">
-                    </div>
-                  )}
-                  <div className="flex-1 overflow-hidden p-3 pt-0">
-                    <main className="flex-1 overflow-hidden rounded-lg bg-background h-full shadow-sm">
-                      {children}
-                    </main>
-                  </div>
-                </SidebarInset>
-              </SidebarProvider>
+              <OnboardingGuard>
+                <ConditionalLayout user={session?.user} isCollapsed={isCollapsed}>
+                  {children}
+                </ConditionalLayout>
+              </OnboardingGuard>
             </BreadcrumbProvider>
           </ThemeProvider>
         </SessionProvider>

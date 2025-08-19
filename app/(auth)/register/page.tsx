@@ -39,7 +39,8 @@ export default function Page() {
       toast({ type: 'success', description: 'Account created successfully!' });
 
       setIsSuccessful(true);
-      router.refresh();
+      // Redirect to onboarding for new users
+      router.push('/onboarding');
     }
   }, [state, router]);
 
@@ -80,7 +81,7 @@ export default function Page() {
               try {
                 console.log('Attempting to sign up with GitHub...');
                 const result = await signIn('github', { 
-                  callbackUrl: '/',
+                  callbackUrl: '/onboarding',
                   redirect: false 
                 });
                 console.log('GitHub sign-up result:', result);

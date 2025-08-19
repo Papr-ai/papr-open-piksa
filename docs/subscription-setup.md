@@ -7,7 +7,7 @@ This document explains how to set up the subscription system for PaprChat.
 The subscription system includes:
 - **Free Plan**: Basic AI models, limited usage
 - **Basic Plan ($20/month)**: Premium models + enhanced limits
-- **Pro Plan ($200/month)**: Unlimited usage
+- **Pro Plan ($200/month)**: Highest limits
 
 ## Environment Variables
 
@@ -20,7 +20,7 @@ STRIPE_PUBLISHABLE_KEY=pk_test_...
 STRIPE_WEBHOOK_SECRET=whsec_...
 
 # Stripe Price IDs for subscription plans
-STRIPE_BASIC_PRICE_ID=price_...
+STRIPE_BASIC_PRICE_ID=price_...  # Starter plan price ID
 STRIPE_PRO_PRICE_ID=price_...
 
 # Base URL for redirects (IMPORTANT: No trailing slash)
@@ -30,7 +30,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ## Stripe Setup
 
 1. **Create Products and Prices**:
-   - Basic Plan: $20/month
+   - Starter Plan: $20/month
    - Pro Plan: $200/month
 
 2. **Configure Webhooks**:

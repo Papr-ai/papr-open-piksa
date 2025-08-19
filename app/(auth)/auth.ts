@@ -3,7 +3,7 @@ import NextAuth, { type User, type Session } from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import GitHub from 'next-auth/providers/github';
 
-import { getUser, createOAuthUser, updateUserProfile } from '@/lib/db/queries';
+import { getUser, getUserById, createOAuthUser, updateUserProfile } from '@/lib/db/queries';
 import { authConfig } from './auth.config';
 
 interface ExtendedUser extends User {
@@ -158,8 +158,21 @@ export const {
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
+      if (session.user && token.id) {
         session.user.id = token.id as string;
+        
+        // Fetch the latest user data from the database
+        try {
+          const dbUser = await getUserById(token.id as string);
+          if (dbUser) {
+            // Update session with latest user data
+            session.user.name = dbUser.name || session.user.name;
+            session.user.image = dbUser.image || session.user.image;
+          }
+        } catch (error) {
+          console.error('Error fetching user data for session:', error);
+        }
+        
         // Add paprUserId to the session user if available
         if ('_paprUserId' in token) {
           (session.user as ExtendedUser).paprUserId =

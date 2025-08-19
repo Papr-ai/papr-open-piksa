@@ -526,6 +526,8 @@ const PurePreviewMessage = ({
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const { data: session } = useSession();
   const userEmail = session?.user?.email || '';
+  const userName = session?.user?.name || '';
+  const userImage = session?.user?.image;
   
   // Add debug logging for message parts
   useEffect(() => {
@@ -759,8 +761,8 @@ const PurePreviewMessage = ({
                   </div>
                 ) : (
                   <Image
-                    src={`https://avatar.vercel.sh/${userEmail}`}
-                    alt="User Avatar"
+                    src={userImage || `https://avatar.vercel.sh/${userEmail}`}
+                    alt={userName || userEmail || 'User Avatar'}
                     width={32}
                     height={32}
                     className="rounded-full"

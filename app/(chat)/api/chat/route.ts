@@ -48,6 +48,13 @@ import { modelSupportsReasoning } from '@/lib/ai/models';
 import { createToolFeedbackMiddleware } from '@/lib/ai/tools/middleware/feedback';
 import { ToolRegistry } from '@/lib/ai/tools/middleware/registry';
 import { checkModelAccess } from '@/lib/subscription/utils';
+import { 
+  checkBasicInteractionLimit, 
+  checkPremiumInteractionLimit,
+  trackBasicInteraction, 
+  trackPremiumInteraction 
+} from '@/lib/subscription/usage-middleware';
+import { modelIsPremium } from '@/lib/ai/models';
 
 export const maxDuration = 60;
 
@@ -701,6 +708,24 @@ export async function POST(request: Request) {
       });
     }
 
+    // Check usage limits based on model type
+    const isPremium = modelIsPremium(selectedChatModel);
+    const usageCheck = isPremium 
+      ? await checkPremiumInteractionLimit(session.user.id)
+      : await checkBasicInteractionLimit(session.user.id);
+      
+    if (!usageCheck.allowed) {
+      return new Response(JSON.stringify({ 
+        error: usageCheck.reason,
+        code: 'USAGE_LIMIT_EXCEEDED',
+        usage: usageCheck.usage,
+        shouldShowUpgrade: usageCheck.shouldShowUpgrade
+      }), { 
+        status: 429, // Too Many Requests
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     const userMessage = getMostRecentUserMessage(messages);
 
     if (!userMessage) {
@@ -1053,6 +1078,15 @@ AVAILABLE STAGING TOOLS:
               console.log('[CHAT API] Response messages:', JSON.stringify(response.messages, null, 2));
               if (session.user?.id) {
                 try {
+                  // Track the interaction usage based on model type
+                  const isPremiumModel = modelIsPremium(selectedChatModel);
+                  if (isPremiumModel) {
+                    await trackPremiumInteraction(session.user.id);
+                    console.log('[CHAT API] Tracked premium interaction for user:', session.user.id);
+                  } else {
+                    await trackBasicInteraction(session.user.id);
+                    console.log('[CHAT API] Tracked basic interaction for user:', session.user.id);
+                  }
                   const assistantId = getTrailingMessageId({
                     messages: response.messages.filter(
                       (message) => message.role === 'assistant',

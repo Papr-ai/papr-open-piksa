@@ -40,6 +40,16 @@ export async function getUser(email: string): Promise<Array<User>> {
   }
 }
 
+export async function getUserById(id: string): Promise<User | null> {
+  try {
+    const users = await db.select().from(user).where(eq(user.id, id));
+    return users.length > 0 ? users[0] : null;
+  } catch (error) {
+    console.error('Failed to get user by ID from database');
+    throw error;
+  }
+}
+
 export async function createUser(email: string, password: string) {
   const salt = genSaltSync(10);
   const hash = hashSync(password, salt);
@@ -48,7 +58,7 @@ export async function createUser(email: string, password: string) {
     // Create the user in the local database first
     const userResult = await db
       .insert(user)
-      .values({ email, password: hash })
+      .values({ email, password: hash, onboardingCompleted: false })
       .returning();
 
     // If we have a Papr Memory API key, create a user in Papr Memory
@@ -175,7 +185,8 @@ export async function createOAuthUser(email: string, name?: string, image?: stri
         email, 
         password: null,  // OAuth users don't have passwords
         name: name || null,
-        image: image || null
+        image: image || null,
+        onboardingCompleted: false  // New users need onboarding
       })
       .returning();
 

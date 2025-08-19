@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
+import Link from 'next/link';
 import { PricingCard } from '@/components/subscription/pricing-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -92,6 +93,13 @@ export default function SubscriptionPage() {
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
           Upgrade to unlock premium AI models and enhanced features for your conversations.
         </p>
+        <div className="mt-4">
+          <Link href="/usage">
+            <Button variant="outline">
+              View Current Usage
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {subscriptionStatus.hasActiveSubscription && (

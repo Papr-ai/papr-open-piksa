@@ -3,6 +3,8 @@
 import { startTransition, useMemo, useOptimistic, useState } from 'react';
 import Link from 'next/link';
 import { useCanUsePremiumModels } from '@/hooks/use-subscription';
+import { useUpgradeModal } from '@/hooks/use-upgrade-modal';
+import { UpgradeModal } from '@/components/subscription/upgrade-modal';
 
 import { saveChatModelAsCookie } from '@/app/(chat)/actions';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,7 @@ export function ModelSelector({
   const [optimisticModelId, setOptimisticModelId] =
     useOptimistic(selectedModelId);
   const canUsePremiumModels = useCanUsePremiumModels();
+  const upgradeModal = useUpgradeModal();
 
   const selectedChatModel = useMemo(
     () => chatModels.find((chatModel) => chatModel.id === optimisticModelId),
@@ -51,7 +54,8 @@ export function ModelSelector({
   }, []);
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         asChild
         className={cn(
@@ -103,11 +107,17 @@ export function ModelSelector({
                           Premium
                         </span>
                       </div>
-                      <Link href="/subscription" onClick={() => setOpen(false)}>
-                        <Button size="sm" variant="outline" className="text-xs h-6 px-2">
-                          Upgrade
-                        </Button>
-                      </Link>
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="text-xs h-6 px-2"
+                        onClick={() => {
+                          setOpen(false);
+                          upgradeModal.showPremiumModelModal();
+                        }}
+                      >
+                        Upgrade
+                      </Button>
                     </div>
                   </DropdownMenuItem>
                 );
@@ -157,7 +167,16 @@ export function ModelSelector({
             )}
           </div>
         ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      
+      <UpgradeModal
+        isOpen={upgradeModal.isOpen}
+        onClose={upgradeModal.hideUpgradeModal}
+        title={upgradeModal.title}
+        message={upgradeModal.message}
+        currentUsage={upgradeModal.currentUsage}
+      />
+    </>
   );
 }

@@ -10,6 +10,7 @@ import {
   foreignKey,
   boolean,
   jsonb,
+  integer,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('User', {
@@ -22,6 +23,10 @@ export const user = pgTable('User', {
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   // Stripe customer ID for payment processing
   stripeCustomerId: varchar('stripeCustomerId', { length: 255 }),
+  // Onboarding fields
+  referredBy: varchar('referredBy', { length: 255 }),
+  useCase: text('useCase'),
+  onboardingCompleted: boolean('onboardingCompleted').default(false),
 });
 
 export type User = InferSelectModel<typeof user>;
@@ -236,6 +241,26 @@ export const messageMemory = pgTable(
 );
 
 export type MessageMemory = InferSelectModel<typeof messageMemory>;
+
+// Usage tracking table to monitor plan limits
+export const usage = pgTable('Usage', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  month: varchar('month', { length: 7 }).notNull(), // YYYY-MM format
+  basicInteractions: integer('basicInteractions').notNull().default(0),
+  premiumInteractions: integer('premiumInteractions').notNull().default(0),
+  memoriesAdded: integer('memoriesAdded').notNull().default(0),
+  memoriesSearched: integer('memoriesSearched').notNull().default(0),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+}, (table) => ({
+  // Unique constraint on userId + month
+  userMonthUnique: primaryKey({ columns: [table.userId, table.month] }),
+}));
+
+export type Usage = InferSelectModel<typeof usage>;
 
 // Add the following comment to understand the current schema
 // We need to understand the document schema to implement a Git-like structure

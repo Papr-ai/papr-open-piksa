@@ -7,6 +7,7 @@ export interface SubscriptionPlan {
   features: {
     premium: boolean;
     basicInteractions: number;
+    premiumInteractions: number; // -1 for unlimited, 0 for none
     memoriesAdded: number;
     memoriesSearched: number;
   };

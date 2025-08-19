@@ -97,6 +97,18 @@ export const searchMemories = ({ session, dataStream }: SearchMemoriesProps) =>
       }
 
       try {
+        // Check usage limits before proceeding
+        const { checkMemorySearchLimit } = await import('@/lib/subscription/usage-middleware');
+        const usageCheck = await checkMemorySearchLimit(session.user.id);
+        if (!usageCheck.allowed) {
+          console.log('[Memory Tool] Memory search limit exceeded for user:', session.user.id);
+          emitReasoningEvent(`❌ ${usageCheck.reason}`, 'error');
+          return { 
+            error: usageCheck.reason,
+            shouldShowUpgrade: usageCheck.shouldShowUpgrade
+          };
+        }
+
         // Initialize memory service instead of direct client
         const initStartTime = Date.now();
         const memoryService = createMemoryService(apiKey);
@@ -127,6 +139,15 @@ export const searchMemories = ({ session, dataStream }: SearchMemoriesProps) =>
         const memories = await memoryService.searchMemories(paprUserId, query, 25);
         const searchApiDuration = Date.now() - searchApiStartTime;
         console.log('[Memory Tool] Search complete, found memories:', memories.length);
+
+        // Track memory search usage
+        try {
+          const { trackMemorySearch } = await import('@/lib/subscription/usage-middleware');
+          await trackMemorySearch(session.user.id);
+          console.log('[Memory Tool] Tracked memory search for user:', session.user.id);
+        } catch (error) {
+          console.error('[Memory Tool] Failed to track memory search usage:', error);
+        }
 
         // Calculate total duration and emit completion event
         const totalDuration = Date.now() - startTime;
