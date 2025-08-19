@@ -36,7 +36,7 @@ export default function UsagePage() {
       <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-4">Usage Overview</h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Monitor your current usage across all features and see how much of your monthly limits you've consumed.
+          Monitor your current usage across all features and see how much of your monthly limits you&apos;ve consumed.
         </p>
       </div>
 
