@@ -36,14 +36,14 @@ export function SidebarPrimaryNav({ user }: { user: User | undefined }) {
             <span>Artifacts</span>
           </Link>
 
-          <Link
+          {/*<Link
             href="/memories/shelf"
             className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
             onClick={() => setOpenMobile(false)}
           >
             <DocumentIcon size={16} />
             <span>Library</span>
-          </Link>
+          </Link>*/}
 
 
         </div>
