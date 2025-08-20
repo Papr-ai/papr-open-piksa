@@ -91,12 +91,7 @@ export function ModelSelector({
 
               if (!hasAccess) {
                 return (
-                  <DropdownMenuItem
-                    key={id}
-                    disabled
-                    className="py-1 px-2 opacity-50"
-                    asChild
-                  >
+                  <div key={id} className="py-1 px-2 opacity-50">
                     <div className="gap-2 group/item flex flex-row justify-between items-center w-full text-xs">
                       <div className="flex items-center">
                         {chatModel.name}
@@ -107,19 +102,21 @@ export function ModelSelector({
                           Premium
                         </span>
                       </div>
-                      <Button 
-                        size="sm" 
-                        variant="outline" 
-                        className="text-xs h-6 px-2"
-                        onClick={() => {
-                          setOpen(false);
-                          upgradeModal.showPremiumModelModal();
-                        }}
-                      >
-                        Upgrade
-                      </Button>
+                      <Link href="/subscription">
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-xs h-6 px-2"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpen(false);
+                          }}
+                        >
+                          Upgrade
+                        </Button>
+                      </Link>
                     </div>
-                  </DropdownMenuItem>
+                  </div>
                 );
               }
 
