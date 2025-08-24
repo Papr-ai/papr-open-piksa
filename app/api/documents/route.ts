@@ -1,9 +1,16 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/app/(auth)/auth';
 import { getSavedDocumentsByUserId } from '@/lib/db/queries';
+import { checkOnboardingStatus } from '@/lib/auth/onboarding-middleware';
 
 export async function GET() {
   try {
+    // Check onboarding status first
+    const onboardingResult = await checkOnboardingStatus();
+    if (!onboardingResult.isCompleted) {
+      return onboardingResult.response!;
+    }
+
     const session = await auth();
     
     if (!session || !session.user || !session.user.id) {

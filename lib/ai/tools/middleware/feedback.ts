@@ -1,4 +1,4 @@
-import type { Tool, ToolExecutionOptions } from 'ai';
+import type { Tool, ToolCallOptions } from 'ai';
 import { DataStream, ToolMiddlewareOptions } from './types';
 import { ToolRegistry } from './registry';
 
@@ -29,7 +29,7 @@ export function createToolFeedbackMiddleware(options: ToolFeedbackOptions) {
 
       return {
         ...originalTool,
-        execute: async (args, options: ToolExecutionOptions) => {
+        execute: async (args, options: ToolCallOptions) => {
           // Check for abort before starting
           if (signal?.aborted) {
             const error = new Error('Operation cancelled by user');
@@ -42,7 +42,7 @@ export function createToolFeedbackMiddleware(options: ToolFeedbackOptions) {
           
           // Send tool call start message
           console.log(`[CHAT API] Tool call started: ${toolName}`);
-          dataStream.writeData({
+          dataStream.write?.({
             type: 'tool',
             content: startMessage,
           });
@@ -62,7 +62,7 @@ export function createToolFeedbackMiddleware(options: ToolFeedbackOptions) {
             const resultMessage = registry.getResultMessage(toolName, result);
 
             // Send tool call result message
-            dataStream.writeData({
+            dataStream.write?.({
               type: 'tool',
               content: resultMessage,
             });
@@ -74,7 +74,7 @@ export function createToolFeedbackMiddleware(options: ToolFeedbackOptions) {
 
             // Check if operation was cancelled
             if (error instanceof Error && (error.name === 'AbortError' || signal?.aborted)) {
-              dataStream.writeData({
+              dataStream.write?.({
                 type: 'tool',
                 content: `⏹️ ${toolName} cancelled`,
               });
@@ -85,7 +85,7 @@ export function createToolFeedbackMiddleware(options: ToolFeedbackOptions) {
             const errorMessage = config?.errorHandling?.errorMessage ?? 
               `❌ Error running ${toolName}: ${error instanceof Error ? error.message : 'Unknown error'}`;
 
-            dataStream.writeData({
+            dataStream.write?.({
               type: 'tool',
               content: isNonFatal ? `⚠️ ${errorMessage} (continuing)` : `❌ ${errorMessage}`,
             });

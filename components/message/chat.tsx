@@ -1,6 +1,8 @@
 'use client';
 
-import type { Attachment, UIMessage } from 'ai';
+import type { FileUIPart, UIMessage } from 'ai';
+import { DefaultChatTransport } from 'ai';
+
 import { useChat } from '@ai-sdk/react';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
@@ -19,6 +21,7 @@ import { useStreamChat } from '@/hooks/useStreamChat';
 import { useSession } from 'next-auth/react';
 import { useBreadcrumb } from '@/components/layout/breadcrumb-context';
 import { useLocalStorage } from 'usehooks-ts';
+import { UsageWarning } from '@/components/subscription/usage-warning';
 
 // Define types for the artifacts
 interface CodeArtifact {
@@ -63,6 +66,28 @@ export function Chat({
   isReadonly: boolean;
   documentId?: string;
 }) {
+  // Track memory enabled state
+  const [isMemoryEnabled, setIsMemoryEnabled] = useState(false);
+  const memoryEnabledRef = useRef(false);
+
+  useEffect(() => {
+    const handleMemoryToggle = (event: CustomEvent) => {
+      console.log('[Chat] Memory toggle event received:', event.detail.enabled);
+      setIsMemoryEnabled(event.detail.enabled);
+      memoryEnabledRef.current = event.detail.enabled; // Keep ref in sync
+    };
+
+    // Try to get initial memory state from localStorage or other source
+    const initialMemoryState = localStorage.getItem('memory-enabled') === 'true';
+    console.log('[Chat] Initial memory state:', initialMemoryState);
+    setIsMemoryEnabled(initialMemoryState);
+    memoryEnabledRef.current = initialMemoryState; // Keep ref in sync
+
+    window.addEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+    return () => {
+      window.removeEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+    };
+  }, []);
   const { mutate } = useSWRConfig();
   const [isClient, setIsClient] = useState(false);
   // Breadcrumb title updater: update once when assistant starts responding
@@ -80,23 +105,43 @@ export function Chat({
     setIsClient(true);
   }, []);
 
+  // Create a ref to store the current selected model to avoid recreating transport
+  const selectedChatModelRef = useRef(selectedChatModel);
+  
+  // Update the ref when the model changes
+  useEffect(() => {
+    selectedChatModelRef.current = selectedChatModel;
+  }, [selectedChatModel]);
+
   const {
     messages,
     setMessages,
-    handleSubmit,
-    input,
-    setInput,
-    append,
+    sendMessage,
     status,
     stop,
-    reload,
+    regenerate,
   } = useChat({
     id,
-    body: { id, selectedChatModel: selectedChatModel },
-    initialMessages,
+    messages: initialMessages,
     experimental_throttle: 100,
-    sendExtraMessageFields: true,
     generateId: generateUUID,
+    transport: new DefaultChatTransport({
+      api: '/api/chat-simple',
+      body: () => ({
+        selectedChatModel: selectedChatModelRef.current, // Use ref to get current model dynamically
+      }),
+      headers: async () => {
+        // Use ref to get current value, avoiding closure issues
+        const currentMemoryState = memoryEnabledRef.current;
+        console.log('[Chat] Sending headers with memory enabled:', currentMemoryState);
+        return {
+          'X-Memory-Enabled': currentMemoryState ? 'true' : 'false',
+          'X-Context': '',
+          'X-Interaction-Mode': 'chat',
+        };
+      },
+    }),
+
     onFinish: () => {
       // Refresh chat list
       mutate(unstable_serialize(getChatHistoryPaginationKey));
@@ -108,10 +153,46 @@ export function Chat({
         })
         .catch(() => {});
     },
-    onError: () => {
+    onError: (error) => {
+      console.error('Chat error:', error);
+      
+      // Check if it's an onboarding error
+      if (error.message && error.message.includes('ONBOARDING_REQUIRED')) {
+        // Redirect to onboarding
+        window.location.href = '/onboarding';
+        return;
+      }
+      
       toast.error('An error occurred, please try again!');
     },
   });
+
+  // Log the selected model for debugging
+  useEffect(() => {
+    console.log('[Chat] Selected model:', selectedChatModel);
+  }, [selectedChatModel]);
+
+  // Handle input state separately in AI SDK 5.0
+  const [input, setInput] = useState('');
+  
+  // Create handleSubmit function
+  const handleSubmit = useCallback((e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (input.trim()) {
+      sendMessage({ role: 'user', parts: [{ type: 'text', text: input }] });
+      setInput('');
+    }
+  }, [input, sendMessage]);
+
+  // Create append function for compatibility
+  const append = useCallback(async (message: any) => {
+    await sendMessage(message);
+  }, [sendMessage]);
+
+  // Create reload function for compatibility  
+  const reload = useCallback(async (options?: any) => {
+    return await regenerate(options);
+  }, [regenerate]);
   // Fetch and set the chat title once when assistant's first message arrives
   useEffect(() => {
     if (messages.length >= 2 && !fetchedTitleRef.current) {
@@ -130,7 +211,7 @@ export function Chat({
     fetcher,
   );
 
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+  const [attachments, setAttachments] = useState<Array<FileUIPart>>([]);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 
   // Track message sending to apply reasoning steps
@@ -176,6 +257,11 @@ export function Chat({
             selectedModelId={selectedChatModel}
             enableUniversalReasoning={true}
           />
+        </div>
+
+        {/* Usage Warning positioned right above the input */}
+        <div className="mx-auto px-7 w-[70%]">
+          <UsageWarning />
         </div>
 
         <form 

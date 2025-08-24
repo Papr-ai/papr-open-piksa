@@ -1,9 +1,16 @@
 import { getChatById, getChatsByUserId } from '@/lib/db/queries';
 import { auth } from '@/app/(auth)/auth';
 import { NextResponse } from 'next/server';
+import { checkOnboardingStatus } from '@/lib/auth/onboarding-middleware';
 
 export async function GET(req: Request) {
   try {
+    // Check onboarding status first
+    const onboardingResult = await checkOnboardingStatus();
+    if (!onboardingResult.isCompleted) {
+      return onboardingResult.response!;
+    }
+
     const session = await auth();
 
     if (!session || !session.user) {

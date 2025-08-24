@@ -2,7 +2,7 @@ import { imageDocumentHandler } from '@/artifacts/image/server';
 import { sheetDocumentHandler } from '@/artifacts/sheet/server';
 import { textDocumentHandler } from '@/artifacts/text/server';
 import type { ArtifactKind } from '@/components/artifact/artifact';
-import type { DataStreamWriter } from 'ai';
+import type { DataStreamWriter } from '@/lib/types';
 import type { Document } from '../db/schema';
 import { saveDocument } from '../db/queries';
 import type { Session } from 'next-auth';
@@ -84,13 +84,13 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
             });
 
             // Signal completion through the data stream
-            args.dataStream.writeData({
+            args.dataStream.write?.({
               type: 'status',
               content: 'idle',
             });
 
             // Explicitly mark completion
-            args.dataStream.writeData({
+            args.dataStream.write?.({
               type: 'finish',
               content: '',
             });
@@ -99,11 +99,11 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
           } catch (saveError) {
             console.error('Error saving document:', saveError);
             // On save error, signal error state but keep content
-            args.dataStream.writeData({
+            args.dataStream.write?.({
               type: 'status',
               content: 'idle',
             });
-            args.dataStream.writeData({
+            args.dataStream.write?.({
               type: 'finish',
               content: '',
             });
@@ -115,11 +115,11 @@ export function createDocumentHandler<T extends ArtifactKind>(config: {
       } catch (error) {
         console.error('Error in onUpdateDocument:', error);
         // On error, signal completion and return original content
-        args.dataStream.writeData({
+        args.dataStream.write?.({
           type: 'status',
           content: 'idle',
         });
-        args.dataStream.writeData({
+        args.dataStream.write?.({
           type: 'finish',
           content: '',
         });

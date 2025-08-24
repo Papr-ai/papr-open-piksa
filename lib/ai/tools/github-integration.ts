@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/rest';
 import { GitHubClient } from '@/lib/github/client';
-import type { DataStreamWriter } from 'ai';
-import { tool } from 'ai';
+import type { DataStreamWriter } from '@/lib/types';
+import { tool, type Tool, type ToolCallOptions } from 'ai';
 import type { Session } from 'next-auth';
 import { z } from 'zod';
 
@@ -160,9 +160,9 @@ function getOwnerString(owner: string | { login: string }): string {
 export function createListRepositoriesTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'List GitHub repositories for the authenticated user',
-    parameters: z.object({}),
-    execute: async () => {
-          dataStream.writeData({
+    inputSchema: z.object({}),
+    execute: async (input: any, options: ToolCallOptions) => {
+          dataStream.write?.({
         type: 'tool-status',
         content: 'Loading GitHub repositories...'
       });
@@ -174,9 +174,10 @@ export function createListRepositoriesTool({ session, dataStream }: GitHubToolPr
 export function createCreateProjectTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Create a new project in a GitHub repository',
-    parameters: createProjectParams,
-    execute: async (args: z.infer<typeof createProjectParams>) => {
-      dataStream.writeData({
+    inputSchema: createProjectParams,
+    execute: async (input: z.infer<typeof createProjectParams>, options: ToolCallOptions) => {
+      const args = input;
+      dataStream.write?.({
         type: 'tool-status',
         content: `Creating project ${args.project?.name || ''} in ${args.repository?.owner}/${args.repository?.name}...`
       });
@@ -188,9 +189,10 @@ export function createCreateProjectTool({ session, dataStream }: GitHubToolProps
 export function createGetRepositoryFilesTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Get files from a GitHub repository',
-    parameters: getRepositoryFilesParams,
-    execute: async (args: z.infer<typeof getRepositoryFilesParams>) => {
-            dataStream.writeData({
+    inputSchema: getRepositoryFilesParams,
+    execute: async (input: z.infer<typeof getRepositoryFilesParams>, options: ToolCallOptions) => {
+      const args = input;
+            dataStream.write?.({
         type: 'tool-status',
         content: `Loading files from ${args.repository?.owner}/${args.repository?.name}...`
       });
@@ -202,9 +204,10 @@ export function createGetRepositoryFilesTool({ session, dataStream }: GitHubTool
 export function createGetFileContentTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Get content of a file from a GitHub repository',
-    parameters: getFileContentParams,
-    execute: async (args: z.infer<typeof getFileContentParams>) => {
-              dataStream.writeData({
+    inputSchema: getFileContentParams,
+    execute: async (input: z.infer<typeof getFileContentParams>, options: ToolCallOptions) => {
+      const args = input;
+              dataStream.write?.({
         type: 'tool-status',
         content: `Reading file: ${args.path}...`
       });
@@ -216,9 +219,10 @@ export function createGetFileContentTool({ session, dataStream }: GitHubToolProp
 export function createSearchFilesTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Search for files in a GitHub repository',
-    parameters: searchFilesParams,
-    execute: async (args: z.infer<typeof searchFilesParams>) => {
-              dataStream.writeData({
+    inputSchema: searchFilesParams,
+    execute: async (input: z.infer<typeof searchFilesParams>, options: ToolCallOptions) => {
+      const args = input;
+              dataStream.write?.({
         type: 'tool-status',
         content: `Searching for files matching: "${args.query}"...`
       });
@@ -230,9 +234,10 @@ export function createSearchFilesTool({ session, dataStream }: GitHubToolProps) 
 export function createOpenFileExplorerTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Open the file explorer for a GitHub repository',
-    parameters: openFileExplorerParams,
-    execute: async (args: z.infer<typeof openFileExplorerParams>) => {
-      dataStream.writeData({
+    inputSchema: openFileExplorerParams,
+    execute: async (input: z.infer<typeof openFileExplorerParams>, options: ToolCallOptions) => {
+      const args = input;
+      dataStream.write?.({
         type: 'tool-status',
         content: `Opening file explorer for ${getOwnerString(args.repository.owner)}/${args.repository.name}...`
       });
@@ -269,9 +274,10 @@ export function createOpenFileExplorerTool({ session, dataStream }: GitHubToolPr
 export function createCreateRepositoryTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Create a new GitHub repository (requires user approval)',
-    parameters: createRepositoryParams,
-    execute: async (args: z.infer<typeof createRepositoryParams>) => {
-          dataStream.writeData({
+    inputSchema: createRepositoryParams,
+    execute: async (input: z.infer<typeof createRepositoryParams>, options: ToolCallOptions) => {
+      const args = input;
+          dataStream.write?.({
         type: 'tool-status',
         content: `Requesting approval to create repository: ${args.name}...`
       });
@@ -298,9 +304,10 @@ export function createCreateRepositoryTool({ session, dataStream }: GitHubToolPr
 export function createUpdateStagedFileTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Update a staged file in a GitHub repository',
-    parameters: updateStagedFileParams,
-    execute: async (args: z.infer<typeof updateStagedFileParams>) => {
-          dataStream.writeData({
+    inputSchema: updateStagedFileParams,
+    execute: async (input: z.infer<typeof updateStagedFileParams>, options: ToolCallOptions) => {
+      const args = input;
+          dataStream.write?.({
         type: 'tool-status',
         content: `Updating staged file: ${args.filePath}...`
       });
@@ -312,9 +319,10 @@ export function createUpdateStagedFileTool({ session, dataStream }: GitHubToolPr
 export function createGetStagingStateTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Get the staging state of a GitHub repository',
-    parameters: getStagingStateParams,
-    execute: async (args: z.infer<typeof getStagingStateParams>) => {
-          dataStream.writeData({
+    inputSchema: getStagingStateParams,
+    execute: async (input: z.infer<typeof getStagingStateParams>, options: ToolCallOptions) => {
+      const args = input;
+          dataStream.write?.({
         type: 'tool-status',
         content: `Checking staging state for ${args.repository?.owner}/${args.repository?.name}...`
       });
@@ -326,9 +334,10 @@ export function createGetStagingStateTool({ session, dataStream }: GitHubToolPro
 export function createClearStagedFilesTool({ session, dataStream }: GitHubToolProps) {
   return tool({
     description: 'Clear all staged files in a GitHub repository',
-    parameters: clearStagedFilesParams,
-    execute: async (args: z.infer<typeof clearStagedFilesParams>) => {
-          dataStream.writeData({
+    inputSchema: clearStagedFilesParams,
+    execute: async (input: z.infer<typeof clearStagedFilesParams>, options: ToolCallOptions) => {
+      const args = input;
+          dataStream.write?.({
         type: 'tool-status',
         content: `Clearing staged files for ${args.repository?.owner}/${args.repository?.name}...`
       });

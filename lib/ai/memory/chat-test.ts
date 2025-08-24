@@ -63,7 +63,6 @@ async function testMemoryWorkflow() {
     const userMessage: UIMessage = {
       id: generateUUID(),
       role: 'user',
-      content: messageContent,
       parts: [{ type: 'text', text: messageContent }],
     };
 
@@ -112,7 +111,6 @@ async function testMemoryWorkflow() {
     const chatUIMessage: UIMessage = {
       id: generateUUID(),
       role: 'user',
-      content: 'check my latest memories',
       parts: [
         {
           type: 'text',
@@ -121,14 +119,20 @@ async function testMemoryWorkflow() {
       ],
     };
 
-    console.log(`Using message: "${chatUIMessage.content}"`);
+    // Extract text content from parts
+    const messageText = chatUIMessage.parts
+      ?.filter(part => part.type === 'text')
+      .map(part => (part as any).text)
+      .join('') || '';
+    
+    console.log(`Using message: "${messageText}"`);
 
     // Test enhancePromptWithMemories directly to see if it can extract the query
     const enhancedPrompt = await enhancePromptWithMemories({
       userId: TEST_USER_ID,
-      prompt: chatUIMessage.content,
+      prompt: messageText,
       apiKey: PAPR_MEMORY_API_KEY,
-      searchQuery: chatUIMessage.content
+      searchQuery: messageText
     });
 
     if (enhancedPrompt && enhancedPrompt.length > 0) {

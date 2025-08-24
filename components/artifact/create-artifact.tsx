@@ -1,5 +1,6 @@
 import type { Suggestion } from '@/lib/db/schema';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
 import type { ComponentType, Dispatch, ReactNode, SetStateAction } from 'react';
 import type { DataStreamDelta } from '../message/data-stream-handler';
 import type { UIArtifact } from './artifact';
@@ -12,7 +13,7 @@ export type ArtifactActionContext<M = any> = {
   mode: 'edit' | 'diff';
   metadata: M;
   setMetadata: Dispatch<SetStateAction<M>>;
-  appendMessage?: UseChatHelpers['append'];
+  appendMessage?: UseChatHelpers<UIMessage>['sendMessage'];
 };
 
 type ArtifactAction<M = any> = {
@@ -24,7 +25,7 @@ type ArtifactAction<M = any> = {
 };
 
 export type ArtifactToolbarContext = {
-  appendMessage: UseChatHelpers['append'];
+  appendMessage: UseChatHelpers<UIMessage>['sendMessage'];
 };
 
 export type ArtifactToolbarItem = {

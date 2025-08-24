@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { tool } from 'ai';
-import type { DataStreamWriter } from 'ai';
+import { tool, type Tool, type ToolCallOptions } from 'ai';
+import type { DataStreamWriter } from '@/lib/types';
 
 // Task status types
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
@@ -17,6 +17,80 @@ export interface Task {
   estimatedDuration?: string;
   actualDuration?: string;
 }
+
+// Tool input/output types
+type TaskPlanInput = {
+  sessionId: string;
+  tasks: Array<{
+    title: string;
+    description?: string;
+    dependencies?: string[];
+    estimatedDuration?: string;
+  }>;
+};
+
+type TaskPlanOutput = {
+  success: boolean;
+  error?: string;
+  type?: string;
+  tasks?: Task[];
+  nextTask?: Task | null;
+  progress?: { completed: number; total: number; percentage: number };
+  message?: string;
+};
+
+type UpdateTaskInput = {
+  sessionId: string;
+  taskId: string;
+  status: TaskStatus;
+};
+
+type UpdateTaskOutput = TaskPlanOutput & {
+  task?: Task;
+};
+
+type CompleteTaskInput = {
+  sessionId: string;
+  taskId: string;
+};
+
+type CompleteTaskOutput = TaskPlanOutput & {
+  task?: Task;
+  allCompleted?: boolean;
+};
+
+type GetTaskStatusInput = {
+  sessionId: string;
+};
+
+type GetTaskStatusOutput = {
+  success: boolean;
+  type: string;
+  tasks: Task[];
+  nextTask: Task | null;
+  progress: { completed: number; total: number; percentage: number };
+  allCompleted: boolean;
+  message: string;
+};
+
+type AddTaskInput = {
+  sessionId: string;
+  tasks: Array<{
+    title: string;
+    description?: string;
+    dependencies?: string[];
+    estimatedDuration?: string;
+  }>;
+};
+
+type AddTaskOutput = {
+  success: boolean;
+  error?: string;
+  message?: string;
+  tasks?: Task[];
+  newTasks?: Task[];
+  nextTask?: Task | null;
+};
 
 // In-memory task store (in a real app, this would be persistent)
 const taskStore = new Map<string, Task[]>();
@@ -39,9 +113,35 @@ function generateTaskId(): string {
 // Common task item schema
 const taskItemSchema = z.object({
   title: z.string().describe('Task title'),
-  description: z.string().describe('Task description'),
-  dependencies: z.array(z.string()).describe('IDs of tasks that must be completed first. NA if there are no dependencies'),
-  estimatedDuration: z.string().describe('Estimated time to complete task'),
+  description: z.string().optional().describe('Task description'),
+  dependencies: z.array(z.string()).optional().describe('IDs of tasks that must be completed first. NA if there are no dependencies'),
+  estimatedDuration: z.string().optional().describe('Estimated time to complete task'),
+});
+
+// Tool parameter schemas
+const createTaskPlanSchema = z.object({
+  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
+  tasks: z.array(taskItemSchema).describe('Tasks to create for the plan'),
+});
+
+const updateTaskSchema = z.object({
+  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
+  taskId: z.string().describe('ID of the task to update'),
+  status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'cancelled']).describe('New status for the task'),
+});
+
+const completeTaskSchema = z.object({
+  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
+  taskId: z.string().describe('ID of the task to complete'),
+});
+
+const getTaskStatusSchema = z.object({
+  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
+});
+
+const addTaskSchema = z.object({
+  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
+  tasks: z.array(taskItemSchema).describe('Tasks to add to the plan'),
 });
 
 // Helper function to get the next available task (one with no incomplete dependencies)
@@ -72,14 +172,12 @@ function getTaskProgress(tasks: Task[]): { completed: number; total: number; per
 }
 
 // Create task plan tool
-export function createCreateTaskPlanTool(dataStream: DataStreamWriter) {
+export function createCreateTaskPlanTool(dataStream: DataStreamWriter): Tool<TaskPlanInput, TaskPlanOutput> {
   return tool({
     description: 'Create a comprehensive task plan at the start of complex requests',
-    parameters: z.object({
-      sessionId: z.string().describe('Unique session identifier (use chat ID)'),
-      tasks: z.array(taskItemSchema).describe('Tasks to create for the plan'),
-    }),
-    execute: async ({ sessionId, tasks }) => {
+    inputSchema: createTaskPlanSchema,
+    execute: async (input: TaskPlanInput, options: ToolCallOptions): Promise<TaskPlanOutput> => {
+      const { sessionId, tasks } = input;
       // Validate required parameters
       if (!tasks || tasks.length === 0) {
         return { 
@@ -88,7 +186,7 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter) {
         };
       }
       
-      const newTasks: Task[] = tasks.map(task => ({
+      const newTasks: Task[] = tasks.map((task: any) => ({
         id: generateTaskId(),
         title: task.title,
         description: task.description || '',
@@ -116,15 +214,12 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter) {
 }
 
 // Update task tool
-export function createUpdateTaskTool(dataStream: DataStreamWriter) {
+export function createUpdateTaskTool(dataStream: DataStreamWriter): Tool<UpdateTaskInput, UpdateTaskOutput> {
   return tool({
     description: 'Update the status of a task in the plan',
-    parameters: z.object({
-      sessionId: z.string().describe('Unique session identifier (use chat ID)'),
-      taskId: z.string().describe('ID of specific task to update'),
-      status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'cancelled']).describe('New status for task'),
-    }),
-    execute: async ({ sessionId, taskId, status }) => {
+    inputSchema: updateTaskSchema,
+    execute: async (input: UpdateTaskInput, options: ToolCallOptions): Promise<UpdateTaskOutput> => {
+      const { sessionId, taskId, status } = input;
       const currentTasks = getTasks(sessionId);
       
       // Validate required parameters
@@ -167,14 +262,12 @@ export function createUpdateTaskTool(dataStream: DataStreamWriter) {
 }
 
 // Complete task tool
-export function createCompleteTaskTool(dataStream: DataStreamWriter) {
+export function createCompleteTaskTool(dataStream: DataStreamWriter): Tool<CompleteTaskInput, CompleteTaskOutput> {
   return tool({
     description: 'Mark a specific task as completed',
-    parameters: z.object({
-      sessionId: z.string().describe('Unique session identifier (use chat ID)'),
-      taskId: z.string().describe('ID of specific task to complete'),
-    }),
-    execute: async ({ sessionId, taskId }) => {
+    inputSchema: completeTaskSchema,
+    execute: async (input: CompleteTaskInput, options: ToolCallOptions): Promise<CompleteTaskOutput> => {
+      const { sessionId, taskId } = input;
       const currentTasks = getTasks(sessionId);
       
       // Validate required parameters
@@ -217,13 +310,12 @@ export function createCompleteTaskTool(dataStream: DataStreamWriter) {
 }
 
 // Get task status tool
-export function createGetTaskStatusTool(dataStream: DataStreamWriter) {
+export function createGetTaskStatusTool(dataStream: DataStreamWriter): Tool<GetTaskStatusInput, GetTaskStatusOutput> {
   return tool({
     description: 'Check the progress and status of the current task plan',
-    parameters: z.object({
-      sessionId: z.string().describe('Unique session identifier (use chat ID)'),
-    }),
-    execute: async ({ sessionId }) => {
+    inputSchema: getTaskStatusSchema,
+    execute: async (input: GetTaskStatusInput, options: ToolCallOptions): Promise<GetTaskStatusOutput> => {
+      const { sessionId } = input;
       const currentTasks = getTasks(sessionId);
       
       const statusProgress = getTaskProgress(currentTasks);
@@ -243,14 +335,12 @@ export function createGetTaskStatusTool(dataStream: DataStreamWriter) {
 }
 
 // Add tasks tool
-export function createAddTaskTool(dataStream: DataStreamWriter) {
+export function createAddTaskTool(dataStream: DataStreamWriter): Tool<AddTaskInput, AddTaskOutput> {
   return tool({
     description: 'Add new tasks to an existing plan',
-    parameters: z.object({
-      sessionId: z.string().describe('Unique session identifier (use chat ID)'),
-      tasks: z.array(taskItemSchema).describe('Tasks to add to the plan'),
-    }),
-    execute: async ({ sessionId, tasks }) => {
+    inputSchema: addTaskSchema,
+    execute: async (input: AddTaskInput, options: ToolCallOptions): Promise<AddTaskOutput> => {
+      const { sessionId, tasks } = input;
       const currentTasks = getTasks(sessionId);
       
       // Validate required parameters
@@ -261,7 +351,7 @@ export function createAddTaskTool(dataStream: DataStreamWriter) {
         };
       }
       
-      const additionalTasks: Task[] = tasks.map(task => ({
+      const additionalTasks: Task[] = tasks.map((task: any) => ({
         id: generateTaskId(),
         title: task.title,
         description: task.description || '',

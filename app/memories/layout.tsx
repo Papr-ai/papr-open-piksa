@@ -1,6 +1,7 @@
 import React from 'react';
 import { redirect } from 'next/navigation';
 import { auth } from '@/app/(auth)/auth';
+import { getUser } from '@/lib/db/queries';
 import { MemoriesNav } from '@/components/memory/memories-nav';
 
 export default async function MemoriesLayout({
@@ -10,8 +11,19 @@ export default async function MemoriesLayout({
 }) {
   const session = await auth();
 
-  if (!session?.user) {
+  if (!session?.user?.email) {
     redirect('/login');
+  }
+
+  const [dbUser] = await getUser(session.user.email);
+  
+  if (!dbUser) {
+    redirect('/login');
+  }
+
+  // Check if onboarding is completed
+  if (!dbUser.onboardingCompleted) {
+    redirect('/onboarding');
   }
 
   return (

@@ -1,12 +1,12 @@
 import { cookies } from 'next/headers';
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/app/(auth)/auth';
 import { Chat } from '@/components/message/chat';
-import { getChatById, getMessagesByChatId } from '@/lib/db/queries';
+import { getChatById, getMessagesByChatId, getUser } from '@/lib/db/queries';
 import { DataStreamHandler } from '@/components/message/data-stream-handler';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import type { DBMessage } from '@/lib/db/schema';
-import type { Attachment, UIMessage } from 'ai';
+import type { FileUIPart, UIMessage } from 'ai';
 import { ChatBreadcrumb } from '@/components/chat/chat-breadcrumb';
 
 type PageProps = {
@@ -26,7 +26,26 @@ export default async function Page({ params, searchParams }: PageProps) {
   }
 
   const session = await auth();
+  
+  // Check authentication and onboarding status for private chats
+  if (chat.visibility === 'private') {
+    if (!session?.user?.email) {
+      redirect('/login');
+    }
 
+    const [dbUser] = await getUser(session.user.email);
+    
+    if (!dbUser) {
+      redirect('/login');
+    }
+
+    // Check if onboarding is completed
+    if (!dbUser.onboardingCompleted) {
+      redirect('/onboarding');
+    }
+  }
+
+  // Additional authorization check for private chats
   if (chat.visibility === 'private') {
     if (!session || !session.user) {
       return notFound();
@@ -78,8 +97,8 @@ export default async function Page({ params, searchParams }: PageProps) {
         role: message.role as UIMessage['role'],
         content: '',
         createdAt: message.createdAt,
-        experimental_attachments:
-          (message.attachments as Array<Attachment>) ?? [],
+        attachments:
+          (message.attachments as Array<FileUIPart>) ?? [],
         tool_calls: message.tool_calls as any,
         memories: message.memories as any, // Include memories from the message
         modelId: message.modelId, // Include model ID
@@ -90,35 +109,20 @@ export default async function Page({ params, searchParams }: PageProps) {
   const cookieStore = await cookies();
   const chatModelFromCookie = cookieStore.get('chat-model');
 
+  const selectedModel = chatModelFromCookie?.value || DEFAULT_CHAT_MODEL;
+
   return (
     <>
       <ChatBreadcrumb title={chat.title || `Chat ${id.substring(0, 8)}...`} chatId={id} />
-      
-      {!chatModelFromCookie ? (
-        <>
-          <Chat
-            id={chat.id}
-            initialMessages={convertToUIMessages(messagesFromDb)}
-            selectedChatModel={DEFAULT_CHAT_MODEL}
-            selectedVisibilityType={chat.visibility}
-            isReadonly={session?.user?.id !== chat.userId}
-            documentId={documentId}
-          />
-          <DataStreamHandler id={id} />
-        </>
-      ) : (
-        <>
-          <Chat
-            id={chat.id}
-            initialMessages={convertToUIMessages(messagesFromDb)}
-            selectedChatModel={chatModelFromCookie.value}
-            selectedVisibilityType={chat.visibility}
-            isReadonly={session?.user?.id !== chat.userId}
-            documentId={documentId}
-          />
-          <DataStreamHandler id={id} />
-        </>
-      )}
+      <Chat
+        id={chat.id}
+        initialMessages={convertToUIMessages(messagesFromDb)}
+        selectedChatModel={selectedModel}
+        selectedVisibilityType={chat.visibility}
+        isReadonly={session?.user?.id !== chat.userId}
+        documentId={documentId}
+      />
+      <DataStreamHandler id={id} />
     </>
   );
 }

@@ -1,12 +1,12 @@
 import type {
   CoreAssistantMessage,
   CoreToolMessage,
-  Message,
   TextStreamPart,
-  ToolInvocation,
   ToolSet,
   UIMessage,
+  ToolResultPart,
 } from 'ai';
+import type { ToolInvocation, ExtendedUIMessage } from '@/lib/types';
 import { type ClassValue, clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -58,23 +58,23 @@ function addToolMessageToChat({
   messages,
 }: {
   toolMessage: CoreToolMessage;
-  messages: Array<Message>;
-}): Array<Message> {
+  messages: Array<ExtendedUIMessage>;
+}): Array<ExtendedUIMessage> {
   return messages.map((message) => {
     if (message.toolInvocations) {
       return {
         ...message,
-        toolInvocations: message.toolInvocations.map((toolInvocation) => {
+        toolInvocations: message.toolInvocations.map((toolInvocation: ToolInvocation) => {
           const toolResult = toolMessage.content.find(
-            (tool) => tool.toolCallId === toolInvocation.toolCallId,
+            (tool: ToolResultPart) => tool.toolCallId === (toolInvocation as any).toolCallId,
           );
 
           if (toolResult) {
             return {
               ...toolInvocation,
-              state: 'result',
-              result: toolResult.result,
-            };
+              state: 'output-available' as const,
+              output: (toolResult as ToolResultPart).output,
+            } as ToolInvocation;
           }
 
           return toolInvocation;

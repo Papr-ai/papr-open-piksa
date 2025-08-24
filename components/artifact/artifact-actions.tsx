@@ -8,6 +8,7 @@ import type { ArtifactActionContext } from './create-artifact';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
 
 // Import the detectLanguage function from code artifact
 function detectLanguage(
@@ -61,7 +62,7 @@ interface ArtifactActionsProps {
   mode: 'edit' | 'diff';
   metadata: any;
   setMetadata: Dispatch<SetStateAction<any>>;
-  appendMessage?: UseChatHelpers['append'];
+  appendMessage?: UseChatHelpers<UIMessage>['sendMessage'];
 }
 
 function PureArtifactActions({

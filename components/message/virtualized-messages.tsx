@@ -15,8 +15,8 @@ interface VirtualizedMessagesProps {
   votes: Record<string, Vote>;
   isLoading: boolean;
   chatId: string;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
   isReadonly?: boolean;
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;

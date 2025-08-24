@@ -8,7 +8,8 @@ import { createMemoryService } from './service';
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { UIMessage } from 'ai';
 import type { UserCreateParams, UserResponse } from '@papr/memory/resources/user';
-import type { MemoryType, Memory } from '@papr/memory/resources/memory';
+import type { MemoryType, MemoryMetadata } from '@papr/memory/resources/memory';
+import { filterMessageForMemory, extractConversationContext, convertDecisionToMetadata } from './intelligent-filter';
 
 interface EnhancePromptOptions {
   userId: string;
@@ -77,7 +78,7 @@ export async function enhancePromptWithMemories({
 }
 
 /**
- * Store a message in memory
+ * Store a message in memory (legacy - direct storage)
  */
 export async function storeMessageInMemory({
   userId,
@@ -111,11 +112,145 @@ export async function storeMessageInMemory({
     );
 
     const memoryService = createMemoryService(apiKey);
-    return await memoryService.storeMessage(paprUserId, chatId, message);
+    return await memoryService.storeMessage(paprUserId, chatId, message, userId);
   } catch (error) {
     console.error('[Memory] Error storing message in memory:', error);
     return false;
   }
+}
+
+/**
+ * Intelligently filter and store a message in memory using AI
+ */
+export async function intelligentlyStoreMessageInMemory({
+  userId,
+  chatId,
+  message,
+  apiKey,
+  conversationHistory = [],
+}: {
+  userId: string;
+  chatId: string;
+  message: UIMessage;
+  apiKey: string;
+  conversationHistory?: UIMessage[];
+}): Promise<{ stored: boolean; reason?: string; category?: string }> {
+  if (!apiKey) {
+    console.log('[Memory] No API key provided for intelligent filtering');
+    return { stored: false, reason: 'No API key provided' };
+  }
+
+  try {
+    // Get conversation context for better filtering
+    const conversationContext = extractConversationContext(conversationHistory, 3);
+    
+    console.log('[Memory] Starting intelligent filtering for message:', {
+      messageId: message.id,
+      userId,
+      chatId,
+      hasContext: Boolean(conversationContext),
+    });
+
+    // Use AI to determine if message should be stored
+    const decision = await filterMessageForMemory({
+      apiKey,
+      userId,
+      chatId,
+      message,
+      conversationContext,
+    });
+
+    if (!decision) {
+      console.log('[Memory] Filter returned null - skipping storage');
+      return { stored: false, reason: 'Filter analysis failed' };
+    }
+
+    if (!decision.shouldStore) {
+      console.log('[Memory] AI decided not to store message:', decision.reasoning);
+      return { stored: false, reason: decision.reasoning };
+    }
+
+    console.log('[Memory] AI decided to store message:', {
+      category: decision.category,
+      reasoning: decision.reasoning,
+      hasCustomContent: Boolean(decision.content),
+    });
+
+    // Ensure the user has a Papr user ID
+    const paprUserId = await ensurePaprUser(userId, apiKey);
+
+    if (!paprUserId) {
+      console.warn(
+        `[Memory WARNING] Failed to get or create Papr user ID for app user ${userId}.`,
+      );
+      return { stored: false, reason: 'Failed to resolve user ID' };
+    }
+
+    // Convert decision to metadata
+    const metadata = convertDecisionToMetadata(decision, userId, chatId);
+    if (!metadata) {
+      console.warn('[Memory] Failed to convert decision to metadata');
+      return { stored: false, reason: 'Invalid decision format' };
+    }
+
+    // Use custom content if provided, otherwise use original message content
+    const contentToStore = decision.content || extractMessageContent(message);
+    if (!contentToStore) {
+      console.log('[Memory] No content to store after filtering');
+      return { stored: false, reason: 'No content to store' };
+    }
+
+    // Store using memory service
+    const memoryService = createMemoryService(apiKey);
+    const success = await memoryService.storeContent(
+      paprUserId,
+      contentToStore,
+      'text',
+      metadata,
+      userId // Pass app user ID for tracking
+    );
+
+    if (success) {
+      console.log('[Memory] Successfully stored filtered message:', {
+        category: decision.category,
+        contentLength: contentToStore.length,
+      });
+    }
+
+    return {
+      stored: success,
+      reason: success ? 'Stored successfully' : 'Storage failed',
+      category: decision.category,
+    };
+
+  } catch (error) {
+    console.error('[Memory] Error in intelligent message filtering:', error);
+    return { stored: false, reason: 'Filter processing error' };
+  }
+}
+
+/**
+ * Helper function to extract message content
+ */
+function extractMessageContent(message: UIMessage): string {
+  let content = '';
+  if ('content' in message && message.content) {
+    content = String(message.content);
+  } else if (message.parts) {
+    content = message.parts
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (typeof part === 'object') {
+          if ('text' in part) return part.text;
+          if ('content' in part) return part.content;
+          return JSON.stringify(part);
+        }
+        return '';
+      })
+      .join(' ')
+      .trim();
+  }
+  return content;
 }
 
 /**
@@ -150,13 +285,25 @@ export function createMemoryEnabledSystemPrompt({
       `[Memory DEBUG] Retrieving memories for user ${userId} with ${messages.length} messages`,
     );
 
+    // Helper function to extract text content from UIMessage (AI SDK 5.0 format only)
+    const extractTextFromMessage = (message: UIMessage) => {
+      if ('parts' in message && Array.isArray(message.parts)) {
+        // AI SDK 5.0 format with parts array
+        return message.parts
+          .filter(part => part.type === 'text')
+          .map(part => (part as any).text)
+          .join(' ');
+      }
+      return '';
+    };
+
     // Enhance with memories
     const memoryPrompt = await enhancePromptWithMemories({
       userId,
       prompt: basePrompt,
       apiKey,
       maxMemories: 25,
-      searchQuery: messages.map(m => m.content).join('\n'),
+      searchQuery: messages.map(extractTextFromMessage).join('\n'),
     });
 
     // Combine the prompts
@@ -283,7 +430,8 @@ export async function storeContentInMemory({
       paprUserId, 
       content, 
       type as MemoryType, 
-      { ...metadata, app_user_id: userId }
+      { ...metadata, app_user_id: userId },
+      userId // Pass app user ID for tracking
     );
   } catch (error) {
     console.error('[Memory] Error storing content in memory:', error);

@@ -9,7 +9,8 @@ import {
 } from '../schema';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { inArray } from 'drizzle-orm';
-import { appendResponseMessages, UIMessage } from 'ai';
+import { UIMessage } from 'ai';
+import type { ExtendedUIMessage } from '@/lib/types';
 
 config({
   path: '.env.local',
@@ -24,6 +25,18 @@ const db = drizzle(client);
 
 const BATCH_SIZE = 50; // Process 10 chats at a time
 const INSERT_BATCH_SIZE = 100; // Insert 100 messages at a time
+
+// Helper function to extract text content from UIMessage (AI SDK 5.0 format only)
+function extractTextFromMessage(message: ExtendedUIMessage): string {
+  if ('parts' in message && Array.isArray(message.parts)) {
+    // AI SDK 5.0 format with parts array
+    return message.parts
+      .filter(part => part.type === 'text')
+      .map(part => (part as any).text)
+      .join(' ');
+  }
+  return '';
+}
 
 type NewMessageInsert = {
   id: string;
@@ -100,22 +113,23 @@ async function createNewTable() {
         const [firstAssistantMessage] = assistantMessages;
 
         try {
-          const uiSection = appendResponseMessages({
-            messages: [userMessage],
-            // @ts-expect-error: message.content has different type
-            responseMessages: assistantMessages,
-            _internal: {
-              currentDate: () => firstAssistantMessage.createdAt ?? new Date(),
-            },
-          });
+          // Manually construct UI messages since appendResponseMessages is not available in AI SDK 5.0
+          const uiSection: ExtendedUIMessage[] = [
+            userMessage as ExtendedUIMessage,
+            ...assistantMessages.map(msg => ({
+              ...msg,
+              createdAt: (msg as any).createdAt ?? new Date(),
+            } as ExtendedUIMessage))
+          ];
 
           const projectedUISection = uiSection
-            .map((message) => {
+            .map((message: ExtendedUIMessage) => {
               if (message.role === 'user') {
+                const textContent = extractTextFromMessage(message);
                 return {
                   id: message.id,
                   chatId: chat.id,
-                  parts: [{ type: 'text', text: message.content }],
+                  parts: [{ type: 'text', text: textContent }],
                   role: message.role,
                   createdAt: message.createdAt,
                   attachments: [],
@@ -132,7 +146,7 @@ async function createNewTable() {
               }
               return null;
             })
-            .filter((msg): msg is NewMessageInsert => msg !== null);
+            .filter((msg: NewMessageInsert | null): msg is NewMessageInsert => msg !== null);
 
           // Add messages to batch
           for (const msg of projectedUISection) {

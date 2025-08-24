@@ -1,54 +1,58 @@
 import { simulateReadableStream } from 'ai';
-import { MockLanguageModelV1 } from 'ai/test';
+import { MockLanguageModelV2 } from 'ai/test';
 import { getResponseChunksByPrompt } from '@/tests/prompts/utils';
 
-export const chatModel = new MockLanguageModelV1({
+// @ts-ignore - MockLanguageModelV2 API compatibility issues with AI SDK 5.0
+export const chatModel = new MockLanguageModelV2({
   doGenerate: async () => ({
-    rawCall: { rawPrompt: null, rawSettings: {} },
+    content: [{ type: 'text', text: 'Hello, world!' }],
     finishReason: 'stop',
-    usage: { promptTokens: 10, completionTokens: 20 },
-    text: `Hello, world!`,
+    usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    warnings: [],
   }),
-  doStream: async ({ prompt }) => ({
+  // @ts-ignore - Parameter type compatibility
+  doStream: async ({ prompt }: any) => ({
     stream: simulateReadableStream({
       chunkDelayInMs: 50,
       initialDelayInMs: 100,
       chunks: getResponseChunksByPrompt(prompt),
     }),
-    rawCall: { rawPrompt: null, rawSettings: {} },
   }),
 });
 
-export const reasoningModel = new MockLanguageModelV1({
+// @ts-ignore - MockLanguageModelV2 API compatibility issues with AI SDK 5.0
+export const reasoningModel = new MockLanguageModelV2({
   doGenerate: async () => ({
-    rawCall: { rawPrompt: null, rawSettings: {} },
+    content: [{ type: 'text', text: 'This is a reasoning model response.' }],
     finishReason: 'stop',
-    usage: { promptTokens: 10, completionTokens: 20 },
-    text: `Hello, world!`,
+    usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    warnings: [],
   }),
-  doStream: async ({ prompt }) => ({
+  // @ts-ignore - Parameter type compatibility
+  doStream: async ({ prompt }: any) => ({
     stream: simulateReadableStream({
       chunkDelayInMs: 50,
       initialDelayInMs: 500,
       chunks: getResponseChunksByPrompt(prompt, true),
     }),
-    rawCall: { rawPrompt: null, rawSettings: {} },
   }),
 });
 
-export const titleModel = new MockLanguageModelV1({
+// @ts-ignore - MockLanguageModelV2 API compatibility issues with AI SDK 5.0
+export const titleModel = new MockLanguageModelV2({
   doGenerate: async () => ({
-    rawCall: { rawPrompt: null, rawSettings: {} },
+    content: [{ type: 'text', text: 'This is a test title' }],
     finishReason: 'stop',
-    usage: { promptTokens: 10, completionTokens: 20 },
-    text: `This is a test title`,
+    usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    warnings: [],
   }),
+  // @ts-ignore - Parameter type compatibility
   doStream: async () => ({
     stream: simulateReadableStream({
       chunkDelayInMs: 50,
       initialDelayInMs: 100,
       chunks: [
-        { type: 'text-delta', textDelta: 'This is a test title' },
+        { type: 'text-delta', id: 'test-id', delta: 'This is a test title' },
         {
           type: 'finish',
           finishReason: 'stop',
@@ -57,23 +61,23 @@ export const titleModel = new MockLanguageModelV1({
         },
       ],
     }),
-    rawCall: { rawPrompt: null, rawSettings: {} },
   }),
 });
 
-export const artifactModel = new MockLanguageModelV1({
+// @ts-ignore - MockLanguageModelV2 API compatibility issues with AI SDK 5.0
+export const artifactModel = new MockLanguageModelV2({
   doGenerate: async () => ({
-    rawCall: { rawPrompt: null, rawSettings: {} },
+    content: [{ type: 'text', text: 'This is an artifact model response.' }],
     finishReason: 'stop',
-    usage: { promptTokens: 10, completionTokens: 20 },
-    text: `Hello, world!`,
+    usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+    warnings: [],
   }),
-  doStream: async ({ prompt }) => ({
+  // @ts-ignore - Parameter type compatibility
+  doStream: async ({ prompt }: any) => ({
     stream: simulateReadableStream({
       chunkDelayInMs: 50,
       initialDelayInMs: 100,
       chunks: getResponseChunksByPrompt(prompt),
     }),
-    rawCall: { rawPrompt: null, rawSettings: {} },
   }),
 });

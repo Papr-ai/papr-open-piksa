@@ -1,6 +1,7 @@
 'use client';
 
-import type { Message } from 'ai';
+import type { UIMessage } from 'ai';
+import type { UseChatHelpers } from '@ai-sdk/react';
 import cx from 'classnames';
 import {
   AnimatePresence,
@@ -29,7 +30,7 @@ import {
 import { ArrowUpIcon, StopIcon, SummarizeIcon } from '@/components/common/icons';
 import { artifactDefinitions, ArtifactKind } from '@/components/artifact/artifact';
 import { ArtifactToolbarItem } from '@/components/artifact/create-artifact';
-import { UseChatHelpers } from '@ai-sdk/react';
+
 
 type ToolProps = {
   description: string;
@@ -39,11 +40,11 @@ type ToolProps = {
   isToolbarVisible?: boolean;
   setIsToolbarVisible?: Dispatch<SetStateAction<boolean>>;
   isAnimating: boolean;
-  append: UseChatHelpers['append'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
   onClick: ({
     appendMessage,
   }: {
-    appendMessage: UseChatHelpers['append'];
+    appendMessage: UseChatHelpers<UIMessage>['sendMessage'];
   }) => void;
 };
 
@@ -140,7 +141,7 @@ const ReadingLevelSelector = ({
 }: {
   setSelectedTool: Dispatch<SetStateAction<string | null>>;
   isAnimating: boolean;
-  append: UseChatHelpers['append'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
 }) => {
   const LEVELS = [
     'Elementary',
@@ -216,7 +217,7 @@ const ReadingLevelSelector = ({
                 if (currentLevel !== 2 && hasUserSelectedLevel) {
                   append({
                     role: 'user',
-                    content: `Please adjust the reading level to ${LEVELS[currentLevel]} level.`,
+                    parts: [{ type: 'text', text: `Please adjust the reading level to ${LEVELS[currentLevel]} level.` }],
                   });
 
                   setSelectedTool(null);
@@ -251,7 +252,7 @@ export const Tools = ({
   isToolbarVisible: boolean;
   selectedTool: string | null;
   setSelectedTool: Dispatch<SetStateAction<string | null>>;
-  append: UseChatHelpers['append'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
   isAnimating: boolean;
   setIsToolbarVisible: Dispatch<SetStateAction<boolean>>;
   tools: Array<ArtifactToolbarItem>;
@@ -307,10 +308,10 @@ const PureToolbar = ({
 }: {
   isToolbarVisible: boolean;
   setIsToolbarVisible: Dispatch<SetStateAction<boolean>>;
-  status: UseChatHelpers['status'];
-  append: UseChatHelpers['append'];
-  stop: UseChatHelpers['stop'];
-  setMessages: UseChatHelpers['setMessages'];
+  status: UseChatHelpers<UIMessage>['status'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
+  stop: UseChatHelpers<UIMessage>['stop'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
   artifactKind: ArtifactKind;
 }) => {
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -423,7 +424,7 @@ const PureToolbar = ({
             className="p-3"
             onClick={() => {
               stop();
-              setMessages((messages) => messages);
+              setMessages((messages: UIMessage[]) => messages);
             }}
           >
             <StopIcon />

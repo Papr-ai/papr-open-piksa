@@ -45,12 +45,12 @@ const chatCollectionSchema = z.object({
 
 export type ChatCategorization = z.infer<typeof chatCollectionSchema>;
 
-// Define the tool with execute function
+// Define the tool with execute function  
 const categorizeTool = tool({
   description: 'Categorize chats into collections',
   parameters: chatCollectionSchema,
-  execute: async (args: ChatCategorization) => args,
-});
+  execute: async (args: any) => args,
+} as any);
 
 // Interface for collection results
 export interface Collection {
@@ -99,6 +99,7 @@ export async function categorizeAndSaveChats(userId: string): Promise<void> {
     // Call the AI model to categorize chats
     const { toolResults } = await generateText({
       model: google('gemini-2.0-flash'),
+      maxOutputTokens: 1000, // Reasonable limit for categorization task
       messages: [
         {
           role: 'system',
@@ -126,7 +127,6 @@ export async function categorizeAndSaveChats(userId: string): Promise<void> {
         categorizeChats: categorizeTool,
       },
       toolChoice: 'required',
-      maxSteps: 1,
     });
 
     if (!toolResults || toolResults.length === 0) {
@@ -141,7 +141,8 @@ export async function categorizeAndSaveChats(userId: string): Promise<void> {
       throw new Error('Failed to categorize chats');
     }
 
-    const categorization = result.result;
+    // Access the tool result - in AI SDK 5.0
+    const categorization = (result as any).args as ChatCategorization;
 
     // Save categorization results to the database
 

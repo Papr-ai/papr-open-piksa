@@ -1,12 +1,19 @@
 import { auth } from '@/app/(auth)/auth';
 import { searchUserMemories } from '@/lib/ai/memory/middleware';
 import { NextResponse } from 'next/server';
+import { checkOnboardingStatus } from '@/lib/auth/onboarding-middleware';
 
 /**
  * Route handler to get memories relevant to the current chat context
  */
 export async function POST(request: Request) {
   try {
+    // Check onboarding status first - this includes auth check
+    const onboardingResult = await checkOnboardingStatus();
+    if (!onboardingResult.isCompleted) {
+      return onboardingResult.response!;
+    }
+
     // Authenticate the user
     const session = await auth();
     if (!session?.user?.id) {

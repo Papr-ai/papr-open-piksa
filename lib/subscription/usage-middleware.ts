@@ -35,13 +35,25 @@ export async function checkBasicInteractionLimit(userId: string): Promise<UsageC
 }
 
 export async function checkMemoryAddLimit(userId: string): Promise<UsageCheckResult> {
-  const thresholds = await checkUsageThresholds(userId);
-  const { current, limit, percentage } = thresholds.memoriesAdded;
+  // Get actual memory count from Papr Memory API
+  const { getActualMemoryCount } = await import('@/lib/db/memory-count');
+  const actualMemoryCount = await getActualMemoryCount(userId);
   
-  if (limit === -1 || current < limit) {
+  // Get user's subscription to determine limits
+  const { getUserSubscription } = await import('@/lib/db/subscription-queries');
+  const userSubscription = await getUserSubscription(userId);
+  
+  // Get plan limits
+  const { getPlanById } = await import('@/lib/subscription/plans');
+  const plan = getPlanById(userSubscription?.subscriptionPlan || 'free');
+  const limit = plan?.features.memoriesAdded || 100;
+  
+  const percentage = limit === -1 ? 0 : Math.min((actualMemoryCount / limit) * 100, 100);
+  
+  if (limit === -1 || actualMemoryCount < limit) {
     return {
       allowed: true,
-      usage: { current, limit, percentage },
+      usage: { current: actualMemoryCount, limit, percentage },
       shouldShowUpgrade: percentage >= 80 && limit !== -1,
     };
   }
@@ -49,7 +61,7 @@ export async function checkMemoryAddLimit(userId: string): Promise<UsageCheckRes
   return {
     allowed: false,
     reason: `You've reached your storage limit of ${limit} memories. Please upgrade your plan to store more memories.`,
-    usage: { current, limit, percentage },
+    usage: { current: actualMemoryCount, limit, percentage },
     shouldShowUpgrade: true,
   };
 }

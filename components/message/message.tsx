@@ -1,7 +1,93 @@
 'use client';
 
 import { useState, memo, useEffect } from 'react';
-import type { UIMessage } from 'ai';
+import type { UIMessage, ToolUIPart, ReasoningUIPart, TextUIPart, UIMessagePart } from 'ai';
+import { isToolUIPart } from 'ai';
+
+// Import existing tool result types  
+import type { ArtifactKind } from '@/components/artifact/artifact';
+
+// Tool output type definitions based on existing interfaces
+interface WeatherAtLocation {
+  latitude: number;
+  longitude: number;
+  generationtime_ms: number;
+  utc_offset_seconds: number;
+  timezone: string;
+  timezone_abbreviation: string;
+  elevation: number;
+  current_units: {
+    time: string;
+    interval: string;
+    temperature_2m: string;
+  };
+  current: {
+    time: string;
+    interval: number;
+    temperature_2m: number;
+  };
+  hourly_units: {
+    time: string;
+    temperature_2m: string;
+  };
+  hourly: {
+    time: string[];
+    temperature_2m: number[];
+  };
+  daily_units: {
+    time: string;
+    sunrise: string;
+    sunset: string;
+  };
+  daily: {
+    time: string[];
+    sunrise: string[];
+    sunset: string[];
+  };
+}
+
+interface GitHubToolResult {
+  success: boolean;
+  error?: string;
+  repositories?: any[];
+  files?: any[];
+  file?: any;
+  repository?: any;
+  currentPath?: string;
+  repositoryName?: string;
+  searchResults?: any[];
+  searchQuery?: string;
+  editSuggestion?: {
+    message: string;
+    action: string;
+    repository: { owner: string; name: string };
+    filePath: string;
+  };
+  message?: string;
+  branchName?: string;
+  stagedFiles?: any[];
+  stagedFilesCount?: number;
+  clearedCount?: number;
+  requiresApproval?: boolean;
+  project?: any;
+}
+
+// Document tool result type
+interface DocumentToolOutput {
+  id: string;
+  title: string;
+  kind: ArtifactKind;
+}
+
+// Memory tool result type (simple interface since it's not complex)
+interface MemoryToolOutput {
+  success?: boolean;
+  memories?: Array<{
+    id: string;
+    content: string;
+    timestamp: string;
+  }>;
+}
 import cx from 'classnames';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { Vote } from '@/lib/db/schema';
@@ -18,6 +104,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
 import type { UseChatHelpers } from '@ai-sdk/react';
+
+// Helper function to extract text content from UIMessage parts
+const extractTextFromMessage = (message: UIMessage): string => {
+  if (!message.parts) return '';
+  return message.parts
+    .filter((part: any) => part.type === 'text')
+    .map((part: any) => part.text)
+    .join('\n')
+    .trim();
+};
 import { ChatMemoryResults } from '../memory/chat-memory-results';
 import { useThinkingState } from '@/lib/thinking-state';
 import { ProcessedMessage } from './processed-message';
@@ -283,8 +379,9 @@ function findUserQuery(message: UIMessage): string {
     }
     
     // If we have any message content as a fallback
-    if (message.content) {
-      return message.content;
+    const textContent = extractTextFromMessage(message);
+    if (textContent) {
+      return textContent;
     }
     
     return '';
@@ -419,11 +516,12 @@ const extractToolCallsFromMessage = (message: UIMessage | ExtendedUIMessage): Re
 
 // Helper to extract context from user queries
 const extractQueryContext = (userMessage: UIMessage): string | null => {
-  if (!userMessage.content && !userMessage.parts) return null;
+  if (!userMessage.parts) return null;
   
-  // If we have content, use that
-  if (userMessage.content) {
-    return userMessage.content;
+  // Extract text content using our helper
+  const textContent = extractTextFromMessage(userMessage);
+  if (textContent) {
+    return textContent;
   }
   
   // Otherwise try to extract from parts
@@ -445,11 +543,12 @@ const extractAllThinkingContent = (message: UIMessage): ReasoningEvent[] => {
   const thinkingEvents: ReasoningEvent[] = [];
   
   // Extract from message content
-  if (message.content) {
+  const textContent = extractTextFromMessage(message);
+  if (textContent) {
     const thinkBlockRegex = /<think>([\s\S]*?)<\/think>/g;
     let match;
     
-    while ((match = thinkBlockRegex.exec(message.content)) !== null) {
+    while ((match = thinkBlockRegex.exec(textContent)) !== null) {
       if (match[1]) {
         thinkingEvents.push({
           type: 'reasoning',
@@ -517,8 +616,8 @@ const PurePreviewMessage = ({
   message: UIMessage;
   vote: Vote | undefined;
   isLoading: boolean;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;
@@ -529,38 +628,39 @@ const PurePreviewMessage = ({
   const userName = session?.user?.name || '';
   const userImage = session?.user?.image;
   
-  // Add debug logging for message parts
+  // Debug logging for development only
   useEffect(() => {
-    console.log('[Message] Processing message:', {
-      id: message.id,
-      role: message.role,
-      parts: message.parts,
-      hasReasoning: message.parts?.some(part => {
-        const typedPart = part as MessagePart;
-        if (typedPart.type === 'reasoning') return true;
-        if (typedPart.type === 'tool-invocation' && (typedPart as ToolInvocationPart).toolInvocation?.toolName === 'searchMemories') return true;
-        if (typedPart.type === 'data' && (typedPart as DataPart).data?.type === 'part' && (typedPart as DataPart).data?.data?.type === 'reasoning') return true;
-        if (typedPart.type === 'step-start' && (typedPart as StepStartPart).data?.type === 'reasoning') return true;
-        return false;
-      })
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Message] Processing message:', {
+        id: message.id,
+        role: message.role,
+        partTypes: message.parts?.map((part, index) => ({
+          index,
+          type: (part as any).type,
+        })),
+      });
+    }
   }, [message]);
   
   // Extract reasoning events from message parts
   const reasoningEvents = message.parts?.reduce((events, part) => {
     const typedPart = part as MessagePart;
-    console.log('[Message] Processing part:', typedPart);
+    // Process message parts for reasoning extraction
 
     // Handle direct reasoning parts
     if (typedPart.type === 'reasoning') {
       console.log('[Message] Found direct reasoning part:', typedPart);
       const reasoningPart = typedPart as ReasoningPart;
+      
+      // Handle the actual structure from the logs: { type: "reasoning", text: "...", providerOptions: {...} }
+      const reasoningText = (reasoningPart as any).text || 
+                           (typeof reasoningPart.reasoning === 'string' ? reasoningPart.reasoning : 
+                            (reasoningPart.reasoning as ReasoningContent)?.text || '');
+      
       events.push({
         type: 'reasoning',
         content: {
-          text: typeof reasoningPart.reasoning === 'string' ? 
-            reasoningPart.reasoning : 
-            (reasoningPart.reasoning as ReasoningContent)?.text || '',
+          text: reasoningText,
           timestamp: typeof reasoningPart.reasoning === 'string' ? 
             new Date().toISOString() : 
             (reasoningPart.reasoning as ReasoningContent)?.timestamp || new Date().toISOString(),
@@ -594,34 +694,34 @@ const PurePreviewMessage = ({
         },
       });
     }
-    // Handle tool invocations
-    else if (typedPart.type === 'tool-invocation') {
-      const toolPart = typedPart as ToolInvocationPart;
-      const { toolName, state, args, result } = toolPart.toolInvocation;
-      if (toolName === 'searchMemories') {
-        if (state === 'call') {
-          console.log('[Message] Found searchMemories call:', args);
-          events.push({
-            type: 'reasoning',
-            content: {
-              text: `🔍 Starting memory search with query: "${args.query}"`,
-              timestamp: new Date().toISOString(),
-              step: 'start',
-            },
-          });
-        } else if (state === 'result' && result) {
-          console.log('[Message] Found searchMemories result:', result);
-          events.push({
-            type: 'reasoning',
-            content: {
-              text: `✅ Found ${result.memories?.length || 0} relevant memories`,
-              timestamp: new Date().toISOString(),
-              step: 'reading',
-            },
-          });
-        }
-      }
-    }
+    // Legacy tool-invocation format - not used in AI SDK v5
+    // else if (typedPart.type === 'tool-invocation') {
+    //   const toolPart = typedPart as ToolInvocationPart;
+    //   const { toolName, state, args, result } = toolPart.toolInvocation;
+    //   if (toolName === 'searchMemories') {
+    //     if (state === 'result') {
+    //       console.log('[Message] Found searchMemories call:', args);
+    //       events.push({
+    //         type: 'reasoning',
+    //         content: {
+    //           text: `🔍 Starting memory search with query: "${args.query}"`,
+    //           timestamp: new Date().toISOString(),
+    //           step: 'start',
+    //         },
+    //       });
+    //     } else if (state === 'result' && result) {
+    //       console.log('[Message] Found searchMemories result:', result);
+    //       events.push({
+    //         type: 'reasoning',
+    //         content: {
+    //           text: `✅ Found ${result.memories?.length || 0} relevant memories`,
+    //           timestamp: new Date().toISOString(),
+    //           step: 'reading',
+    //         },
+    //       });
+    //     }
+    //   }
+    // }
     // Handle data events
     else if (typedPart.type === 'data') {
       const dataPart = typedPart as DataPart;
@@ -681,24 +781,22 @@ const PurePreviewMessage = ({
   }
 
   console.log('[Message] Extracted reasoning events:', reasoningEvents);
+
+  // For messages with think blocks: extract all thinking content from text now,
+  // so gating below can consider these tokens.
+  const thinkingEvents = extractAllThinkingContent(message);
+  reasoningEvents.push(...thinkingEvents);
+
+  // Render MessageReasoning whenever there are reasoning parts/events.
+  // This aligns with AI SDK v5 where models can stream many short reasoning tokens.
+  const hasAnyReasoning = reasoningEvents.length > 0;
   
-  // Only render MessageReasoning if reasoning is enabled AND we have events AND it's not a trivial request
-  const hasComplexReasoning = reasoningEvents.some(event => 
-    (event.content.text && event.content.text.length > 50) || 
-    event.content.text?.includes('memory') ||
-    event.content.text?.includes('search')
-  );
+  // Avoid showing if the only item is the generic placeholder during loading
+  const isOnlyProcessingPlaceholder = isLoading && 
+    reasoningEvents.length === 1 && 
+    reasoningEvents[0].content.text === 'Processing...';
   
-  // Prevent showing MessageReasoning during initial loading when ThinkingMessage is active
-  // Only show when we have meaningful reasoning content to display
-  const shouldShowReasoning = modelSupportsReasoningCapability && 
-                             reasoningEvents && 
-                             reasoningEvents.length > 0 && 
-                             hasComplexReasoning &&
-                             // Don't show reasoning if we only have a generic "Processing..." event during loading
-                             !(isLoading && 
-                                reasoningEvents.length === 1 && 
-                                reasoningEvents[0].content.text === "Processing...");
+  const shouldShowReasoning = modelSupportsReasoningCapability && hasAnyReasoning && !isOnlyProcessingPlaceholder;
   
   // Determine if reasoning is complete based on events
   const isReasoningComplete = !isLoading || 
@@ -707,11 +805,6 @@ const PurePreviewMessage = ({
   // Extract user query for reasoning title
   const userQuery = message.role === 'assistant' ? findUserQuery(message) : '';
   
-  // For messages with think blocks:
-  // Extract all thinking and add automatic context for tool calls
-  const thinkingEvents = extractAllThinkingContent(message);
-  reasoningEvents.push(...thinkingEvents);
-
   // Add user query context for memory searches
   if ((message as any).toolInvocations?.some((invocation: ToolInvocationInfo) => 
       invocation.toolName === 'searchMemories' || invocation.toolName === 'get_memory'
@@ -786,11 +879,16 @@ const PurePreviewMessage = ({
                         selectedModelId={selectedModelId}
                       />
                     )}
-                                        {message.experimental_attachments && (
+                                        {(message as ExtendedUIMessage).attachments && (
                       <div>
-                        {message.experimental_attachments.map((attachment) => (
+                        {(message as ExtendedUIMessage).attachments!.map((attachment: any) => (
                           <div key={attachment.url} className="flex flex-wrap gap-2">
-                            <PreviewAttachment key={attachment.url} attachment={attachment} />
+                            <PreviewAttachment key={attachment.url} attachment={{
+                              type: 'file' as const,
+                              url: attachment.url,
+                              filename: attachment.name,
+                              mediaType: attachment.contentType
+                            }} />
                           </div>
                         ))}
                       </div>
@@ -809,11 +907,22 @@ const PurePreviewMessage = ({
                     const textContent = (typedPart as TextPart).text;
                     const hasThinkBlock = textContent.includes('<think>');
                     
+                    console.log('[Message] Rendering text part:', { textContent, hasThinkBlock, messageRole: message.role });
+                    
                     // Extract think block content for assistant messages
                     if (message.role === 'assistant' && hasThinkBlock) {
+                      // If we have an opening <think> but no closing yet, hide everything after the opening tag
+                      if (textContent.includes('<think>') && !textContent.includes('</think>')) {
+                        const visibleText = textContent.slice(0, textContent.indexOf('<think>')).trim();
+                        return (
+                          <div key={key} className="w-full message-content">
+                            {visibleText ? <Markdown>{visibleText}</Markdown> : null}
+                          </div>
+                        );
+                      }
+                      // When we have a complete <think>...</think> block, strip it from the assistant text
                       const thinkBlockRegex = /<think>([\s\S]*?)<\/think>/g;
                       const cleanedContent = textContent.replace(thinkBlockRegex, '').trim();
-                      
                       return (
                         <div key={key} className="w-full message-content">
                           <Markdown>{cleanedContent}</Markdown>
@@ -878,66 +987,37 @@ const PurePreviewMessage = ({
                     }
                   }
 
-                  if (type === 'tool-invocation') {
-                    const toolPart = typedPart as ToolInvocationPart;
-                    const { toolInvocation } = toolPart;
-                    const { toolName, toolCallId, state } = toolInvocation;
+                  // Handle AI SDK v5 tool parts (format: tool-{toolName})
+                  if (type.startsWith('tool-')) {
+                    const toolName = type.replace('tool-', '');
+                    
+                    // Cast to ToolUIPart for AI SDK v5 tool handling
+                    const toolPart = typedPart as ToolUIPart;
+                    if (toolPart.toolCallId) {
+                      const { toolCallId, state, input, output } = toolPart;
 
-                    // Handle tool call initiation
-                    if (state === 'call') {
-                      const { args } = toolInvocation;
-
-                      return (
-                        <div key={toolCallId} className={cx({ skeleton: ['getWeather'].includes(toolName) })}>
+                      // Handle tool call results (state: 'output-available')
+                      if (state === 'output-available' && output) {
+                        return (
+                        <div key={toolCallId || key}>
                           {toolName === 'getWeather' ? (
-                            <Weather />
-                          ) : toolName === 'createDocument' ? (
-                            <DocumentToolCall
-                              type="create"
-                              args={args}
-                              isReadonly={isReadonly}
-                            />
-                          ) : toolName === 'updateDocument' ? (
-                            <DocumentToolCall
-                              type="update"
-                              args={args}
-                              isReadonly={isReadonly}
-                            />
-                          ) : toolName === 'requestSuggestions' ? (
-                            <DocumentToolCall
-                              type="request-suggestions"
-                              args={args}
-                              isReadonly={isReadonly}
-                            />
-                          ) : null}
-                        </div>
-                      );
-                    }
-
-                    // Handle tool call results
-                    if (state === 'result') {
-                      const { result } = toolInvocation;
-
-                      return (
-                        <div key={toolCallId}>
-                          {toolName === 'getWeather' ? (
-                            <Weather weatherAtLocation={result} />
+                            <Weather weatherAtLocation={output as WeatherAtLocation} />
                           ) : toolName === 'createDocument' ? (
                             <DocumentToolResult
                               type="create"
-                              result={result}
+                              result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
                             />
                           ) : toolName === 'updateDocument' ? (
                             <DocumentToolResult
                               type="update"
-                              result={result}
+                              result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
                             />
                           ) : toolName === 'requestSuggestions' ? (
                             <DocumentToolResult
                               type="request-suggestions"
-                              result={result}
+                              result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
                             />
                           ) : toolName === 'searchMemories' ? null : [
@@ -951,32 +1031,32 @@ const PurePreviewMessage = ({
                             'requestRepositoryApproval'
                           ].includes(toolName) ? (
                             <div className="github-tool-result">
-                              {result.success ? (
+                              {(output as GitHubToolResult).success ? (
                                 <>
-                                  {result.repositories && (
+                                  {(output as GitHubToolResult).repositories && (
                                     <GitHubRepoResults
-                                      repositories={result.repositories}
+                                      repositories={(output as GitHubToolResult).repositories!}
                                       onRepositorySelect={(repo: Repository) => {
                                         console.log('Repository selected:', repo);
                                       }}
                                     />
                                   )}
-                                  {result.searchResults && (
+                                  {(output as GitHubToolResult).searchResults && (
                                     <GitHubSearchResults
-                                      searchResults={result.searchResults}
-                                      searchQuery={result.searchQuery}
+                                      searchResults={(output as GitHubToolResult).searchResults!}
+                                      searchQuery={(output as GitHubToolResult).searchQuery || ''}
                                       onFileSelect={(searchResult: any) => {
                                         console.log('Search result selected:', searchResult);
                                       }}
                                     />
                                   )}
-                                  {result.file && (
+                                  {(output as GitHubToolResult).file && (
                                     <TruncatedFileDisplay 
-                                      file={result.file} 
-                                      editSuggestion={result.editSuggestion}
+                                      file={(output as GitHubToolResult).file!} 
+                                      editSuggestion={(output as GitHubToolResult).editSuggestion}
                                     />
                                   )}
-                                  {result.repository && (
+                                  {(output as GitHubToolResult).repository && (
                                     <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                                       <div className="flex items-center gap-2 text-green-800 font-medium">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -985,10 +1065,10 @@ const PurePreviewMessage = ({
                                         Repository Created Successfully
                                       </div>
                                       <p className="text-green-700 mt-2">
-                                        Created repository: <strong>{result.repository.name}</strong>
+                                        Created repository: <strong>{(output as GitHubToolResult).repository!.name}</strong>
                                       </p>
                                       <a 
-                                        href={result.repository.url} 
+                                        href={(output as GitHubToolResult).repository!.url} 
                                         target="_blank" 
                                         rel="noopener noreferrer"
                                         className="text-blue-600 hover:text-blue-800 underline mt-2 inline-block"
@@ -1006,15 +1086,45 @@ const PurePreviewMessage = ({
                                     </svg>
                                     Error
                                   </div>
-                                  <p className="text-red-700 mt-2">{result.error}</p>
+                                  <p className="text-red-700 mt-2">{(output as GitHubToolResult).error}</p>
                                 </div>
                               )}
                             </div>
                           ) : (
-                            <pre>{JSON.stringify(result, null, 2)}</pre>
+                            <pre>{JSON.stringify(output, null, 2)}</pre>
                           )}
                         </div>
                       );
+                    }
+
+                    // Handle tool call initiation (state: 'input-available')
+                    if (state === 'input-available' && input) {
+                      return (
+                        <div key={toolCallId || key} className={cx({ skeleton: ['getWeather'].includes(toolName) })}>
+                          {toolName === 'getWeather' ? (
+                            <Weather />
+                          ) : toolName === 'createDocument' ? (
+                            <DocumentToolCall
+                              type="create"
+                              args={{title: '', ...input}}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'updateDocument' ? (
+                            <DocumentToolCall
+                              type="update"
+                              args={{title: '', ...input}}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'requestSuggestions' ? (
+                            <DocumentToolCall
+                              type="request-suggestions"
+                              args={{title: '', ...input}}
+                              isReadonly={isReadonly}
+                            />
+                          ) : null}
+                        </div>
+                      );
+                      }
                     }
                   }
 
@@ -1061,8 +1171,8 @@ export const PreviewMessage = memo(
     message: UIMessage;
     vote: Vote | undefined;
     isLoading: boolean;
-    setMessages: UseChatHelpers['setMessages'];
-    reload: UseChatHelpers['reload'];
+    setMessages: UseChatHelpers<UIMessage>['setMessages'];
+    reload: UseChatHelpers<UIMessage>['regenerate'];
     isReadonly: boolean;
     selectedModelId?: string;
     enableUniversalReasoning?: boolean;
@@ -1071,8 +1181,8 @@ export const PreviewMessage = memo(
     message: UIMessage;
     vote: Vote | undefined;
     isLoading: boolean;
-    setMessages: UseChatHelpers['setMessages'];
-    reload: UseChatHelpers['reload'];
+    setMessages: UseChatHelpers<UIMessage>['setMessages'];
+    reload: UseChatHelpers<UIMessage>['regenerate'];
     isReadonly: boolean;
     selectedModelId?: string;
     enableUniversalReasoning?: boolean;

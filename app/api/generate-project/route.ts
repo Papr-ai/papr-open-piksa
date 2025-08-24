@@ -34,6 +34,7 @@ Please create all the necessary files for this project following best practices.
       model: myProvider.languageModel('chat'),
       system: multiFileProjectPrompt,
       prompt: prompt,
+      maxOutputTokens: 4000, // Allow for substantial project generation
     });
 
     return NextResponse.json({ 

@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useMemo, useOptimistic, useState } from 'react';
+import { startTransition, useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useCanUsePremiumModels } from '@/hooks/use-subscription';
 import { useUpgradeModal } from '@/hooks/use-upgrade-modal';
@@ -16,10 +16,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
-import { chatModels, modelSupportsReasoning, modelIsPremium } from '@/lib/ai/models';
+import { chatModels, modelSupportsReasoning, modelIsPremium, DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import { cn } from '@/lib/utils';
 
 import { BrainIcon, CheckCircleFillIcon, ChevronDownIcon } from '../common/icons';
+
+// Helper function to get cookie value
+function getCookie(name: string): string | null {
+  if (typeof document === 'undefined') return null;
+  const value = `; ${document.cookie}`;
+  const parts = value.split(`; ${name}=`);
+  if (parts.length === 2) return parts.pop()?.split(';').shift() || null;
+  return null;
+}
 
 export function ModelSelector({
   selectedModelId,
@@ -28,14 +37,30 @@ export function ModelSelector({
   selectedModelId: string;
 } & React.ComponentProps<typeof Button>) {
   const [open, setOpen] = useState(false);
-  const [optimisticModelId, setOptimisticModelId] =
-    useOptimistic(selectedModelId);
+  // Use local state instead of useOptimistic to avoid server/client sync issues
+  const [currentModelId, setCurrentModelId] = useState(selectedModelId);
+
+  // Initialize from cookie on client side on mount
+  useEffect(() => {
+    const cookieModel = getCookie('chat-model');
+    const modelToUse = cookieModel || selectedModelId || DEFAULT_CHAT_MODEL;
+    setCurrentModelId(modelToUse);
+  }, []); // Only run on mount
+
+  // Update when selectedModelId prop changes (from server)
+  useEffect(() => {
+    // Only update if we don't have a cookie (meaning server-side prop should take precedence)
+    const cookieModel = getCookie('chat-model');
+    if (!cookieModel && selectedModelId !== currentModelId) {
+      setCurrentModelId(selectedModelId);
+    }
+  }, [selectedModelId, currentModelId]);
   const canUsePremiumModels = useCanUsePremiumModels();
   const upgradeModal = useUpgradeModal();
 
   const selectedChatModel = useMemo(
-    () => chatModels.find((chatModel) => chatModel.id === optimisticModelId),
-    [optimisticModelId],
+    () => chatModels.find((chatModel) => chatModel.id === currentModelId),
+    [currentModelId],
   );
 
   const supportsReasoning = selectedChatModel?.supportsReasoning ?? false;
@@ -128,11 +153,11 @@ export function ModelSelector({
                     setOpen(false);
 
                     startTransition(() => {
-                      setOptimisticModelId(id);
+                      setCurrentModelId(id);
                       saveChatModelAsCookie(id);
                     });
                   }}
-                  data-active={id === optimisticModelId}
+                  data-active={id === currentModelId}
                   className="py-1 px-2 cursor-pointer hover:bg-accent hover:text-accent-foreground"
                   asChild
                 >
@@ -149,7 +174,7 @@ export function ModelSelector({
                       )}
                     </div>
 
-                    {id === optimisticModelId && (
+                    {id === currentModelId && (
                       <div className="text-foreground">
                         <CheckCircleFillIcon size={12} />
                       </div>

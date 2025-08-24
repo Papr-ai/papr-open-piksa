@@ -4,13 +4,14 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { memo } from 'react';
 import type { UseChatHelpers } from '@ai-sdk/react';
+import type { UIMessage } from 'ai';
 
 interface SuggestedActionsProps {
   chatId: string;
-  append: UseChatHelpers['append'];
+  sendMessage: UseChatHelpers<UIMessage>['sendMessage'];
 }
 
-function PureSuggestedActions({ chatId, append }: SuggestedActionsProps) {
+function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
   const suggestedActions = [
     {
       title: 'What are the advantages',
@@ -53,9 +54,9 @@ function PureSuggestedActions({ chatId, append }: SuggestedActionsProps) {
             onClick={async () => {
               window.history.replaceState({}, '', `/chat/${chatId}`);
 
-              append({
+              sendMessage({
                 role: 'user',
-                content: suggestedAction.action,
+                parts: [{ type: 'text', text: suggestedAction.action }],
               });
             }}
             className="text-left border rounded-xl px-4 py-3.5 text-sm flex-1 gap-1 sm:flex-col w-full h-auto justify-start items-start"

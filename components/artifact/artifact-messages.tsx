@@ -8,13 +8,31 @@ import type { UIArtifact } from './artifact';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 
+// Helper function to safely extract text from UIMessage
+function extractTextFromMessage(message: UIMessage): string {
+  // Handle legacy content property
+  if (typeof (message as any).content === 'string') {
+    return (message as any).content;
+  }
+  
+  // Handle new parts array structure
+  if (message.parts && Array.isArray(message.parts)) {
+    return message.parts
+      .filter(part => part.type === 'text')
+      .map(part => (part as any).text)
+      .join('');
+  }
+  
+  return '';
+}
+
 interface ArtifactMessagesProps {
   chatId: string;
-  status: UseChatHelpers['status'];
+  status: UseChatHelpers<UIMessage>['status'];
   votes: Array<Vote> | undefined;
-  messages: Array<UIMessage>;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  messages: UseChatHelpers<UIMessage>['messages'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
   isReadonly: boolean;
   artifactStatus: UIArtifact['status'];
   selectedModelId?: string;
@@ -38,9 +56,9 @@ function PureArtifactMessages({
 
   // Check if there's visible content in the last message
   const hasVisibleContent = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
-    messages[messages.length - 1].content ||
-    messages[messages.length - 1].parts?.some(part => part.type === 'text' && part.text.trim()) ||
-    messages[messages.length - 1].toolInvocations?.some(t => t.state === 'result') ||
+    extractTextFromMessage(messages[messages.length - 1]).trim() ||
+    messages[messages.length - 1].parts?.some(part => part.type === 'text' && (part as any).text?.trim()) ||
+    (messages[messages.length - 1] as any).toolInvocations?.some((t: any) => t.state === 'result') ||
     (messages[messages.length - 1] as any).tool_calls?.some((tc: any) => tc.function?.output)
   );
 

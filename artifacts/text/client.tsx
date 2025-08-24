@@ -254,8 +254,7 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
       onClick: ({ appendMessage }) => {
         appendMessage({
           role: 'user',
-          content:
-            'Please add final polish and check for grammar, add section titles for better structure, and ensure everything reads smoothly.',
+          parts: [{ type: 'text', text: 'Please add final polish and check for grammar, add section titles for better structure, and ensure everything reads smoothly.' }],
         });
       },
     },
@@ -265,8 +264,7 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
       onClick: ({ appendMessage }) => {
         appendMessage({
           role: 'user',
-          content:
-            'Please add suggestions you have that could improve the writing.',
+          parts: [{ type: 'text', text: 'Please add suggestions you have that could improve the writing.' }],
         });
       },
     },

@@ -46,7 +46,6 @@ const PROBLEMATIC_USER_ID = '56c10329-618b-43c4-ab54-dd296a24bb4f';
 const testMessage: UIMessage = {
   id: `test-${Date.now()}`,
   role: 'user',
-  content: 'Test message for memory',
   parts: [{ type: 'text', text: 'Test message for memory' }],
 };
 

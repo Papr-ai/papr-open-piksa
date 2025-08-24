@@ -7,7 +7,7 @@ const authFile = path.join(__dirname, '../playwright/.auth/session.json');
 
 setup('authenticate', async ({ page }) => {
   const testEmail = `test-${getUnixTime(new Date())}@playwright.com`;
-  const testPassword = generateId(16);
+  const testPassword = generateId(); // AI SDK 5.0: generateId() takes no parameters
 
   await page.goto('http://localhost:3000/register');
   await page.getByPlaceholder('user@acme.com').click();

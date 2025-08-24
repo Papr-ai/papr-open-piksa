@@ -1,9 +1,12 @@
-import type { Tool, ToolExecutionOptions as BaseToolExecutionOptions } from 'ai';
+import type { Tool, ToolCallOptions } from 'ai';
 
+// Define a compatible stream interface that works with our existing code
 export interface DataStream {
-  writeData: (data: {
+  write?: (data: {
     type: string;
-    content: string;
+    content?: any;
+    data?: any;
+    [key: string]: any; // Allow additional properties for flexibility
   }) => void;
 }
 

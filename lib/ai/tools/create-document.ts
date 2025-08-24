@@ -1,5 +1,6 @@
 import { generateUUID } from '@/lib/utils';
-import { type DataStreamWriter, tool } from 'ai';
+import { tool, type Tool, type ToolCallOptions } from 'ai';
+import type { DataStreamWriter } from '@/lib/types';
 import { z } from 'zod';
 import type { Session } from 'next-auth';
 import {
@@ -12,33 +13,44 @@ interface CreateDocumentProps {
   dataStream: DataStreamWriter;
 }
 
-export const createDocument = ({ session, dataStream }: CreateDocumentProps) =>
+const createDocumentSchema = z.object({
+  title: z.string(),
+  kind: z.enum(artifactKinds),
+});
+
+type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
+type CreateDocumentOutput = {
+  id: string;
+  title: string;
+  kind: string;
+  content: string;
+};
+
+export const createDocument = ({ session, dataStream }: CreateDocumentProps): Tool<CreateDocumentInput, CreateDocumentOutput> =>
   tool({
     description:
       'Create a document for a writing or content creation activities. This tool will call other functions that will generate the contents of the document based on the title and kind.',
-    parameters: z.object({
-      title: z.string(),
-      kind: z.enum(artifactKinds),
-    }),
-    execute: async ({ title, kind }) => {
+    inputSchema: createDocumentSchema,
+    execute: async (input: CreateDocumentInput, options: ToolCallOptions): Promise<CreateDocumentOutput> => {
+      const { title, kind } = input;
       const id = generateUUID();
 
-      dataStream.writeData({
+      dataStream.write?.({
         type: 'kind',
         content: kind,
       });
 
-      dataStream.writeData({
+      dataStream.write?.({
         type: 'id',
         content: id,
       });
 
-      dataStream.writeData({
+      dataStream.write?.({
         type: 'title',
         content: title,
       });
 
-      dataStream.writeData({
+      dataStream.write?.({
         type: 'clear',
         content: '',
       });
@@ -59,7 +71,7 @@ export const createDocument = ({ session, dataStream }: CreateDocumentProps) =>
         session,
       });
 
-      dataStream.writeData({ type: 'finish', content: '' });
+      dataStream.write?.({ type: 'finish', content: '' });
 
       return {
         id,

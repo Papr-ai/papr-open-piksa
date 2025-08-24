@@ -12,11 +12,11 @@ import { modelSupportsReasoning } from '@/lib/ai/models';
 
 interface MessagesProps {
   chatId: string;
-  status: UseChatHelpers['status'];
+  status: UseChatHelpers<UIMessage>['status'];
   votes: Array<Vote> | undefined;
   messages: Array<UIMessage>;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
   isReadonly: boolean;
   isArtifactVisible: boolean;
   reasoningSteps?: any[];
@@ -165,6 +165,9 @@ function PureMessages({
         {displayMessages.length === 0 && <Greeting />}
 
         {displayMessages.map((message, index) => {
+          // AI SDK v5 embeds tool results as parts within assistant messages,
+          // so we don't need to handle separate tool messages
+
           // For the last assistant message during streaming
           const isLastAssistantMessage = 
             status === 'streaming' && 
@@ -193,19 +196,19 @@ function PureMessages({
             reasoningSteps.forEach((step, stepIndex) => {
               if (stepIndex > 0) { // Skip adding a step boundary at the beginning
                 messageWithReasoningSteps.parts?.push({
-                  type: 'step-start',
-                  step: stepIndex,
-                  text: step.text || `Step ${stepIndex + 1}`,
-                  timestamp: step.timestamp
-                } as any);
+                  type: 'step-start'
+                });
               }
             });
             
+            // AI SDK v5 already includes tool results as parts in the assistant message
+            const combinedMessageWithReasoning = messageWithReasoningSteps;
+
             return (
               <div key={message.id}>
                 <PreviewMessage
                   chatId={chatId}
-                  message={messageWithReasoningSteps}
+                  message={combinedMessageWithReasoning}
                   isLoading={isLoading}
                   vote={votes?.find((vote) => vote.messageId === message.id)}
                   setMessages={setMessages}

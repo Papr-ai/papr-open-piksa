@@ -95,6 +95,16 @@ export async function POST(request: Request) {
             memoryId: response.data[0].memoryId,
             success: true
           });
+          
+          // BULK TRACKING: Track each successful memory addition
+          try {
+            const { trackMemoryAdd } = await import('@/lib/subscription/usage-middleware');
+            await trackMemoryAdd(session.user.id);
+            console.log(`[Bulk Memory] Tracked memory addition for user: ${session.user.id} (document: ${title})`);
+          } catch (trackingError) {
+            console.error('[Bulk Memory] Failed to track memory usage:', trackingError);
+            // Continue processing even if tracking fails
+          }
         } else {
           errors.push({ title, error: 'Invalid response from memory service' });
         }

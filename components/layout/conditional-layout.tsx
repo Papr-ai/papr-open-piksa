@@ -5,7 +5,7 @@ import { AppSidebar } from '@/components/sidebar/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { HeaderActions } from '@/components/layout/header-actions';
 import { Breadcrumb } from '@/components/layout/breadcrumb';
-import { UsageWarning } from '@/components/subscription/usage-warning';
+
 import Link from 'next/link';
 
 interface ConditionalLayoutProps {
@@ -56,11 +56,6 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
           </div>
         )}
         <div className="flex-1 overflow-hidden p-3 pt-0">
-          {user && (
-            <div className="mb-3">
-              <UsageWarning />
-            </div>
-          )}
           <main className="flex-1 overflow-hidden rounded-lg bg-background h-full shadow-sm">
             {children}
           </main>

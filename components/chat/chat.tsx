@@ -1,6 +1,7 @@
 'use client';
 
-import type { Attachment, UIMessage } from 'ai';
+import type { FileUIPart, UIMessage } from 'ai';
+import { DefaultChatTransport } from 'ai';
 import { useChat } from '@ai-sdk/react';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
@@ -19,6 +20,7 @@ import { useStreamChat } from '@/hooks/useStreamChat';
 import { useSession } from 'next-auth/react';
 import { useBreadcrumb } from '@/components/layout/breadcrumb-context';
 import { useLocalStorage } from 'usehooks-ts';
+import { UsageWarning } from '@/components/subscription/usage-warning';
 
 // Define types for the artifacts
 interface CodeArtifact {
@@ -80,23 +82,32 @@ export function Chat({
     setIsClient(true);
   }, []);
 
+  // Create a ref to store the current selected model to avoid recreating transport
+  const selectedChatModelRef = useRef(selectedChatModel);
+  
+  // Update the ref when the model changes
+  useEffect(() => {
+    selectedChatModelRef.current = selectedChatModel;
+  }, [selectedChatModel]);
+
   const {
     messages,
     setMessages,
-    handleSubmit,
-    input,
-    setInput,
-    append,
+    sendMessage,
     status,
     stop,
-    reload,
+    regenerate,
   } = useChat({
     id,
-    body: { id, selectedChatModel: selectedChatModel },
-    initialMessages,
+    messages: initialMessages,
     experimental_throttle: 100,
-    sendExtraMessageFields: true,
     generateId: generateUUID,
+    transport: new DefaultChatTransport({
+      api: '/api/chat-simple',
+      body: () => ({
+        selectedChatModel: selectedChatModelRef.current, // Use ref to get current model dynamically
+      }),
+    }),
     onFinish: () => {
       // Refresh chat list
       mutate(unstable_serialize(getChatHistoryPaginationKey));
@@ -112,6 +123,41 @@ export function Chat({
       toast.error('An error occurred, please try again!');
     },
   });
+
+  // Handle input state separately in AI SDK 5.0
+  const [input, setInput] = useState('');
+  
+  // Create handleSubmit function
+  const handleSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (input.trim()) {
+      sendMessage({ role: 'user', parts: [{ type: 'text', text: input }] });
+      setInput('');
+    }
+  }, [input, sendMessage]);
+
+  // Create append function for compatibility
+  const append = useCallback(async (message: any) => {
+    await sendMessage(message);
+  }, [sendMessage]);
+
+  // Create reload function for compatibility  
+  const reload = useCallback(async (options?: any) => {
+    return await regenerate(options);
+  }, [regenerate]);
+  // Debug: Log messages state changes
+  useEffect(() => {
+    console.log('[Chat] Messages state updated:', messages);
+    console.log('[Chat] Number of messages:', messages.length);
+    messages.forEach((msg, idx) => {
+      console.log(`[Chat] Message ${idx}:`, {
+        role: msg.role,
+        parts: msg.parts?.length || 0,
+        partsDetails: msg.parts?.map(p => ({ type: (p as any).type, hasText: !!(p as any).text }))
+      });
+    });
+  }, [messages]);
+
   // Fetch and set the chat title once when assistant's first message arrives
   useEffect(() => {
     if (messages.length >= 2 && !fetchedTitleRef.current) {
@@ -130,7 +176,7 @@ export function Chat({
     fetcher,
   );
 
-  const [attachments, setAttachments] = useState<Array<Attachment>>([]);
+  const [attachments, setAttachments] = useState<Array<FileUIPart>>([]);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
 
   // Track message sending to apply reasoning steps
@@ -176,6 +222,11 @@ export function Chat({
             selectedModelId={selectedChatModel}
             enableUniversalReasoning={true}
           />
+        </div>
+
+        {/* Usage Warning positioned right above the input */}
+        <div className="mx-auto px-4 w-[70%]">
+          <UsageWarning />
         </div>
 
         <form 

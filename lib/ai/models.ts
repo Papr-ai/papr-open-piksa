@@ -1,4 +1,4 @@
-export const DEFAULT_CHAT_MODEL: string = 'gpt-4.1-mini';
+export const DEFAULT_CHAT_MODEL: string = 'gpt-5-mini';
 
 interface ChatModel {
   id: string;
@@ -12,19 +12,22 @@ interface ChatModel {
 export const chatModels: Array<ChatModel> = [
   // OpenAI Models
   {
-    id: 'gpt-4.1',
-    name: 'ChatGPT 4.1',
+    id: 'gpt-5',
+    name: 'ChatGPT 5',
     description: 'OpenAI\'s flagship model',
-    supportsReasoning: false,
+    supportsReasoning: true,
+    isPremium: false, // Keep GPT-5 free
     group: 'OpenAI',
   },
   {
-    id: 'gpt-4.1-mini',
-    name: 'ChatGPT 4.1 Mini',
+    id: 'gpt-5-mini',
+    name: 'ChatGPT 5 Mini',
     description: 'Smaller, faster OpenAI model',
-    supportsReasoning: false,
+    supportsReasoning: true,
+    isPremium: false, // Keep GPT-5-mini free
     group: 'OpenAI',
   },
+
   {
     id: 'o4-mini',
     name: 'OpenAI o4-mini',
@@ -39,7 +42,8 @@ export const chatModels: Array<ChatModel> = [
     id: 'deepseek-r1-distill-llama-70b',
     name: 'DeepSeek 70B',
     description: 'High-performance DeepSeek model',
-    supportsReasoning: false,
+    supportsReasoning: true,
+    isPremium: false, // Keep free
     group: 'Groq',
   },
   {
@@ -47,6 +51,23 @@ export const chatModels: Array<ChatModel> = [
     name: 'Llama3 70B',
     description: 'Versatile large language model',
     supportsReasoning: false,
+    isPremium: false, // Keep free
+    group: 'Groq',
+  },
+  {
+    id: 'openai/gpt-oss-20b',
+    name: 'GPT OSS 20B',
+    description: 'Open source model with large context window',
+    supportsReasoning: false,
+    isPremium: false, // Keep free
+    group: 'Groq',
+  },
+  {
+    id: 'openai/gpt-oss-120b',
+    name: 'GPT OSS 120B',
+    description: 'Large open source model with extensive context',
+    supportsReasoning: false,
+    isPremium: false, // Keep free
     group: 'Groq',
   },
   
@@ -82,6 +103,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'Gemini 2.5 Flash',
     description: 'Fast responses for general-purpose tasks',
     supportsReasoning: false,
+    isPremium: false, // Keep free
     group: 'Google',
   },
   {
@@ -89,6 +111,7 @@ export const chatModels: Array<ChatModel> = [
     name: 'Gemini 2.5 Flash Lite',
     description: 'Lightweight version of Gemini Flash',
     supportsReasoning: false,
+    isPremium: false, // Keep free
     group: 'Google',
   },
   {
@@ -108,5 +131,5 @@ export function modelSupportsReasoning(modelId: string): boolean {
 
 export function modelIsPremium(modelId: string): boolean {
   const model = chatModels.find(model => model.id === modelId);
-  return model?.isPremium || model?.supportsReasoning || false;
+  return model?.isPremium || false;
 }

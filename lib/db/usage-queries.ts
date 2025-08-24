@@ -133,15 +133,18 @@ export async function checkUsageThresholds(userId: string): Promise<{
   shouldNotify: boolean;
 }> {
   // Get user's current usage and subscription
-  const [userUsage, userSubscription, totalMemories] = await Promise.all([
+  const [userUsage, userSubscription, actualMemoryCount] = await Promise.all([
     getUserUsage(userId),
     // Import getUserSubscription here to avoid circular dependency
     (async () => {
       const { getUserSubscription } = await import('./subscription-queries');
       return getUserSubscription(userId);
     })(),
-    // Get total memories across all time
-    getTotalMemoriesForUser(userId)
+    // Get actual memory count from Papr Memory API (source of truth)
+    (async () => {
+      const { getActualMemoryCount } = await import('./memory-count');
+      return getActualMemoryCount(userId);
+    })()
   ]);
   
   // Get plan limits
@@ -151,7 +154,7 @@ export async function checkUsageThresholds(userId: string): Promise<{
   const currentUsage = {
     basicInteractions: userUsage?.basicInteractions || 0,
     premiumInteractions: userUsage?.premiumInteractions || 0,
-    memoriesAdded: totalMemories, // Use total memories instead of monthly
+    memoriesAdded: actualMemoryCount, // Use actual count from Papr Memory API
     memoriesSearched: userUsage?.memoriesSearched || 0,
   };
   

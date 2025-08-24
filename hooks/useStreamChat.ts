@@ -53,7 +53,7 @@ export function useStreamChat(): UseStreamChatReturn {
                 // Handle tool calls - track reasoning for tool usage
                 toolCalls.forEach(toolCall => {
                   const toolName = toolCall.toolName;
-                  const toolArgs = toolCall.args;
+                  const toolArgs = toolCall.input;
                   
                   console.log(`[Reasoning] Tool call: ${toolName}`, toolArgs);
                   

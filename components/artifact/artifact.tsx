@@ -1,4 +1,4 @@
-import type { Attachment, UIMessage } from 'ai';
+import type { FileUIPart, UIMessage } from 'ai';
 import { formatDistance } from 'date-fns';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -89,17 +89,17 @@ function PureArtifact({
 }: {
   chatId: string;
   input: string;
-  setInput: UseChatHelpers['setInput'];
-  status: UseChatHelpers['status'];
-  stop: UseChatHelpers['stop'];
-  attachments: Array<Attachment>;
-  setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
-  messages: Array<UIMessage>;
-  setMessages: UseChatHelpers['setMessages'];
+  setInput: (input: string) => void;
+  status: UseChatHelpers<UIMessage>['status'];
+  stop: UseChatHelpers<UIMessage>['stop'];
+  attachments: Array<FileUIPart>;
+  setAttachments: Dispatch<SetStateAction<Array<FileUIPart>>>;
+  messages: UseChatHelpers<UIMessage>['messages'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
   votes: Array<Vote> | undefined;
-  append: UseChatHelpers['append'];
-  handleSubmit: UseChatHelpers['handleSubmit'];
-  reload: UseChatHelpers['reload'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
+  handleSubmit: (event?: any) => void;
+  reload: UseChatHelpers<UIMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId: string;
   selectedVisibilityType: VisibilityType;

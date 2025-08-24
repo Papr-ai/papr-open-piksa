@@ -13,6 +13,16 @@ import { useThinkingState } from '@/lib/thinking-state';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 import type { ExtendedUIMessage } from '@/lib/types';
 
+// Helper function to extract text content from UIMessage parts
+const extractTextFromMessage = (message: UIMessage): string => {
+  if (!message.parts) return '';
+  return message.parts
+    .filter((part: any) => part.type === 'text')
+    .map((part: any) => part.text)
+    .join('\n')
+    .trim();
+};
+
 import { TextPart } from './text-part';
 import { ToolInvocation } from './tool-invocation';
 import { AttachmentGrid } from './attachment-grid';
@@ -56,8 +66,9 @@ function findUserQuery(message: UIMessage): string {
     }
     
     // If we have any message content as a fallback
-    if (message.content) {
-      return message.content;
+    const textContent = extractTextFromMessage(message);
+    if (textContent) {
+      return textContent;
     }
     
     return '';
@@ -100,8 +111,8 @@ interface PreviewMessageProps {
   message: UIMessage;
   vote: Vote | undefined;
   isLoading: boolean;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
   isReadonly: boolean;
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;
@@ -199,8 +210,13 @@ function PurePreviewMessage({
                       />
                     )}
 
-                    {message.experimental_attachments && (
-                      <AttachmentGrid attachments={message.experimental_attachments} />
+                    {(message as ExtendedUIMessage).attachments && (
+                      <AttachmentGrid attachments={(message as ExtendedUIMessage).attachments!.map(att => ({
+                        type: 'file' as const,
+                        url: att.url,
+                        filename: att.name,
+                        mediaType: att.contentType
+                      }))} />
                     )}
                   </>
                 )}

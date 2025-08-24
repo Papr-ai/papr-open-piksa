@@ -1,6 +1,7 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
+import type { DataUIPart, UIMessage } from 'ai';
 import { useEffect, useRef, useState } from 'react';
 import { artifactDefinitions, type ArtifactKind } from '../artifact/artifact';
 import type { Suggestion } from '@/lib/db/schema';
@@ -48,7 +49,15 @@ export type DataStreamDelta = {
 };
 
 export function DataStreamHandler({ id }: { id: string }) {
-  const { data: dataStream, messages, status } = useChat({ id });
+  const [dataStream, setDataStream] = useState<DataUIPart<any>[]>([]);
+  
+  const { messages, status } = useChat({ 
+    id,
+    onData: (dataPart: DataUIPart<any>) => {
+      // Handle incoming data parts from the stream
+      setDataStream(prev => [...prev, dataPart]);
+    }
+  });
   
   // Breadcrumb title updater: update when title delta arrives
   const { setTitle } = useBreadcrumb();
@@ -78,36 +87,23 @@ export function DataStreamHandler({ id }: { id: string }) {
     const newDeltas = dataStream.slice(lastProcessedIndex.current + 1);
     lastProcessedIndex.current = dataStream.length - 1;
 
-    // Log all new deltas with more details about tool calls
+    // Log all new data parts
     console.log(
-      '[DATA STREAM] New deltas:',
-      newDeltas.map((d) => {
-        if (d && typeof d === 'object') {
-          const toolCallInfo = 'toolCall' in d ? d.toolCall : 
-                               'tool_calls' in d ? d.tool_calls : 
-                               null;
-          
-          const content = 'content' in d ? d.content : null;
-          
-          return {
-            type: 'type' in d ? d.type : 'unknown',
-            toolCall: toolCallInfo ? JSON.stringify(toolCallInfo) : undefined,
-            contentPreview: typeof content === 'string' ? content.substring(0, 50) : 'non-string content',
-            keys: Object.keys(d),
-            timestamp: new Date().toISOString(),
-          };
-        }
-        return 'unknown delta format';
-      }),
+      '[DATA STREAM] New data parts:',
+      newDeltas.map((dataPart: DataUIPart<any>) => ({
+        type: dataPart.type,
+        id: dataPart.id,
+        data: dataPart.data,
+      })),
     );
 
-    // Handle errors first
+    // Handle errors first - look for data-error type
     const errorDelta = newDeltas.find(
-      (d) => d && typeof d === 'object' && 'type' in d && d.type === 'error',
+      (dataPart: DataUIPart<any>) => dataPart.type === 'data-error',
     );
 
     if (errorDelta) {
-      console.error('[DATA STREAM] Error delta received:', errorDelta);
+      console.error('[DATA STREAM] Error data part received:', errorDelta);
       setArtifact((draftArtifact) => ({
         ...draftArtifact,
         status: 'idle',
@@ -118,22 +114,33 @@ export function DataStreamHandler({ id }: { id: string }) {
       return;
     }
 
-    // Process each delta in sequence
-    newDeltas.forEach((value) => {
-      const delta = value as DataStreamDelta;
-      if (!delta || typeof delta !== 'object') return;
+    // Process each data part in sequence
+    newDeltas.forEach((dataPart: DataUIPart<any>) => {
+      if (!dataPart || typeof dataPart !== 'object') return;
+
+      // Handle different data types based on the dataPart.type
+      // In AI SDK 5.0, types are like 'data-artifact', 'data-title', etc.
+      const dataType = dataPart.type.startsWith('data-') ? dataPart.type.slice(5) : dataPart.type;
 
       // Call the artifact's onStreamPart handler for all events, including custom ones
       if (artifactDefinition?.onStreamPart) {
         try {
+          // Convert DataUIPart to DataStreamDelta for backward compatibility
+          const compatibilityDelta: DataStreamDelta = {
+            type: dataType as any,
+            content: dataPart.data,
+            // Add other properties if they exist in the dataPart
+            ...(dataPart.id && { toolCall: { id: dataPart.id, name: dataType } }),
+          };
+          
           artifactDefinition.onStreamPart({
-            streamPart: delta,
+            streamPart: compatibilityDelta,
             setArtifact,
             setMetadata: (draft: Record<string, any>) => ({ 
               ...draft, 
               metadata: { 
                 ...draft.metadata, 
-                ...(typeof delta.content === 'object' && delta.content !== null ? delta.content : {}) 
+                ...(typeof dataPart.data === 'object' && dataPart.data !== null ? dataPart.data : {}) 
               } 
             }),
           });
@@ -141,12 +148,12 @@ export function DataStreamHandler({ id }: { id: string }) {
           console.error('[DATA STREAM] Error calling artifact onStreamPart handler:', error);
         }
       }
-
-      switch (delta.type) {
+      
+      switch (dataType) {
         case 'id':
           setArtifact((draftArtifact) => ({
             ...draftArtifact,
-            documentId: delta.content as string,
+            documentId: dataPart.data as string,
             status: 'streaming',
           }));
           break;
@@ -155,16 +162,16 @@ export function DataStreamHandler({ id }: { id: string }) {
           // Update artifact and breadcrumb title
           setArtifact((draftArtifact) => ({
             ...draftArtifact,
-            title: delta.content as string,
+            title: dataPart.data as string,
             status: 'streaming',
           }));
-          setTitle(delta.content as string);
+          setTitle(dataPart.data as string);
           break;
 
         case 'kind':
           setArtifact((draftArtifact) => ({
             ...draftArtifact,
-            kind: delta.content as ArtifactKind,
+            kind: dataPart.data as ArtifactKind,
             status: 'streaming',
           }));
           break;
@@ -180,14 +187,14 @@ export function DataStreamHandler({ id }: { id: string }) {
         case 'status':
           setArtifact((draftArtifact) => ({
             ...draftArtifact,
-            status: delta.content as 'streaming' | 'idle',
+            status: dataPart.data as 'streaming' | 'idle',
           }));
           break;
 
         case 'text-delta':
           setArtifact((draftArtifact) => ({
             ...draftArtifact,
-            content: draftArtifact.content + (delta.content as string),
+            content: draftArtifact.content + (dataPart.data as string),
             status: 'streaming',
           }));
           break;
@@ -206,7 +213,7 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'progress':
           // Handle progress updates from tools (e.g., GitHub file creation)
-          const progressData = delta.content as any;
+          const progressData = dataPart.data as any;
           console.log('[DATA STREAM] Progress update:', progressData);
           
           // Update thinking state with progress message
@@ -303,7 +310,7 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'project-creation-started':
           // Handle project creation started - show progress card
-          const projectStartData = delta.content as any;
+          const projectStartData = dataPart.data as any;
           console.log('[DATA STREAM] Project creation started:', projectStartData);
           
           // Update thinking state
@@ -329,7 +336,7 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'github-selection':
           // Handle GitHub repository/file selection to open file explorer
-          const selectionData = delta.content as any;
+          const selectionData = dataPart.data as any;
           console.log('[DATA STREAM] GitHub selection received:', selectionData);
           
           if (selectionData.repository) {
@@ -367,7 +374,7 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'github-staged-files':
           // Handle GitHub staged files updates
-          const stagedFilesData = delta.content as any;
+          const stagedFilesData = dataPart.data as any;
           console.log('[DATA STREAM] GitHub staged files received:', stagedFilesData);
           
           // Update thinking state
@@ -378,13 +385,13 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'suggestion':
           // Handle suggestions from the AI
-          const suggestionData = delta.content as Suggestion;
+          const suggestionData = dataPart.data as Suggestion;
           console.log('[DATA STREAM] Suggestion received:', suggestionData);
           break;
 
         case 'tool-call':
           // Handle tool call events - show inline feedback when tool starts
-          const toolCallData = delta.content as any;
+          const toolCallData = dataPart.data as any;
           console.log('[DATA STREAM] Tool call received:', toolCallData);
           
           // Add safety checks to prevent undefined errors
@@ -435,7 +442,7 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'tool-result':
           // Handle tool result events - show inline feedback when tool completes
-          const toolResultData = delta.content as any;
+          const toolResultData = dataPart.data as any;
           console.log('[DATA STREAM] Tool result received:', toolResultData);
           
           // Update thinking state with tool result message
@@ -450,7 +457,7 @@ export function DataStreamHandler({ id }: { id: string }) {
 
         case 'repository-approval-request':
           // Handle repository approval requests - show approval card
-          const approvalData = delta.content as any;
+          const approvalData = dataPart.data as any;
           console.log('[DATA STREAM] Repository approval request received:', approvalData);
           
           // Update thinking state
@@ -480,7 +487,7 @@ Please reply with **Approve** to proceed with creation, or **Stop** to cancel.`,
 
         case 'repository-created':
           // Handle repository creation success
-          const repoCreatedData = delta.content as any;
+          const repoCreatedData = dataPart.data as any;
           console.log('[DATA STREAM] Repository created successfully:', repoCreatedData);
           
           // Update thinking state
@@ -514,7 +521,7 @@ The repository is now ready for project creation and file staging.`,
 
 
         default:
-          console.log('[DATA STREAM] Unknown delta type:', delta.type);
+          console.log('[DATA STREAM] Unknown data type:', dataPart.type);
           break;
       }
     });

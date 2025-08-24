@@ -14,19 +14,20 @@ export const textDocumentHandler = createDocumentHandler<'text'>({
         'Write about the given topic. Markdown is supported. Use headings wherever appropriate.',
       experimental_transform: smoothStream({ chunking: 'word' }),
       prompt: title,
+      maxOutputTokens: 5000, // Reasonable limit for text artifacts
     });
 
     for await (const delta of fullStream) {
       const { type } = delta;
 
       if (type === 'text-delta') {
-        const { textDelta } = delta;
+        const { text } = delta;
 
-        draftContent += textDelta;
+        draftContent += text;
 
-        dataStream.writeData({
+        dataStream.write?.({
           type: 'text-delta',
-          content: textDelta,
+          content: text,
         });
       }
     }
@@ -41,7 +42,8 @@ export const textDocumentHandler = createDocumentHandler<'text'>({
       system: updateDocumentPrompt(document.content, 'text'),
       experimental_transform: smoothStream({ chunking: 'word' }),
       prompt: description,
-      experimental_providerMetadata: {
+      maxOutputTokens: 5000, // Reasonable limit for text artifacts
+      providerOptions: {
         openai: {
           prediction: {
             type: 'content',
@@ -55,12 +57,12 @@ export const textDocumentHandler = createDocumentHandler<'text'>({
       const { type } = delta;
 
       if (type === 'text-delta') {
-        const { textDelta } = delta;
+        const { text } = delta;
 
-        draftContent += textDelta;
-        dataStream.writeData({
+        draftContent += text;
+        dataStream.write?.({
           type: 'text-delta',
-          content: textDelta,
+          content: text,
         });
       }
     }

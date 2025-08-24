@@ -1,4 +1,4 @@
-import type { Attachment } from 'ai';
+import type { FileUIPart } from 'ai';
 
 import { LoaderIcon } from '@/components/common/icons';
 
@@ -6,10 +6,10 @@ export const PreviewAttachment = ({
   attachment,
   isUploading = false,
 }: {
-  attachment: Attachment;
+  attachment: FileUIPart;
   isUploading?: boolean;
 }) => {
-  const { name, url, contentType } = attachment;
+  const { filename: name, url, mediaType: contentType } = attachment;
 
   return (
     <div data-testid="input-attachment-preview" className="flex flex-col gap-2">

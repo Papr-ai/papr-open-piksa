@@ -1,10 +1,10 @@
 'use client';
 
 import { PreviewAttachment } from "./preview-attachment";
-import type { Attachment } from 'ai';
+import type { FileUIPart } from 'ai';
 
 interface AttachmentGridProps {
-  attachments: Attachment[];
+  attachments: FileUIPart[];
 }
 
 export function AttachmentGrid({ attachments }: AttachmentGridProps) {

@@ -1,17 +1,17 @@
 'use client';
 
-import { ChatRequestOptions, Message } from 'ai';
+import { ChatRequestOptions, UIMessage } from 'ai';
 import { Button } from '@/components/ui/button';
 import { Dispatch, SetStateAction, useEffect, useRef, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { deleteTrailingMessages } from '@/app/(chat)/actions';
-import { UseChatHelpers } from '@ai-sdk/react';
+import type { UseChatHelpers } from '@ai-sdk/react';
 
 export type MessageEditorProps = {
-  message: Message;
+  message: UIMessage;
   setMode: Dispatch<SetStateAction<'view' | 'edit'>>;
-  setMessages: UseChatHelpers['setMessages'];
-  reload: UseChatHelpers['reload'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
 };
 
 export function MessageEditor({
@@ -22,7 +22,12 @@ export function MessageEditor({
 }: MessageEditorProps) {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const [draftContent, setDraftContent] = useState<string>(message.content);
+  const [draftContent, setDraftContent] = useState<string>(
+    message.parts
+      ?.filter((part: any) => part.type === 'text')
+      .map((part: any) => part.text)
+      .join('\n') || ''
+  );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -75,15 +80,13 @@ export function MessageEditor({
               id: message.id,
             });
 
-            // @ts-expect-error todo: support UIMessage in setMessages
             setMessages((messages) => {
-              const index = messages.findIndex((m) => m.id === message.id);
+              const index = messages.findIndex((m: UIMessage) => m.id === message.id);
 
               if (index !== -1) {
                 const updatedMessage = {
                   ...message,
-                  content: draftContent,
-                  parts: [{ type: 'text', text: draftContent }],
+                  parts: [{ type: 'text' as const, text: draftContent }],
                 };
 
                 return [...messages.slice(0, index), updatedMessage];

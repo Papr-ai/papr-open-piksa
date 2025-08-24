@@ -44,6 +44,7 @@ export function createMemoryService(apiKey: string) {
     userId: string,
     chatId: string,
     message: UIMessage,
+    appUserId?: string, // Add app user ID for tracking
   ): Promise<boolean> => {
     try {
       // Extract message content
@@ -120,6 +121,19 @@ export function createMemoryService(apiKey: string) {
         return false;
       }
 
+      // CENTRALIZED TRACKING: Track memory addition usage
+      if (appUserId) {
+        try {
+          const { trackMemoryAdd } = await import('@/lib/subscription/usage-middleware');
+          await trackMemoryAdd(appUserId);
+          console.log(`[Memory] Tracked memory addition for user: ${appUserId}`);
+        } catch (error) {
+          console.error('[Memory] Failed to track memory usage:', error);
+        }
+      } else {
+        console.warn('[Memory] No app user ID provided for tracking - memory usage not tracked');
+      }
+
       console.log(
         `[Memory] Stored message ${message.id} as memory ${response.data[0].memoryId}`,
       );
@@ -143,6 +157,7 @@ export function createMemoryService(apiKey: string) {
     content: string,
     type: MemoryType = 'text',
     metadata: Partial<MemoryMetadata> = {},
+    appUserId?: string, // Add app user ID for tracking
   ): Promise<boolean> => {
     try {
       // Check if userId format matches Papr user ID format (not a UUID)
@@ -208,6 +223,19 @@ export function createMemoryService(apiKey: string) {
       if (!response || !response.data?.[0]?.memoryId) {
         console.error('[Memory] Invalid response:', response);
         return false;
+      }
+
+      // CENTRALIZED TRACKING: Track memory addition usage
+      if (appUserId) {
+        try {
+          const { trackMemoryAdd } = await import('@/lib/subscription/usage-middleware');
+          await trackMemoryAdd(appUserId);
+          console.log(`[Memory] Tracked memory addition for user: ${appUserId}`);
+        } catch (error) {
+          console.error('[Memory] Failed to track memory usage:', error);
+        }
+      } else {
+        console.warn('[Memory] No app user ID provided for tracking - memory usage not tracked');
       }
 
       console.log(`[Memory] Stored content as memory ${response.data[0].memoryId}`);

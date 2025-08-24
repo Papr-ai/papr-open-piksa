@@ -5,7 +5,7 @@ import { test, expect, Page } from '@playwright/test';
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const testEmail = `test-${getUnixTime(new Date())}@playwright.com`;
-const testPassword = generateId(16);
+const testPassword = generateId(); // AI SDK 5.0: generateId() takes no parameters
 
 class AuthPage {
   constructor(private page: Page) {}

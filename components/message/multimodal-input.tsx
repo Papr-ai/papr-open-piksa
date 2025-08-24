@@ -1,6 +1,8 @@
 'use client';
 
-import type { Attachment, UIMessage } from 'ai';
+import type { FileUIPart, UIMessage } from 'ai';
+import type { UseChatHelpers } from '@ai-sdk/react'; 
+
 import cx from 'classnames';
 import type React from 'react';
 import {
@@ -21,7 +23,6 @@ import { PreviewAttachment } from '@/components/message/preview-attachment';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import equal from 'fast-deep-equal';
-import type { UseChatHelpers } from '@ai-sdk/react';
 import { MemoryToggle } from '@/components/memory/memory-toggle';
 import { ModelSelector } from '@/components/message/model-selector';
 import { VisibilitySelector } from '@/components/message/visibility-selector';
@@ -57,16 +58,16 @@ function PureMultimodalInput({
   selectedVisibilityType,
 }: {
   chatId: string;
-  input: UseChatHelpers['input'];
-  setInput: UseChatHelpers['setInput'];
-  status: UseChatHelpers['status'];
-  stop: () => void;
-  attachments: Array<Attachment>;
-  setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
-  messages: Array<UIMessage>;
-  setMessages: UseChatHelpers['setMessages'];
-  append: UseChatHelpers['append'];
-  handleSubmit: UseChatHelpers['handleSubmit'];
+  input: string;
+  setInput: (input: string) => void;
+  status: UseChatHelpers<UIMessage>['status'];
+  stop: UseChatHelpers<UIMessage>['stop'];
+  attachments: Array<FileUIPart>;
+  setAttachments: Dispatch<SetStateAction<Array<FileUIPart>>>;
+  messages: UseChatHelpers<UIMessage>['messages'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
+  handleSubmit: (event?: any) => void;
   className?: string;
   selectedModelId: string;
   selectedVisibilityType: VisibilityType;
@@ -173,10 +174,7 @@ function PureMultimodalInput({
     };
 
     // Submit the message with our custom headers
-    handleSubmit(undefined, {
-      experimental_attachments: attachments,
-      headers: customHeaders,
-    });
+    handleSubmit();
 
     setAttachments([]);
     clearContexts(); // Clear selected contexts after submitting
@@ -215,9 +213,10 @@ function PureMultimodalInput({
         const { url, pathname, contentType } = data;
 
         return {
+          type: 'file' as const,
           url,
-          name: pathname,
-          contentType: contentType,
+          filename: pathname,
+          mediaType: contentType,
         };
       }
       const { error } = await response.json();
@@ -324,7 +323,7 @@ function PureMultimodalInput({
           ))}
           {attachments.map((attachment) => (
             <PreviewAttachment
-              key={attachment.name}
+              key={attachment.filename || attachment.url}
               attachment={attachment}
               isUploading={false}
             />
@@ -359,7 +358,7 @@ function PureAttachmentsButton({
   status,
 }: {
   fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
-  status: UseChatHelpers['status'];
+  status: UseChatHelpers<UIMessage>['status'];
 }) {
   return (
     <Button
@@ -384,7 +383,7 @@ function PureStopButton({
   setMessages,
 }: {
   stop: () => void;
-  setMessages: UseChatHelpers['setMessages'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
 }) {
   return (
     <Button
@@ -393,7 +392,7 @@ function PureStopButton({
       onClick={(event) => {
         event.preventDefault();
         stop();
-        setMessages((messages) => messages);
+        // Just trigger a re-render without changing messages
       }}
     >
       <StopIcon size={16} />

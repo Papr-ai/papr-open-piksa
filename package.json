@@ -29,12 +29,12 @@
     "test:jest": "jest"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^1.2.11",
-    "@ai-sdk/google": "^1.2.18",
-    "@ai-sdk/groq": "^1.2.9",
-    "@ai-sdk/openai": "^1.1.11",
-    "@ai-sdk/react": "^1.2.8",
-    "@ai-sdk/xai": "^1.2.10",
+    "@ai-sdk/anthropic": "^2.0.6",
+    "@ai-sdk/google": "^2.0.8",
+    "@ai-sdk/groq": "^2.0.13",
+    "@ai-sdk/openai": "^2.0.19",
+    "@ai-sdk/react": "^2.0.22",
+    "@ai-sdk/xai": "^2.0.11",
     "@codemirror/lang-javascript": "^6.2.2",
     "@codemirror/lang-python": "^6.1.6",
     "@codemirror/state": "^6.5.0",
@@ -65,7 +65,7 @@
     "@vercel/blob": "^0.24.1",
     "@vercel/postgres": "^0.10.0",
     "@vercel/sandbox": "^0.0.13",
-    "ai": "4.3.4",
+    "ai": "5.0.22",
     "bcrypt-ts": "^5.0.2",
     "class-variance-authority": "^0.7.0",
     "classnames": "^2.5.1",
@@ -120,7 +120,7 @@
     "tree-sitter-rust": "^0.24.0",
     "tree-sitter-typescript": "^0.23.2",
     "usehooks-ts": "^3.1.0",
-    "zod": "^3.23.8"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",

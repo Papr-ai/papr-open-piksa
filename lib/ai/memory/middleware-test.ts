@@ -66,7 +66,6 @@ async function testMemoryService() {
     const testMessage: UIMessage = {
       id: messageId,
       role: 'user',
-      content: testContent, // Required by Message type
       parts: [{ type: 'text', text: testContent }],
     };
 

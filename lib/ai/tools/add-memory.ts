@@ -3,8 +3,7 @@ import { Papr } from '@papr/memory';
 import { initPaprMemory } from '@/lib/ai/memory';
 import { ensurePaprUser } from '@/lib/ai/memory/middleware';
 import { z } from 'zod';
-import { tool } from 'ai';
-import type { DataStreamWriter, Tool } from 'ai';
+import { tool, type Tool, type ToolCallOptions } from 'ai';
 import type { Session } from 'next-auth';
 import { createMemoryService } from '@/lib/ai/memory/service';
 import type { MemoryMetadata } from '@papr/memory/resources/memory';
@@ -15,24 +14,38 @@ type MemoryCategoryType = z.infer<typeof MemoryCategory>;
 
 interface AddMemoryProps {
   session: Session;
-  dataStream: DataStreamWriter;
 }
 
 /**
  * Create a memory addition tool that matches the Tool type
  */
-export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
-  return tool({
+const addMemorySchema = z.object({
+  content: z.string().describe('The content of the memory to add, should be specific and detailed enough for future retrieval'),
+  category: MemoryCategory.describe('The category of memory: preferences (user preferences, style, etc), goals (long-term objectives), tasks (to-dos, reminders), or knowledge (technical facts, configurations)'),
+  type: z.enum(['text', 'code_snippet', 'document']).default('text').describe('The type of memory content'),
+  emoji_tags: z.array(z.string()).optional().describe('List of emoji tags that represent this memory (e.g. ["👤", "⚙️", "🔧"] for preferences). Choose 2-4 relevant emojis that visually represent this memory.'),
+  topics: z.array(z.string()).optional().describe('List of topics related to this memory (e.g. ["preferences", "ui settings", "personalization"] for preferences). These topics help with search and categorization.'),
+  hierarchical_structure: z.string().optional().describe('A path-like string representing where this memory fits in a hierarchical structure (e.g. "preferences/ui/theme" or "knowledge/programming/javascript"). This helps organize memories.'),
+});
+
+type AddMemoryInput = z.infer<typeof addMemorySchema>;
+type AddMemoryOutput = {
+  success: boolean;
+  message?: string;
+  error?: string;
+  category?: string;
+  emoji_tags?: string[];
+  topics?: string[];
+  hierarchical_structure?: string;
+  shouldShowUpgrade?: boolean;
+  fallbackMessage?: string;
+};
+
+export const addMemory = ({ session }: AddMemoryProps): Tool<AddMemoryInput, AddMemoryOutput> =>
+  tool({
     description: 'Add important information to user memory for future reference',
-    parameters: z.object({
-      content: z.string().describe('The content of the memory to add, should be specific and detailed enough for future retrieval'),
-      category: MemoryCategory.describe('The category of memory: preferences (user preferences, style, etc), goals (long-term objectives), tasks (to-dos, reminders), or knowledge (technical facts, configurations)'),
-      type: z.enum(['text', 'code_snippet', 'document']).default('text').describe('The type of memory content'),
-      emoji_tags: z.array(z.string()).optional().describe('List of emoji tags that represent this memory (e.g. ["👤", "⚙️", "🔧"] for preferences). Choose 2-4 relevant emojis that visually represent this memory.'),
-      topics: z.array(z.string()).optional().describe('List of topics related to this memory (e.g. ["preferences", "ui settings", "personalization"] for preferences). These topics help with search and categorization.'),
-      hierarchical_structure: z.string().optional().describe('A path-like string representing where this memory fits in a hierarchical structure (e.g. "preferences/ui/theme" or "knowledge/programming/javascript"). This helps organize memories.'),
-    }),
-    execute: async (args) => {
+    inputSchema: addMemorySchema,
+    execute: async (input: AddMemoryInput, options: ToolCallOptions): Promise<AddMemoryOutput> => {
       const { 
         content, 
         category, 
@@ -40,7 +53,7 @@ export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
         emoji_tags: providedEmojiTags,
         topics: providedTopics,
         hierarchical_structure: providedHierarchy
-      } = args;
+      } = input;
       
       console.log('[Memory Tool] Adding memory with category:', category);
       
@@ -114,7 +127,7 @@ export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
         const success = await memoryService.storeContent(
           paprUserId, 
           content,
-          type,
+          type as 'text' | 'code_snippet' | 'document',
           metadata
         );
 
@@ -129,18 +142,10 @@ export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
           }
         }
 
-        // Notify the UI that a memory was added (optional)
-        if (dataStream) {
-          dataStream.writeData({
-            type: 'memory-added',
-            content: {
-              category,
-              content: content.substring(0, 100) + (content.length > 100 ? '...' : ''),
-              emoji_tags,
-              topics,
-              hierarchical_structure
-            },
-          });
+        // Notify with step that memory was added
+        const step = (options as any).step;
+        if (step) {
+          await step(`💾 Added ${category} memory: "${content.substring(0, 50)}${content.length > 50 ? '...' : ''}"`);
         }
 
         return {
@@ -160,8 +165,7 @@ export const addMemory = ({ session, dataStream }: AddMemoryProps): Tool => {
         };
       }
     }
-  });
-};
+  } as any);
 
 // Helper functions for defaults if LLM doesn't provide values
 function getDefaultEmojiTags(category: MemoryCategoryType): string[] {

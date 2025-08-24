@@ -1,4 +1,5 @@
-import { DataStreamWriter, tool } from 'ai';
+import { tool, type Tool, type ToolCallOptions } from 'ai';
+import type { DataStreamWriter } from '@/lib/types';
 import { Session } from 'next-auth';
 import { z } from 'zod';
 import { getDocumentById, saveDocument } from '@/lib/db/queries';
@@ -9,16 +10,28 @@ interface UpdateDocumentProps {
   dataStream: DataStreamWriter;
 }
 
-export const updateDocument = ({ session, dataStream }: UpdateDocumentProps) =>
+const updateDocumentSchema = z.object({
+  id: z.string().describe('The ID of the document to update'),
+  description: z
+    .string()
+    .describe('The description of changes that need to be made'),
+});
+
+type UpdateDocumentInput = z.infer<typeof updateDocumentSchema>;
+type UpdateDocumentOutput = {
+  error?: string;
+  id?: string;
+  title?: string;
+  kind?: string;
+  content?: string;
+};
+
+export const updateDocument = ({ session, dataStream }: UpdateDocumentProps): Tool<UpdateDocumentInput, UpdateDocumentOutput> =>
   tool({
     description: 'Update a document with the given description.',
-    parameters: z.object({
-      id: z.string().describe('The ID of the document to update'),
-      description: z
-        .string()
-        .describe('The description of changes that need to be made'),
-    }),
-    execute: async ({ id, description }) => {
+    inputSchema: updateDocumentSchema,
+    execute: async (input: UpdateDocumentInput, options: ToolCallOptions): Promise<UpdateDocumentOutput> => {
+      const { id, description } = input;
       const document = await getDocumentById({ id });
 
       if (!document) {
@@ -27,7 +40,7 @@ export const updateDocument = ({ session, dataStream }: UpdateDocumentProps) =>
         };
       }
 
-      dataStream.writeData({
+      dataStream.write?.({
         type: 'clear',
         content: document.title,
       });
@@ -48,7 +61,7 @@ export const updateDocument = ({ session, dataStream }: UpdateDocumentProps) =>
         session,
       });
 
-      dataStream.writeData({ type: 'finish', content: '' });
+      dataStream.write?.({ type: 'finish', content: '' });
 
       return {
         id,
@@ -57,4 +70,4 @@ export const updateDocument = ({ session, dataStream }: UpdateDocumentProps) =>
         content: 'The document has been updated successfully.',
       };
     },
-  });
+  } as any);

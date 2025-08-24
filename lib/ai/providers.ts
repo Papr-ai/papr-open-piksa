@@ -34,13 +34,15 @@ export const myProvider = isTestEnvironment
         'artifact-model': anthropic('claude-3-5-sonnet-20240620'),
         
         // OpenAI Models
-        'gpt-4.1': openai('gpt-4.1'),
-        'gpt-4.1-mini': openai('gpt-4.1-mini'),
+        'gpt-5': openai('gpt-5'),
+        'gpt-5-mini': openai('gpt-5-mini'),
         'o4-mini': openai('o4-mini'),
         
         // Groq Models
         'deepseek-r1-distill-llama-70b': groq('deepseek-r1-distill-llama-70b'),
         'llama-3.3-70b-versatile': groq('llama-3.3-70b-versatile'),
+        'openai/gpt-oss-20b': groq('openai/gpt-oss-20b'),
+        'openai/gpt-oss-120b': groq('openai/gpt-oss-120b'),
         
         // Anthropic Models
         'claude-sonnet-4-20250514': anthropic('claude-sonnet-4-20250514'),

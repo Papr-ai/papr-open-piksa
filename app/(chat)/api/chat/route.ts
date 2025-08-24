@@ -1,6 +1,5 @@
 import {
-  appendResponseMessages,
-  createDataStreamResponse,
+  createTextStreamResponse,
   smoothStream,
   streamText,
 } from 'ai';
@@ -44,6 +43,7 @@ import {
 } from '@/lib/ai/memory/middleware';
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { ExtendedUIMessage } from '@/lib/types';
+import type { DataStreamWriter } from '@/lib/types';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 import { createToolFeedbackMiddleware } from '@/lib/ai/tools/middleware/feedback';
 import { ToolRegistry } from '@/lib/ai/tools/middleware/registry';
@@ -55,6 +55,8 @@ import {
   trackPremiumInteraction 
 } from '@/lib/subscription/usage-middleware';
 import { modelIsPremium } from '@/lib/ai/models';
+import { checkOnboardingStatus } from '@/lib/auth/onboarding-middleware';
+import { handleRateLimitWithRetry, estimateConversationTokens } from '@/lib/ai/rate-limit-handler';
 
 export const maxDuration = 60;
 
@@ -64,7 +66,7 @@ const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY || '';
 // Update sanitization function to return messages in the correct format
 function sanitizeMessageForAI(message: ExtendedUIMessage) {
   // Filter out incomplete tool invocations (only include those with results)
-  const completedToolInvocations = message.toolInvocations?.filter(invocation => {
+  const completedToolInvocations = message.toolInvocations?.filter((invocation: any) => {
     // Only include tool invocations that have completed successfully
     return invocation.state === 'result';
   });
@@ -74,7 +76,7 @@ function sanitizeMessageForAI(message: ExtendedUIMessage) {
   const textContent = textPart?.text || '';
   
   // Use placeholder if text is empty but we have attachments or tool calls
-  const hasAttachments = message.experimental_attachments && message.experimental_attachments.length > 0;
+  const hasAttachments = message.attachments && message.attachments.length > 0;
   const hasToolCalls = message.tool_calls && message.tool_calls.length > 0;
   const content = textContent.trim() || 
                   (hasAttachments ? "[Attachment provided]" : 
@@ -282,7 +284,7 @@ function getToolCallResultMessage(toolName: string, result: Record<string, any>)
 }
 
 // Helper function to prepare file path for streaming code
-function streamFileCode(dataStream: any, filePath: string, content: string, language: string, isFirst = false, isFinal = false, isNewChat = false) {
+function streamFileCode(dataStream: DataStreamWriter, filePath: string, content: string, language: string, isFirst = false, isFinal = false, isNewChat = false) {
   // Helper to get filename from path
   const getFilename = (path: string) => path.split('/').pop();
 
@@ -290,7 +292,7 @@ function streamFileCode(dataStream: any, filePath: string, content: string, lang
   
   // Send file path for UI indicator
   if (isFirst) {
-    dataStream.writeData({
+    dataStream.write?.({
       type: 'project-structure',
       content: [{
         path: filePath,
@@ -303,7 +305,7 @@ function streamFileCode(dataStream: any, filePath: string, content: string, lang
   }
   
   // Send the code content with file path
-  dataStream.writeData({
+  dataStream.write?.({
     type: 'code-delta',
     content: content,
     filePath: filePath,
@@ -319,7 +321,7 @@ function streamFileCode(dataStream: any, filePath: string, content: string, lang
 }
 
 // Helper function to create and stream a new code project
-async function createAndStreamCodeProject(dataStream: any, title: string, isNewChat = true) {
+async function createAndStreamCodeProject(dataStream: DataStreamWriter, title: string, isNewChat = true) {
   console.log(`[CHAT API] Creating new code project: ${title}`);
   
   // Define basic project structure for a web-based game
@@ -608,7 +610,7 @@ You can customize the game by modifying the variables in script.js:
   ];
 
   // First, send the project structure to set up the file tree
-  dataStream.writeData({
+  dataStream.write?.({
     type: 'project-structure',
     content: projectFiles.map(file => ({
       path: file.path,
@@ -684,20 +686,31 @@ export async function POST(request: Request) {
     }: {
       id: string;
       messages: Array<ExtendedUIMessage>;
-      selectedChatModel: string;
+      selectedChatModel?: string;
     } = await request.json();
+
+    // Use selectedChatModel from request body or fallback to default
+    const modelToUse = selectedChatModel || 'gpt-5-mini';
+    
+    console.log('[CHAT API] Selected model from request:', selectedChatModel);
+    console.log('[CHAT API] Model to use:', modelToUse);
 
     // Get abort signal from request
     const signal = request.signal;
 
-    const session = await auth();
+    // Check onboarding status first - this includes auth check
+    const onboardingResult = await checkOnboardingStatus();
+    if (!onboardingResult.isCompleted) {
+      return onboardingResult.response!;
+    }
 
+    const session = await auth();
     if (!session || !session.user || !session.user.id) {
       return new Response('Unauthorized', { status: 401 });
     }
 
     // Check if user has access to the selected model
-    const modelAccess = await checkModelAccess(session.user.id, selectedChatModel);
+    const modelAccess = await checkModelAccess(session.user.id, modelToUse);
     if (!modelAccess.allowed) {
       return new Response(JSON.stringify({ 
         error: modelAccess.reason || 'Model access denied',
@@ -709,7 +722,7 @@ export async function POST(request: Request) {
     }
 
     // Check usage limits based on model type
-    const isPremium = modelIsPremium(selectedChatModel);
+    const isPremium = modelIsPremium(modelToUse);
     const usageCheck = isPremium 
       ? await checkPremiumInteractionLimit(session.user.id)
       : await checkBasicInteractionLimit(session.user.id);
@@ -808,7 +821,7 @@ export async function POST(request: Request) {
             return { type: 'text', text: String(part) };
           }),
           tool_calls: null,
-          attachments: userMessage.experimental_attachments ?? [],
+          attachments: (userMessage as ExtendedUIMessage).attachments ?? [],
           memories: null,
           modelId: null, // User messages don't have a model
           createdAt: new Date(),
@@ -818,8 +831,8 @@ export async function POST(request: Request) {
     console.log('[Memory] User message saved to database');
 
     // Check if the selected model supports reasoning
-    const supportsReasoning = modelSupportsReasoning(selectedChatModel);
-    console.log(`[Chat API] Model ${selectedChatModel} supports reasoning: ${supportsReasoning}`);
+    const supportsReasoning = modelSupportsReasoning(modelToUse);
+    console.log(`[Chat API] Model ${modelToUse} supports reasoning: ${supportsReasoning}`);
 
     // Prepare system prompt with context if needed
     const prepareSystemPrompt = (basePrompt: string) => {
@@ -863,14 +876,28 @@ IMPORTANT INSTRUCTIONS:
     };
 
     // STEP 2: Process AI response with memory search as a tool
-    return createDataStreamResponse({
-      execute: async (dataStream) => {
+    
+    // Create a readable stream for the response
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    
+    // Process the AI response asynchronously
+    (async () => {
+      try {
+        // Create a mock dataStream object for compatibility
+        const dataStream = {
+          write: (data: any) => {
+            // Convert data to text and write to the stream
+            const textData = JSON.stringify(data) + '\n';
+            writer.write(new TextEncoder().encode(textData));
+          }
+        };
         // Add signal to stream options
         const streamOptions = {
           signal,
           onCancel: () => {
             console.log('[CHAT API] Request cancelled by client');
-            dataStream.writeData({
+            dataStream.write?.({
               type: 'status',
               content: 'cancelled',
             });
@@ -880,7 +907,7 @@ IMPORTANT INSTRUCTIONS:
         // Create a data stream transformer to intercept certain messages
         const transformedDataStream = {
           ...dataStream,
-          writeData: (data: any) => {
+          write: (data: any) => {
             // Check for code project request
             if (data.type === 'code-project-request') {
               console.log('[CHAT API] Intercepted code project request:', data.content);
@@ -888,7 +915,7 @@ IMPORTANT INSTRUCTIONS:
             }
             
             // Pass through all other messages
-            return dataStream.writeData(data);
+            return dataStream.write?.(data);
           }
         };
 
@@ -903,7 +930,7 @@ IMPORTANT INSTRUCTIONS:
         console.log('[Memory DEBUG] Memory enabled:', isMemoryEnabled);
 
         // Get base system prompt
-        const baseSystemPrompt = systemPrompt({ selectedChatModel });
+        const baseSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
 
         // Add memory context to system prompt if enabled
         let enhancedSystemPrompt = isMemoryEnabled
@@ -1003,8 +1030,8 @@ AVAILABLE STAGING TOOLS:
             
             ...(isMemoryEnabled
               ? { 
-                  searchMemories: createToolWrapper('searchMemories')(searchMemories({ session, dataStream })),
-                  addMemory: createToolWrapper('addMemory')(addMemory({ session, dataStream }))
+                  searchMemories: createToolWrapper('searchMemories')(searchMemories({ session })),
+                  addMemory: createToolWrapper('addMemory')(addMemory({ session }))
                 }
               : {}),
           };
@@ -1015,7 +1042,7 @@ AVAILABLE STAGING TOOLS:
           // Create a data stream transformer to intercept certain messages
           const transformedDataStream = {
             ...dataStream,
-            writeData: (data: any) => {
+            write: (data: any) => {
               // Check for code project request
               if (data.type === 'code-project-request') {
                 console.log('[CHAT API] Intercepted code project request:', data.content);
@@ -1024,13 +1051,13 @@ AVAILABLE STAGING TOOLS:
               }
               
               // Pass through all other messages
-              return dataStream.writeData(data);
+              return dataStream.write?.(data);
             }
           };
 
           // Create new result with wrapped tools and abort signal
           const resultWithFeedback = await streamText({
-            model: myProvider.languageModel(selectedChatModel), // Always use selectedChatModel
+            model: myProvider.languageModel(modelToUse), // Always use modelToUse
             system: enhancedSystemPrompt,
             messages: messages.slice(-15).map(sanitizeMessageForAI), // Limit to last 15 messages
             tools: tools,  // Use original tools
@@ -1041,7 +1068,7 @@ AVAILABLE STAGING TOOLS:
               },
               openai: {
                 // Enable high-effort reasoning for o4-mini
-                ...(selectedChatModel === 'o4-mini' ? { 
+                ...(modelToUse === 'o4-mini' ? { 
                   reasoning: { 
                     effort: 'high',
                     budgetTokens: 5000 // Higher token budget for more thorough reasoning
@@ -1049,7 +1076,6 @@ AVAILABLE STAGING TOOLS:
                 } : {})
               }
             },
-            maxSteps: 10,
             temperature: 1,
             experimental_activeTools: [
               'getWeather',
@@ -1073,13 +1099,13 @@ AVAILABLE STAGING TOOLS:
               'addTask',
               ...(isMemoryEnabled ? (['searchMemories', 'addMemory'] as const) : []),
             ],
-            experimental_generateMessageId: generateUUID,
+            // experimental_generateMessageId: generateUUID, // Removed in AI SDK 5.0
             onFinish: async ({ response }) => {
               console.log('[CHAT API] Response messages:', JSON.stringify(response.messages, null, 2));
               if (session.user?.id) {
                 try {
                   // Track the interaction usage based on model type
-                  const isPremiumModel = modelIsPremium(selectedChatModel);
+                  const isPremiumModel = modelIsPremium(modelToUse);
                   if (isPremiumModel) {
                     await trackPremiumInteraction(session.user.id);
                     console.log('[CHAT API] Tracked premium interaction for user:', session.user.id);
@@ -1087,45 +1113,53 @@ AVAILABLE STAGING TOOLS:
                     await trackBasicInteraction(session.user.id);
                     console.log('[CHAT API] Tracked basic interaction for user:', session.user.id);
                   }
-                  const assistantId = getTrailingMessageId({
-                    messages: response.messages.filter(
-                      (message) => message.role === 'assistant',
-                    ),
-                  });
+                  const assistantMessages = response.messages.filter(
+                    (message) => message.role === 'assistant'
+                  );
+                  const assistantId = assistantMessages.length > 0 ? 
+                    (assistantMessages[assistantMessages.length - 1] as any).id || generateUUID() :
+                    generateUUID();
 
                   if (!assistantId) {
                     console.error(
                       '[CHAT API] No assistant message found in response',
                     );
-                    dataStream.writeData({
+                    dataStream.write?.({
                       type: 'status',
                       content: 'idle',
                     });
-                    dataStream.writeData({
+                    dataStream.write?.({
                       type: 'finish',
                       content: '',
                     });
                     return;
                   }
 
-                  const [, assistantMessage] = appendResponseMessages({
-                    messages: [userMessage],
-                    responseMessages: response.messages,
-                  }) as [ExtendedUIMessage, ExtendedUIMessage];
+                  // Get the assistant message from the response messages
+                  const assistantMessage = assistantMessages.length > 0 ? 
+                    {
+                      id: assistantId,
+                      role: 'assistant' as const,
+                      parts: (assistantMessages[assistantMessages.length - 1] as any).content || [],
+                      tool_calls: (assistantMessages[assistantMessages.length - 1] as any).tool_calls || null,
+                      toolInvocations: (assistantMessages[assistantMessages.length - 1] as any).toolInvocations || [],
+                      attachments: []
+                    } as ExtendedUIMessage :
+                    null;
 
                   // Extract memories from tool calls if present
-                  const memories = extractMemoriesFromToolCalls(assistantMessage);
+                  const memories = assistantMessage ? extractMemoriesFromToolCalls(assistantMessage) : null;
                   
                   if (memories && memories.length > 0) {
                     console.log(`[Memory] Found ${memories.length} memories in assistant message, storing directly in message record`);
                   }
 
                   // Signal completion before persistence operations
-                  dataStream.writeData({
+                  dataStream.write?.({
                     type: 'status',
                     content: 'idle',
                   });
-                  dataStream.writeData({
+                  dataStream.write?.({
                     type: 'finish',
                     content: '',
                   });
@@ -1133,7 +1167,7 @@ AVAILABLE STAGING TOOLS:
                   // Fire-and-forget persistence operations
                   Promise.all([
                     // Save the AI response to database with memories included
-                    saveMessages({
+                    assistantMessage ? saveMessages({
                       messages: [
                         {
                           id: assistantId,
@@ -1142,15 +1176,15 @@ AVAILABLE STAGING TOOLS:
                           parts: assistantMessage.parts || [],
                           tool_calls: assistantMessage.tool_calls || null,
                           attachments:
-                            assistantMessage.experimental_attachments ?? [],
+                            assistantMessage.attachments ?? [],
                           memories: memories,
-                          modelId: selectedChatModel,
+                          modelId: modelToUse,
                           createdAt: new Date(),
                         },
                       ],
                     }).catch(error => {
                       console.error('[CHAT API] Error saving assistant message:', error);
-                    }),
+                    }) : Promise.resolve(),
 
                     // Store the user message in memory if enabled
                     isMemoryEnabled && PAPR_MEMORY_API_KEY ?
@@ -1170,11 +1204,11 @@ AVAILABLE STAGING TOOLS:
                 } catch (error) {
                   console.error('[CHAT API] Error in onFinish:', error);
                   // Signal error but allow the stream to complete
-                  dataStream.writeData({
+                  dataStream.write?.({
                     type: 'status',
                     content: 'idle',
                   });
-                  dataStream.writeData({
+                  dataStream.write?.({
                     type: 'finish',
                     content: '',
                   });
@@ -1182,11 +1216,11 @@ AVAILABLE STAGING TOOLS:
               } else {
                 // Handle case where session.user.id is not available
                 console.error('[CHAT API] No user ID available in session');
-                dataStream.writeData({
+                dataStream.write?.({
                   type: 'status',
                   content: 'idle',
                 });
-                dataStream.writeData({
+                dataStream.write?.({
                   type: 'finish',
                   content: '',
                 });
@@ -1198,14 +1232,19 @@ AVAILABLE STAGING TOOLS:
             },
           });
 
-          // Use the standard mergeIntoDataStream with sendReasoning enabled for models that support it
-          await resultWithFeedback.mergeIntoDataStream(transformedDataStream, {
-            sendReasoning: supportsReasoning,
-            ...streamOptions, // Pass stream options including signal
-          });
+          // Process the stream result directly
+          for await (const part of resultWithFeedback.textStream) {
+            // Write text parts to the data stream
+                      if (transformedDataStream && transformedDataStream.write) {
+            transformedDataStream.write({
+                type: 'text',
+                content: part
+              });
+            }
+          }
 
           // Ensure we send the final status updates
-          dataStream.writeData({
+          dataStream.write?.({
             type: 'status',
             content: 'idle',
           });
@@ -1223,7 +1262,7 @@ AVAILABLE STAGING TOOLS:
             }
           }
           
-          dataStream.writeData({
+          dataStream.write?.({
             type: 'finish',
             content: '',
           });
@@ -1257,32 +1296,39 @@ AVAILABLE STAGING TOOLS:
             }
           }
 
-          dataStream.writeData({
+          dataStream.write?.({
             type: 'status',
             content: 'idle',
           });
-          dataStream.writeData({
+          dataStream.write?.({
             type: 'finish',
             content: '',
           });
+        } finally {
+          // Close the writer
+          writer.close();
         }
-      },
-      onError: (error: unknown) => {
+      } catch (error) {
         console.error('[CHAT API] STREAMING ERROR:', error);
-
+        
         // Check if error is due to abort
         if (signal?.aborted) {
           console.log('[CHAT API] Stream aborted by client');
-          return 'Request cancelled';
         }
 
         if (error instanceof Error) {
           console.error('[CHAT API] Stream error message:', error.message);
           console.error('[CHAT API] Stream error stack:', error.stack);
         }
+        
+        // Close the writer on error
+        writer.close();
+      }
+    })();
 
-        return 'An error occurred during processing. Please try again.';
-      },
+    // Return the text stream response (fallback for now)
+    return createTextStreamResponse({
+      textStream: readable
     });
   } catch (error) {
     console.error('[CHAT API] ERROR:', error);

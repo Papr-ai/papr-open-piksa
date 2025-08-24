@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Session } from 'next-auth';
-import { streamObject, tool } from 'ai';
-import type { DataStreamWriter } from 'ai';
+import { streamObject, tool, type Tool, type ToolCallOptions } from 'ai';
+import type { DataStreamWriter } from '@/lib/types';
 import { getDocumentById, saveSuggestions } from '@/lib/db/queries';
 import type { Suggestion } from '@/lib/db/schema';
 import { generateUUID } from '@/lib/utils';
@@ -12,18 +12,38 @@ interface RequestSuggestionsProps {
   dataStream: DataStreamWriter;
 }
 
+const requestSuggestionsSchema = z.object({
+  documentId: z
+    .string()
+    .describe('The ID of the document to request edits'),
+});
+
+type RequestSuggestionsInput = z.infer<typeof requestSuggestionsSchema>;
+type RequestSuggestionsOutput = 
+  | {
+      error: string;
+      id?: undefined;
+      title?: undefined;
+      kind?: undefined;
+      message?: undefined;
+    }
+  | {
+      id: string;
+      title: string;
+      kind: string;
+      message: string;
+      error?: undefined;
+    };
+
 export const requestSuggestions = ({
   session,
   dataStream,
-}: RequestSuggestionsProps) =>
+}: RequestSuggestionsProps): Tool<RequestSuggestionsInput, RequestSuggestionsOutput> =>
   tool({
     description: 'Request suggestions for a document',
-    parameters: z.object({
-      documentId: z
-        .string()
-        .describe('The ID of the document to request edits'),
-    }),
-    execute: async ({ documentId }) => {
+    inputSchema: requestSuggestionsSchema,
+    execute: async (input: RequestSuggestionsInput, options: ToolCallOptions): Promise<RequestSuggestionsOutput> => {
+      const { documentId } = input;
       try {
         console.log(`Requesting suggestions for document: ${documentId}`);
 
@@ -72,9 +92,12 @@ export const requestSuggestions = ({
               isResolved: false,
             };
 
-            dataStream.writeData({
-              type: 'suggestion',
-              content: suggestion,
+            dataStream.write?.({
+              type: 'data',
+              data: {
+                type: 'suggestion',
+                content: suggestion,
+              }
             });
 
             suggestions.push(suggestion);
@@ -119,4 +142,4 @@ export const requestSuggestions = ({
         };
       }
     },
-  });
+  } as any);
