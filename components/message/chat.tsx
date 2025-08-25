@@ -69,6 +69,9 @@ export function Chat({
   // Track memory enabled state
   const [isMemoryEnabled, setIsMemoryEnabled] = useState(false);
   const memoryEnabledRef = useRef(false);
+  
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
+  const webSearchEnabledRef = useRef(false);
 
   useEffect(() => {
     const handleMemoryToggle = (event: CustomEvent) => {
@@ -77,15 +80,29 @@ export function Chat({
       memoryEnabledRef.current = event.detail.enabled; // Keep ref in sync
     };
 
-    // Try to get initial memory state from localStorage or other source
+    const handleWebSearchToggle = (event: CustomEvent) => {
+      console.log('[Chat] Web search toggle event received:', event.detail.enabled);
+      setIsWebSearchEnabled(event.detail.enabled);
+      webSearchEnabledRef.current = event.detail.enabled; // Keep ref in sync
+    };
+
+    // Try to get initial states from localStorage
     const initialMemoryState = localStorage.getItem('memory-enabled') === 'true';
+    const initialWebSearchState = localStorage.getItem('web-search-enabled') === 'true';
     console.log('[Chat] Initial memory state:', initialMemoryState);
+    console.log('[Chat] Initial web search state:', initialWebSearchState);
+    
     setIsMemoryEnabled(initialMemoryState);
     memoryEnabledRef.current = initialMemoryState; // Keep ref in sync
+    
+    setIsWebSearchEnabled(initialWebSearchState);
+    webSearchEnabledRef.current = initialWebSearchState; // Keep ref in sync
 
     window.addEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+    window.addEventListener('web-search-toggle-changed', handleWebSearchToggle as EventListener);
     return () => {
       window.removeEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+      window.removeEventListener('web-search-toggle-changed', handleWebSearchToggle as EventListener);
     };
   }, []);
   const { mutate } = useSWRConfig();
@@ -131,11 +148,14 @@ export function Chat({
         selectedChatModel: selectedChatModelRef.current, // Use ref to get current model dynamically
       }),
       headers: async () => {
-        // Use ref to get current value, avoiding closure issues
+        // Use refs to get current values, avoiding closure issues
         const currentMemoryState = memoryEnabledRef.current;
+        const currentWebSearchState = webSearchEnabledRef.current;
         console.log('[Chat] Sending headers with memory enabled:', currentMemoryState);
+        console.log('[Chat] Sending headers with web search enabled:', currentWebSearchState);
         return {
           'X-Memory-Enabled': currentMemoryState ? 'true' : 'false',
+          'X-Web-Search-Enabled': currentWebSearchState ? 'true' : 'false',
           'X-Context': '',
           'X-Interaction-Mode': 'chat',
         };
@@ -163,7 +183,12 @@ export function Chat({
         return;
       }
       
-      toast.error('An error occurred, please try again!');
+      // Check if this is a usage limit error
+      if ((error as any)?.body?.code === 'USAGE_LIMIT_EXCEEDED' || error.message?.includes('USAGE_LIMIT_EXCEEDED')) {
+        toast.error('You\'ve reached your monthly usage limit. Please upgrade your plan to continue.');
+      } else {
+        toast.error('An error occurred, please try again!');
+      }
     },
   });
 

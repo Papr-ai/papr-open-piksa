@@ -125,6 +125,7 @@ export const message = pgTable('Message_v2', {
   tool_calls: json('tool_calls').default(null),
   attachments: json('attachments').notNull(),
   memories: jsonb('memories').default(null),
+  sources: jsonb('sources').default(null),
   modelId: varchar('modelId'),
   createdAt: timestamp('createdAt').notNull(),
 });

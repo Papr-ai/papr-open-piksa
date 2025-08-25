@@ -37,6 +37,7 @@ import {
 } from '@/lib/ai/tools/github-integration';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
+import { google } from '@ai-sdk/google';
 import {
   createMemoryEnabledSystemPrompt,
   storeMessageInMemory,
@@ -44,7 +45,7 @@ import {
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { ExtendedUIMessage } from '@/lib/types';
 import type { DataStreamWriter } from '@/lib/types';
-import { modelSupportsReasoning } from '@/lib/ai/models';
+import { modelSupportsReasoning, modelSupportsWebSearch, getWebSearchModel } from '@/lib/ai/models';
 import { createToolFeedbackMiddleware } from '@/lib/ai/tools/middleware/feedback';
 import { ToolRegistry } from '@/lib/ai/tools/middleware/registry';
 import { checkModelAccess } from '@/lib/subscription/utils';
@@ -689,8 +690,18 @@ export async function POST(request: Request) {
       selectedChatModel?: string;
     } = await request.json();
 
+    // Check web search enabled status from headers
+    const webSearchHeaderValue = request.headers.get('X-Web-Search-Enabled');
+    const isWebSearchEnabled = webSearchHeaderValue === 'true';
+    console.log('[CHAT API] Web search enabled:', isWebSearchEnabled);
+
     // Use selectedChatModel from request body or fallback to default
-    const modelToUse = selectedChatModel || 'gpt-5-mini';
+    // If web search is enabled, ensure we use a web-capable model
+    let modelToUse = selectedChatModel || 'gpt-5-mini';
+    if (isWebSearchEnabled) {
+      modelToUse = getWebSearchModel(selectedChatModel);
+      console.log('[CHAT API] Web search enabled, using model:', modelToUse);
+    }
     
     console.log('[CHAT API] Selected model from request:', selectedChatModel);
     console.log('[CHAT API] Model to use:', modelToUse);
@@ -823,6 +834,7 @@ export async function POST(request: Request) {
           tool_calls: null,
           attachments: (userMessage as ExtendedUIMessage).attachments ?? [],
           memories: null,
+          sources: null,
           modelId: null, // User messages don't have a model
           createdAt: new Date(),
         },
@@ -1034,6 +1046,19 @@ AVAILABLE STAGING TOOLS:
                   addMemory: createToolWrapper('addMemory')(addMemory({ session }))
                 }
               : {}),
+            
+            // Web search tools (only for Google models when web search is enabled)
+            ...(isWebSearchEnabled && modelSupportsWebSearch(modelToUse)
+              ? (() => {
+                  console.log('[CHAT API] Adding Google Search tool');
+                  return { google_search: google.tools.googleSearch({}) };
+                })()
+              : (() => {
+                  console.log('[CHAT API] Web search not enabled or model does not support it');
+                  console.log('[CHAT API] isWebSearchEnabled:', isWebSearchEnabled);
+                  console.log('[CHAT API] modelSupportsWebSearch:', modelSupportsWebSearch(modelToUse));
+                  return {};
+                })()),
           };
 
           // Track any code project request to handle it separately
@@ -1055,10 +1080,16 @@ AVAILABLE STAGING TOOLS:
             }
           };
 
+          // Use Google provider directly for web search, otherwise use custom provider
+          const modelProvider = (isWebSearchEnabled && modelSupportsWebSearch(modelToUse)) 
+            ? google(modelToUse)
+            : myProvider.languageModel(modelToUse);
+
           // Create new result with wrapped tools and abort signal
           const resultWithFeedback = await streamText({
-            model: myProvider.languageModel(modelToUse), // Always use modelToUse
-            system: enhancedSystemPrompt,
+            model: modelProvider,
+            system: enhancedSystemPrompt + 
+              (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. Use it to find current information when needed." : ""),
             messages: messages.slice(-15).map(sanitizeMessageForAI), // Limit to last 15 messages
             tools: tools,  // Use original tools
             providerOptions: {
@@ -1098,7 +1129,8 @@ AVAILABLE STAGING TOOLS:
               'getTaskStatus',
               'addTask',
               ...(isMemoryEnabled ? (['searchMemories', 'addMemory'] as const) : []),
-            ],
+              ...(isWebSearchEnabled && modelSupportsWebSearch(modelToUse) ? ['google_search'] : []),
+            ] as any,
             // experimental_generateMessageId: generateUUID, // Removed in AI SDK 5.0
             onFinish: async ({ response }) => {
               console.log('[CHAT API] Response messages:', JSON.stringify(response.messages, null, 2));
@@ -1178,6 +1210,7 @@ AVAILABLE STAGING TOOLS:
                           attachments:
                             assistantMessage.attachments ?? [],
                           memories: memories,
+                          sources: null, // Web search sources not implemented in main chat route yet
                           modelId: modelToUse,
                           createdAt: new Date(),
                         },

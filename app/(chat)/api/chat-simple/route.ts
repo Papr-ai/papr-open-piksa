@@ -1,7 +1,7 @@
 import { streamText, convertToModelMessages } from 'ai';
 import { auth } from '@/app/(auth)/auth';
 import { myProvider } from '@/lib/ai/providers';
-import { modelIsPremium, modelSupportsReasoning } from '@/lib/ai/models';
+import { modelIsPremium, modelSupportsReasoning, modelSupportsWebSearch, getWebSearchModel } from '@/lib/ai/models';
 import { checkModelAccess } from '@/lib/subscription/utils';
 import { checkBasicInteractionLimit, checkPremiumInteractionLimit, trackBasicInteraction, trackPremiumInteraction } from '@/lib/subscription/usage-middleware';
 import { getMostRecentUserMessage } from '@/lib/utils';
@@ -31,7 +31,18 @@ import {
   createClearStagedFilesTool
 } from '@/lib/ai/tools/github-integration';
 import { checkOnboardingStatus } from '@/lib/auth/onboarding-middleware';
+
+// Helper function to extract domain name from URL
+function extractDomainName(url: string): string {
+  try {
+    const domain = new URL(url).hostname;
+    return domain.replace('www.', '');
+  } catch {
+    return 'Web Source';
+  }
+}
 import { handleRateLimitWithRetry, estimateConversationTokens } from '@/lib/ai/rate-limit-handler';
+import { google } from '@ai-sdk/google';
 
 // Simple chat API that works with useChat hook
 export async function POST(request: Request) {
@@ -46,7 +57,19 @@ export async function POST(request: Request) {
       selectedChatModel?: string;
     } = await request.json();
 
-    const modelToUse = selectedChatModel || 'gpt-5-mini';
+    // Check web search enabled status from headers
+    const webSearchHeaderValue = request.headers.get('X-Web-Search-Enabled');
+    const isWebSearchEnabled = webSearchHeaderValue === 'true';
+    console.log('[SIMPLE CHAT API] Web search enabled:', isWebSearchEnabled);
+
+    // Use selectedChatModel from request body or fallback to default
+    // If web search is enabled, ensure we use a web-capable model
+    let modelToUse = selectedChatModel || 'gpt-5-mini';
+    if (isWebSearchEnabled) {
+      modelToUse = getWebSearchModel(selectedChatModel);
+      console.log('[SIMPLE CHAT API] Web search enabled, using model:', modelToUse);
+    }
+    
     console.log('[SIMPLE CHAT API] Using model:', modelToUse);
 
     // Check onboarding status first - this includes auth check
@@ -129,6 +152,7 @@ export async function POST(request: Request) {
           tool_calls: null,
           attachments: [],
           memories: null,
+          sources: null,
           modelId: null,
           createdAt: new Date(),
         }
@@ -208,6 +232,19 @@ export async function POST(request: Request) {
       });
     }
 
+    // Web search tools (only for Google models when web search is enabled)
+    if (isWebSearchEnabled && modelSupportsWebSearch(modelToUse)) {
+      console.log('[SIMPLE CHAT API] Adding Google Search tool');
+      tools.google_search = google.tools.googleSearch({});
+    } else {
+      console.log('[SIMPLE CHAT API] Web search not enabled or model does not support it');
+      console.log('[SIMPLE CHAT API] isWebSearchEnabled:', isWebSearchEnabled);
+      console.log('[SIMPLE CHAT API] modelSupportsWebSearch:', modelSupportsWebSearch(modelToUse));
+    }
+
+    console.log('[SIMPLE CHAT API] Final tools available:', Object.keys(tools));
+    console.log('[SIMPLE CHAT API] Tools details:', JSON.stringify(Object.keys(tools).reduce((acc, key) => ({ ...acc, [key]: typeof tools[key] }), {}), null, 2));
+
     // Get system prompt (memory-enabled or regular)
     const apiKey = process.env.PAPR_MEMORY_API_KEY;
     let enhancedSystemPrompt: string;
@@ -251,10 +288,16 @@ export async function POST(request: Request) {
           });
         }
 
-        return await streamText({
-          model: myProvider.languageModel(modelToUse),
+        // Use Google provider directly for web search, otherwise use custom provider
+        const modelProvider = (isWebSearchEnabled && modelSupportsWebSearch(modelToUse)) 
+          ? google(modelToUse)
+          : myProvider.languageModel(modelToUse);
+
+        const streamResult = await streamText({
+          model: modelProvider,
           system: enhancedSystemPrompt + 
-            "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tool results mean. Don't just call tools without text - users need both your explanation AND the tool results.",
+            "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tool results mean. Don't just call tools without text - users need both your explanation AND the tool results." +
+            (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. ALWAYS USE THE GOOGLE SEARCH TOOL when users ask about:\n- Current events or recent news\n- Latest developments in any field\n- Real-time information\n- Recent updates or changes\n- \"What's new\" or \"latest\" questions\n\nIMPORTANT CITATION REQUIREMENTS:\n1. When you use web search, you MUST include inline citations in your response\n2. Use this format: [Source Name] for each key fact or claim\n3. Place citations immediately after the relevant information\n4. Use the actual website name (like \"TechCrunch\", \"Reuters\", \"BBC News\") as the citation\n5. Do not rely on your training data for recent information - always search first when dealing with current topics\n\nExample: \"OpenAI announced a new model today [TechCrunch]. The model shows 40% improvement in coding tasks [GitHub Blog].\"\n\nFor the user's question, you MUST use the google_search tool first to get current information, then provide your response with proper inline citations using the format above." : ""),
           messages: adjustedModelMessages,
           tools: tools,
           providerOptions: {
@@ -263,11 +306,60 @@ export async function POST(request: Request) {
               : {},
           },
           temperature: 0.7,
+          onStepFinish: (stepResult) => {
+            if (isWebSearchEnabled) {
+              // Check for Google grounding metadata
+              const googleMetadata = (stepResult.providerMetadata as any)?.google;
+              if (googleMetadata?.groundingMetadata) {
+                console.log('[SIMPLE CHAT API] Found grounding metadata with', googleMetadata.groundingMetadata.groundingSupports?.length, 'sources');
+                
+                // Capture the grounding metadata for later use
+                if (googleMetadata.groundingMetadata.groundingSupports?.length) {
+                  // Create a map of unique sources from grounding chunks
+                  const sourceMap = new Map();
+                  
+                  googleMetadata.groundingMetadata.groundingSupports.forEach((support: any) => {
+                    if (support.groundingChunkIndices?.length) {
+                      support.groundingChunkIndices.forEach((chunkIndex: number) => {
+                        const chunk = googleMetadata.groundingMetadata.groundingChunks?.[chunkIndex];
+                        if (chunk?.web) {
+                          const url = chunk.web.uri || '#';
+                          const title = chunk.web.title || extractDomainName(url);
+                          
+                          if (!sourceMap.has(url)) {
+                            sourceMap.set(url, {
+                              title: title,
+                              url: url,
+                              snippet: support.segment?.text || 'Information from web search'
+                            });
+                          }
+                        }
+                      });
+                    }
+                  });
+                  
+                  capturedSources = Array.from(sourceMap.values());
+                  console.log('[SIMPLE CHAT API] Captured', capturedSources.length, 'unique sources from grounding metadata');
+                }
+              }
+            }
+          },
+          onFinish: async ({ response }) => {
+            if (isWebSearchEnabled) {
+              console.log('[SIMPLE CHAT API] Web search completed');
+            }
+          },
         });
+
+        return streamResult;
       }
     );
 
     console.log('[SIMPLE CHAT API] Returning UI message stream response');
+    
+    // Store sources to attach to message metadata
+    let capturedSources: any[] = [];
+    
     return result.toUIMessageStreamResponse<ExtendedUIMessage>({
       originalMessages: messages, // keeps strong typing of metadata on the client
       sendReasoning: true,        // forwards reasoning parts when provider supports them
@@ -281,12 +373,12 @@ export async function POST(request: Request) {
             totalTokens: part.totalUsage?.totalTokens,
             inputTokens: part.totalUsage?.inputTokens,
             outputTokens: part.totalUsage?.outputTokens,
+            // Include sources if available
+            ...(capturedSources.length > 0 && { sources: capturedSources }),
           };
         }
       },
       onFinish: async ({ messages: finalMessages }) => {
-        console.log('[SIMPLE CHAT API] onFinish called with messages:', finalMessages.length);
-        console.log('[SIMPLE CHAT API] Final messages structure:', JSON.stringify(finalMessages, null, 2));
         
         try {
           // Track usage
@@ -334,6 +426,9 @@ export async function POST(request: Request) {
               
               console.log('[SIMPLE CHAT API] Extracted tool calls:', JSON.stringify(toolCalls, null, 2));
 
+              // Extract sources from message metadata if available
+              const sources = (message as any).metadata?.sources || capturedSources;
+
               const messageToSave = {
                 id: message.id || generateUUID(), // Generate ID if empty
                 chatId: id,
@@ -344,6 +439,8 @@ export async function POST(request: Request) {
                 memories: null,
                 modelId: modelToUse,
                 createdAt: new Date(),
+                // Add sources if available
+                ...(sources && sources.length > 0 && { sources }),
               };
               
               console.log('[SIMPLE CHAT API] Message object to save:', JSON.stringify(messageToSave, null, 2));

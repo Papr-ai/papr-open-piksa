@@ -44,7 +44,11 @@ export function UsageWarning() {
     }
   };
 
-  const dismissWarning = (type: string) => {
+  const dismissWarning = (type: string, percentage: number) => {
+    // Don't allow dismissal if user is at 100% usage
+    if (percentage >= 100) {
+      return;
+    }
     setDismissed(prev => [...prev, type]);
   };
 
@@ -75,14 +79,16 @@ export function UsageWarning() {
                   </Button>
                 </Link>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => dismissWarning(warning.type)}
-                className="text-xs text-orange-600 hover:text-orange-800"
-              >
-                ✕
-              </Button>
+              {warning.percentage < 100 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => dismissWarning(warning.type, warning.percentage)}
+                  className="text-xs text-orange-600 hover:text-orange-800"
+                >
+                  ✕
+                </Button>
+              )}
             </div>
           </AlertDescription>
         </Alert>
@@ -133,6 +139,14 @@ export function UsageOverviewCard() {
     return 'bg-green-500';
   };
 
+  const getProgressStyle = (percentage: number) => {
+    const color = getProgressColor(percentage);
+    if (color === 'bg-green-500') {
+      return { backgroundColor: '#0161E0' }; // Use your brand blue for healthy usage
+    }
+    return {}; // Use Tailwind classes for other colors
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -150,7 +164,10 @@ export function UsageOverviewCard() {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
               className={`h-2 rounded-full ${getProgressColor(usageData.basicInteractions.percentage)}`}
-              style={{ width: `${Math.min(usageData.basicInteractions.percentage, 100)}%` }}
+              style={{ 
+                width: `${Math.min(usageData.basicInteractions.percentage, 100)}%`,
+                ...getProgressStyle(usageData.basicInteractions.percentage)
+              }}
             />
           </div>
         </div>
@@ -163,7 +180,10 @@ export function UsageOverviewCard() {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
               className={`h-2 rounded-full ${getProgressColor(usageData.premiumInteractions.percentage)}`}
-              style={{ width: `${Math.min(usageData.premiumInteractions.percentage, 100)}%` }}
+              style={{ 
+                width: `${Math.min(usageData.premiumInteractions.percentage, 100)}%`,
+                ...getProgressStyle(usageData.premiumInteractions.percentage)
+              }}
             />
           </div>
         </div>
@@ -176,7 +196,10 @@ export function UsageOverviewCard() {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
               className={`h-2 rounded-full ${getProgressColor(usageData.memoriesAdded.percentage)}`}
-              style={{ width: `${Math.min(usageData.memoriesAdded.percentage, 100)}%` }}
+              style={{ 
+                width: `${Math.min(usageData.memoriesAdded.percentage, 100)}%`,
+                ...getProgressStyle(usageData.memoriesAdded.percentage)
+              }}
             />
           </div>
         </div>
@@ -189,7 +212,10 @@ export function UsageOverviewCard() {
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
               className={`h-2 rounded-full ${getProgressColor(usageData.memoriesSearched.percentage)}`}
-              style={{ width: `${Math.min(usageData.memoriesSearched.percentage, 100)}%` }}
+              style={{ 
+                width: `${Math.min(usageData.memoriesSearched.percentage, 100)}%`,
+                ...getProgressStyle(usageData.memoriesSearched.percentage)
+              }}
             />
           </div>
         </div>

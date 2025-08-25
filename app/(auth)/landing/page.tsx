@@ -138,15 +138,15 @@ function ModelSelectorSimulation() {
     
     // OpenAI Models
     {
-      id: 'gpt-4.1',
-      name: 'ChatGPT 4.1',
+      id: 'gpt-5',
+      name: 'GPT 5',
       description: 'OpenAI\'s flagship model',
       supportsReasoning: false,
       group: 'OpenAI',
     },
     {
-      id: 'gpt-4.1-mini',
-      name: 'ChatGPT 4.1 Mini',
+      id: 'gpt-5-mini',
+      name: 'GPT 5 Mini',
       description: 'Smaller, faster OpenAI model',
       supportsReasoning: false,
       group: 'OpenAI',

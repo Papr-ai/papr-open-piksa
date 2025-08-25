@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import type { SubscriptionPlan } from '@/lib/subscription/types';
 
@@ -14,7 +14,7 @@ interface SubscriptionStatus {
   error?: string;
 }
 
-export function useSubscription(): SubscriptionStatus {
+export function useSubscription(syncWithStripe: boolean = false): SubscriptionStatus {
   const { data: session } = useSession();
   const [subscriptionData, setSubscriptionData] = useState<Omit<SubscriptionStatus, 'loading' | 'error'>>({
     subscriptionStatus: 'free',
@@ -23,6 +23,35 @@ export function useSubscription(): SubscriptionStatus {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
+  const syncAttemptedRef = useRef(false);
+
+  const fetchSubscriptionStatus = async (shouldSync: boolean = false) => {
+    try {
+      // If we should sync, first call the sync endpoint to ensure data is fresh
+      if (shouldSync && !syncAttemptedRef.current) {
+        syncAttemptedRef.current = true;
+        try {
+          await fetch('/api/subscription/sync', { method: 'POST' });
+          console.log('Subscription synced with Stripe');
+        } catch (syncError) {
+          console.warn('Sync failed, continuing with cached data:', syncError);
+        }
+      }
+
+      const res = await fetch('/api/subscription/status');
+      if (!res.ok) {
+        throw new Error('Failed to fetch subscription status');
+      }
+      const data = await res.json();
+      setSubscriptionData(data);
+      setError(undefined);
+    } catch (err) {
+      console.error('Error fetching subscription status:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!session?.user) {
@@ -30,23 +59,8 @@ export function useSubscription(): SubscriptionStatus {
       return;
     }
 
-    fetch('/api/subscription/status')
-      .then(async (res) => {
-        if (!res.ok) {
-          throw new Error('Failed to fetch subscription status');
-        }
-        const data = await res.json();
-        setSubscriptionData(data);
-        setError(undefined);
-      })
-      .catch((err) => {
-        console.error('Error fetching subscription status:', err);
-        setError(err.message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [session]);
+    fetchSubscriptionStatus(syncWithStripe);
+  }, [session, syncWithStripe]);
 
   return {
     ...subscriptionData,

@@ -24,6 +24,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import equal from 'fast-deep-equal';
 import { MemoryToggle } from '@/components/memory/memory-toggle';
+import { WebSearchToggle } from '@/components/message/web-search-toggle';
 import { ModelSelector } from '@/components/message/model-selector';
 import { VisibilitySelector } from '@/components/message/visibility-selector';
 import type { VisibilityType } from '@/components/message/visibility-selector';
@@ -90,6 +91,9 @@ function PureMultimodalInput({
 
   // Track memory enabled state
   const [isMemoryEnabled, setIsMemoryEnabled] = useState(true);
+  
+  // Track web search enabled state
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -115,9 +119,14 @@ function PureMultimodalInput({
 
   // Initialize from localStorage after mount
   useEffect(() => {
-    const storedValue = localStorage.getItem('memory-enabled');
-    if (storedValue !== null) {
-      setIsMemoryEnabled(storedValue === 'true');
+    const storedMemoryValue = localStorage.getItem('memory-enabled');
+    if (storedMemoryValue !== null) {
+      setIsMemoryEnabled(storedMemoryValue === 'true');
+    }
+
+    const storedWebSearchValue = localStorage.getItem('web-search-enabled');
+    if (storedWebSearchValue !== null) {
+      setIsWebSearchEnabled(storedWebSearchValue === 'true');
     }
 
     // Add event listener for memory toggle changes
@@ -126,10 +135,18 @@ function PureMultimodalInput({
       setIsMemoryEnabled(event.detail.enabled);
     };
 
+    // Add event listener for web search toggle changes
+    const handleWebSearchToggle = (event: CustomEvent) => {
+      console.log('[MultimodalInput] Web search toggle changed:', event.detail.enabled);
+      setIsWebSearchEnabled(event.detail.enabled);
+    };
+
     window.addEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+    window.addEventListener('web-search-toggle-changed', handleWebSearchToggle as EventListener);
 
     return () => {
       window.removeEventListener('memory-toggle-changed', handleMemoryToggle as EventListener);
+      window.removeEventListener('web-search-toggle-changed', handleWebSearchToggle as EventListener);
     };
   }, []);
 
@@ -166,9 +183,10 @@ function PureMultimodalInput({
 
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
-    // Prepare custom headers with memory and context info
+    // Prepare custom headers with memory, web search and context info
     const customHeaders: Record<string, string> = {
       'X-Memory-Enabled': isMemoryEnabled ? 'true' : 'false',
+      'X-Web-Search-Enabled': isWebSearchEnabled ? 'true' : 'false',
       'X-Context': selectedContexts.length > 0 ? JSON.stringify(selectedContexts) : '',
       'X-Interaction-Mode': interactionMode,
     };
@@ -193,6 +211,7 @@ function PureMultimodalInput({
     width,
     chatId,
     isMemoryEnabled,
+    isWebSearchEnabled,
     selectedContexts,
     clearContexts,
     interactionMode,
@@ -293,6 +312,7 @@ function PureMultimodalInput({
           <div className="flex items-center gap-2">
             <ModelSelector selectedModelId={selectedModelId} className="h-8" />
             <MemoryToggle />
+            <WebSearchToggle />
           </div>
           <div className="flex flex-row pb-2 justify-start">
             <div className="flex flex-row ml-3 mr-2 justify-start">

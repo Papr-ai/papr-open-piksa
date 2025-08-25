@@ -101,6 +101,7 @@ export default async function Page({ params, searchParams }: PageProps) {
           (message.attachments as Array<FileUIPart>) ?? [],
         tool_calls: message.tool_calls as any,
         memories: message.memories as any, // Include memories from the message
+        sources: message.sources as any, // Include sources from the message
         modelId: message.modelId, // Include model ID
       };
     });

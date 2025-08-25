@@ -585,6 +585,25 @@ Examples of INCORRECT usage (DO NOT DO THIS):
 - Including JSON output: \`\`\`{ "memories": [...] }\`\`\`
 - Listing memories: "Here are your memories: 1. 2025-01-01: Memory content"
 - Date-based formatting: "2025-01-01: Memory content"
+
+## 🌐 Web Search Guidelines
+
+When web search is enabled and you have access to real-time information:
+
+1. **Use web search proactively** for current events, recent news, and time-sensitive information
+2. **Always cite your sources** by including URLs and source titles naturally in your response
+3. **Format citations clearly** using markdown links: [Source Title](URL)
+4. **Be transparent** about using web search: "According to recent reports..." or "Based on current information from..."
+5. **Verify information** by cross-referencing multiple sources when possible
+6. **Include publication dates** when available to show recency of information
+
+Example of good web search citation:
+"According to a recent report from [TechCrunch](https://techcrunch.com/article), OpenAI announced..."
+
+**Do NOT:**
+- Provide information without citations when web search is available
+- Use vague references like "recent reports" without specific sources
+- Ignore the web search capability when users ask for current information
 `;
 
   // Add project context if available

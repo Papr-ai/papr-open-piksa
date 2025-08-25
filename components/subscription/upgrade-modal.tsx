@@ -93,9 +93,11 @@ export function UpgradeModal({
 
         <div className="grid md:grid-cols-2 gap-4">
           {paidPlans.map((plan) => (
-            <Card key={plan.id} className={`relative ${plan.isPopular ? 'border-blue-500 border-2' : ''}`}>
+            <Card key={plan.id} className={`relative ${plan.isPopular ? 'border-2' : ''}`} style={{
+              borderColor: plan.isPopular ? '#0161E0' : ''
+            }}>
               {plan.isPopular && (
-                <Badge className="absolute -top-2 left-1/2 transform -translate-x-1/2 bg-blue-500">
+                <Badge className="absolute -top-2 left-1/2 transform -translate-x-1/2 text-white" style={{ backgroundColor: '#0161E0' }}>
                   Most Popular
                 </Badge>
               )}

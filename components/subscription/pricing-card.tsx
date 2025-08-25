@@ -11,15 +11,21 @@ interface PricingCardProps {
   plan: SubscriptionPlan;
   isPopular?: boolean;
   onSubscribe: (planId: string) => void;
+  onManageSubscription?: () => void;
   isCurrentPlan?: boolean;
+  hasActiveSubscription?: boolean;
+  renewalDate?: string;
   loading?: boolean;
 }
 
 export function PricingCard({ 
   plan, 
   isPopular, 
-  onSubscribe, 
+  onSubscribe,
+  onManageSubscription,
   isCurrentPlan,
+  hasActiveSubscription,
+  renewalDate,
   loading 
 }: PricingCardProps) {
   const formatFeatureValue = (value: number) => {
@@ -29,15 +35,27 @@ export function PricingCard({
   };
 
   return (
-    <Card className={`relative ${isPopular ? 'border-blue-500 shadow-lg' : ''} ${isCurrentPlan ? 'bg-muted/50' : ''}`}>
-      {isPopular && (
+    <Card className={`relative shadow-lg`} style={{
+      borderColor: isCurrentPlan || isPopular ? '#0161E0' : '',
+      backgroundColor: isCurrentPlan ? '#0161E0' + '10' : '' // 10% opacity of your brand blue
+    }}>
+      {isCurrentPlan && (
         <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-          <Badge className="bg-blue-500 text-white">Most Popular</Badge>
+          <Badge className="text-white" style={{ backgroundColor: '#0161E0' }}>Current Plan</Badge>
+        </div>
+      )}
+      {isPopular && !isCurrentPlan && (
+        <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+          <Badge className="text-white" style={{ backgroundColor: '#0161E0' }}>Most Popular</Badge>
         </div>
       )}
       
       <CardHeader className="text-center">
-        <CardTitle className="text-2xl">{plan.name}</CardTitle>
+        <CardTitle className="text-2xl" style={{
+          color: isCurrentPlan ? '#0161E0' : ''
+        }}>
+          {plan.name}
+        </CardTitle>
         <CardDescription>{plan.description}</CardDescription>
         
         <div className="mt-4">
@@ -47,18 +65,30 @@ export function PricingCard({
               <span className="text-muted-foreground ml-2">/{plan.interval}</span>
             )}
           </div>
+          {isCurrentPlan && renewalDate && (
+            <p className="text-sm text-muted-foreground mt-2">
+              Renews on {new Date(renewalDate).toLocaleDateString()}
+            </p>
+          )}
         </div>
       </CardHeader>
       
       <CardContent>
         <Button 
-          onClick={() => onSubscribe(plan.id)}
-          disabled={isCurrentPlan || loading || plan.id === 'free'}
+          onClick={() => {
+            if (isCurrentPlan && hasActiveSubscription && onManageSubscription) {
+              onManageSubscription();
+            } else {
+              onSubscribe(plan.id);
+            }
+          }}
+          disabled={loading || (plan.id === 'free') || (isCurrentPlan && !hasActiveSubscription)}
           className="w-full mb-6"
-          variant={isCurrentPlan ? 'secondary' : 'default'}
+          variant={isCurrentPlan && hasActiveSubscription ? 'outline' : 'default'}
         >
           {loading ? 'Loading...' : 
-           isCurrentPlan ? 'Current Plan' : 
+           isCurrentPlan && hasActiveSubscription ? 'Manage Subscription' :
+           isCurrentPlan ? 'Current Plan' :
            plan.id === 'free' ? 'Free Forever' : 
            'Subscribe'}
         </Button>
@@ -68,7 +98,7 @@ export function PricingCard({
           
           <div className="space-y-2">
             <div className="flex items-center gap-2">
-              <div className="text-green-500 flex-shrink-0">
+              <div className="flex-shrink-0" style={{ color: '#0161E0' }}>
                 <CheckCircleFillIcon size={16} />
               </div>
               <span className="text-sm">
@@ -77,7 +107,7 @@ export function PricingCard({
             </div>
             
             <div className="flex items-center gap-2">
-              <div className="text-green-500 flex-shrink-0">
+              <div className="flex-shrink-0" style={{ color: '#0161E0' }}>
                 <CheckCircleFillIcon size={16} />
               </div>
               <span className="text-sm">
@@ -86,7 +116,7 @@ export function PricingCard({
             </div>
             
             <div className="flex items-center gap-2">
-              <div className="text-green-500 flex-shrink-0">
+              <div className="flex-shrink-0" style={{ color: '#0161E0' }}>
                 <CheckCircleFillIcon size={16} />
               </div>
               <span className="text-sm">
@@ -98,7 +128,7 @@ export function PricingCard({
             </div>
             
             <div className="flex items-center gap-2">
-              <div className="text-green-500 flex-shrink-0">
+              <div className="flex-shrink-0" style={{ color: '#0161E0' }}>
                 <CheckCircleFillIcon size={16} />
               </div>
               <span className="text-sm">
@@ -107,7 +137,7 @@ export function PricingCard({
             </div>
             
             <div className="flex items-center gap-2">
-              <div className="text-green-500 flex-shrink-0">
+              <div className="flex-shrink-0" style={{ color: '#0161E0' }}>
                 <CheckCircleFillIcon size={16} />
               </div>
               <span className="text-sm">

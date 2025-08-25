@@ -7,13 +7,14 @@ interface ChatModel {
   supportsReasoning: boolean;
   group: 'OpenAI' | 'Groq' | 'Anthropic' | 'Google';
   isPremium?: boolean;
+  supportsWebSearch?: boolean;
 }
 
 export const chatModels: Array<ChatModel> = [
   // OpenAI Models
   {
     id: 'gpt-5',
-    name: 'ChatGPT 5',
+    name: 'GPT 5',
     description: 'OpenAI\'s flagship model',
     supportsReasoning: true,
     isPremium: false, // Keep GPT-5 free
@@ -21,7 +22,7 @@ export const chatModels: Array<ChatModel> = [
   },
   {
     id: 'gpt-5-mini',
-    name: 'ChatGPT 5 Mini',
+    name: 'GPT 5 Mini',
     description: 'Smaller, faster OpenAI model',
     supportsReasoning: true,
     isPremium: false, // Keep GPT-5-mini free
@@ -105,6 +106,7 @@ export const chatModels: Array<ChatModel> = [
     supportsReasoning: false,
     isPremium: false, // Keep free
     group: 'Google',
+    supportsWebSearch: true,
   },
   {
     id: 'gemini-2.5-flash-lite',
@@ -113,6 +115,7 @@ export const chatModels: Array<ChatModel> = [
     supportsReasoning: false,
     isPremium: false, // Keep free
     group: 'Google',
+    supportsWebSearch: true,
   },
   {
     id: 'gemini-2.5-pro',
@@ -121,6 +124,7 @@ export const chatModels: Array<ChatModel> = [
     supportsReasoning: true,
     isPremium: true,
     group: 'Google',
+    supportsWebSearch: true,
   },
 ];
 
@@ -132,4 +136,20 @@ export function modelSupportsReasoning(modelId: string): boolean {
 export function modelIsPremium(modelId: string): boolean {
   const model = chatModels.find(model => model.id === modelId);
   return model?.isPremium || false;
+}
+
+export function modelSupportsWebSearch(modelId: string): boolean {
+  const model = chatModels.find(model => model.id === modelId);
+  return model?.supportsWebSearch || false;
+}
+
+// Get the best web search model based on user preferences and access
+export function getWebSearchModel(preferredModel?: string): string {
+  // If a specific model is preferred and it supports web search, use it
+  if (preferredModel && modelSupportsWebSearch(preferredModel)) {
+    return preferredModel;
+  }
+  
+  // Otherwise, default to Gemini 2.5 Flash (free and supports web search)
+  return 'gemini-2.5-flash';
 }

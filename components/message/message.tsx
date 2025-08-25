@@ -103,6 +103,8 @@ import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
+import { WebSearchResults } from './web-search-results';
+import { SearchSources } from './search-sources';
 import type { UseChatHelpers } from '@ai-sdk/react';
 
 // Helper function to extract text content from UIMessage parts
@@ -1133,6 +1135,16 @@ const PurePreviewMessage = ({
 
                 {/* Render ChatMemoryResults once per assistant message, outside the map function */}
                 {message.role === 'assistant' && <ChatMemoryResults message={message as any} />}
+                
+                {/* Render WebSearchResults if grounding metadata is available */}
+                {message.role === 'assistant' && (message as any).groundingMetadata && (
+                  <WebSearchResults groundingMetadata={(message as any).groundingMetadata} />
+                )}
+                
+                {/* Render SearchSources if sources are available */}
+                {message.role === 'assistant' && ((message as any).metadata?.sources || (message as any).sources) && (
+                  <SearchSources sources={(message as any).metadata?.sources || (message as any).sources} />
+                )}
 
                 {!isReadonly && message.role === 'assistant' && (
                   <MessageActions
