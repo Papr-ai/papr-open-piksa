@@ -82,7 +82,7 @@ export function WebSearchResults({ groundingMetadata }: WebSearchResultsProps) {
                   key={index}
                   className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 rounded-md"
                 >
-                  "{query}"
+                  &ldquo;{query}&rdquo;
                 </span>
               ))}
             </div>
@@ -124,7 +124,7 @@ export function WebSearchResults({ groundingMetadata }: WebSearchResultsProps) {
                       className="text-xs bg-white dark:bg-gray-900/50 p-2 rounded border"
                     >
                       <div className="font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        "{support.segment.text}"
+                        &ldquo;{support.segment.text}&rdquo;
                       </div>
                       {support.confidenceScores && support.confidenceScores.length > 0 && (
                         <div className="text-gray-500 dark:text-gray-400">
