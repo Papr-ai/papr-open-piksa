@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 interface OnboardingGuardProps {
   children: React.ReactNode;
@@ -13,10 +13,11 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [isChecking, setIsChecking] = useState(true);
+  const hasCheckedRef = useRef(false);
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
-      // Skip check for certain paths
+      // Skip check for certain paths - always allow these paths
       if (
         pathname === '/onboarding' ||
         pathname === '/login' ||
@@ -25,17 +26,29 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
         pathname.startsWith('/api/')
       ) {
         setIsChecking(false);
+        hasCheckedRef.current = false; // Reset for allowed paths
         return;
       }
 
+      // Still loading session
       if (status === 'loading') {
-        return; // Still loading session
+        return;
       }
 
+      // Not authenticated - no need to check onboarding
       if (!session?.user) {
         setIsChecking(false);
-        return; // Not authenticated
+        hasCheckedRef.current = false;
+        return;
       }
+
+      // Prevent duplicate checks
+      if (hasCheckedRef.current) {
+        setIsChecking(false);
+        return;
+      }
+
+      hasCheckedRef.current = true;
 
       try {
         // Check if user has completed onboarding

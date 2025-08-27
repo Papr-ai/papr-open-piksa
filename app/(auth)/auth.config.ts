@@ -13,10 +13,11 @@ export const authConfig = {
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
       const isLoggedIn = !!auth?.user;
-      const isOnChat = nextUrl.pathname.startsWith('/') && !nextUrl.pathname.startsWith('/subscription') && !nextUrl.pathname.startsWith('/usage') && !nextUrl.pathname.startsWith('/memories') && !nextUrl.pathname.startsWith('/login') && !nextUrl.pathname.startsWith('/register') && !nextUrl.pathname.startsWith('/landing');
+      const isOnChat = nextUrl.pathname.startsWith('/') && !nextUrl.pathname.startsWith('/subscription') && !nextUrl.pathname.startsWith('/usage') && !nextUrl.pathname.startsWith('/memories') && !nextUrl.pathname.startsWith('/login') && !nextUrl.pathname.startsWith('/register') && !nextUrl.pathname.startsWith('/landing') && !nextUrl.pathname.startsWith('/onboarding');
       const isOnRegister = nextUrl.pathname.startsWith('/register');
       const isOnLogin = nextUrl.pathname.startsWith('/login');
       const isOnLanding = nextUrl.pathname.startsWith('/landing');
+      const isOnOnboarding = nextUrl.pathname.startsWith('/onboarding');
       const isOnSubscription = nextUrl.pathname.startsWith('/subscription');
       const isOnUsage = nextUrl.pathname.startsWith('/usage');
       const isOnMemories = nextUrl.pathname.startsWith('/memories');
@@ -25,8 +26,8 @@ export const authConfig = {
         return Response.redirect(new URL('/', nextUrl as unknown as URL));
       }
 
-      if (isOnRegister || isOnLogin || isOnLanding) {
-        return true; // Always allow access to register, login, and landing pages
+      if (isOnRegister || isOnLogin || isOnLanding || isOnOnboarding) {
+        return true; // Always allow access to register, login, landing, and onboarding pages
       }
 
       // Protected routes that require authentication
