@@ -90,6 +90,7 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
 
   // Process memories to ensure consistent format
   const processMemories = (rawMemories: any[]): MemoryItem[] => {
+    console.log('[MEMORY] Processing raw memories:', JSON.stringify(rawMemories.slice(0, 2), null, 2));
     return rawMemories.map(memory => {
       // Handle memory structure differences
       const processedMemory: MemoryItem = {
@@ -116,12 +117,16 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
           memory.hierarchical_structures || memory.hierarchical_structure;
       }
       
-      // Handle category - either at top level or in customMetadata
+      // Handle category - check multiple possible locations - bad code, need to fix
       if (memory.category) {
         processedMemory.category = memory.category;
       } else if (memory.customMetadata?.category) {
         processedMemory.category = memory.customMetadata.category;
         processedMemory.customMetadata = { category: memory.customMetadata.category };
+      } else if (memory.metadata?.customMetadata?.category) {
+        // Category is nested in metadata.customMetadata from search results
+        processedMemory.category = memory.metadata.customMetadata.category;
+        processedMemory.customMetadata = { category: memory.metadata.customMetadata.category };
       }
       
       return processedMemory;
