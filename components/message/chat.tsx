@@ -237,6 +237,11 @@ export function Chat({
   const reload = useCallback(async (options?: any) => {
     return await regenerate(options);
   }, [regenerate]);
+
+  // Voice state change handler
+  const handleVoiceStateChange = useCallback((state: any) => {
+    setVoiceState(state);
+  }, []);
   // Fetch and set the chat title once when assistant's first message arrives
   useEffect(() => {
     if (messages.length >= 2 && !fetchedTitleRef.current) {
@@ -403,9 +408,7 @@ export function Chat({
               append={append}
               selectedModelId={selectedChatModel}
               selectedVisibilityType={selectedVisibilityType}
-              onVoiceStateChange={useCallback((state: any) => {
-                setVoiceState(state);
-              }, [])}
+              onVoiceStateChange={handleVoiceStateChange}
             />
           )}
         </form>

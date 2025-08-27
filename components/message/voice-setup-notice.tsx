@@ -15,7 +15,7 @@ export function VoiceSetupNotice() {
           Voice Chat Setup Required
         </CardTitle>
         <CardDescription>
-          OpenAI's Realtime API requires additional setup for browser-based applications
+          OpenAI&apos;s Realtime API requires additional setup for browser-based applications
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -23,7 +23,7 @@ export function VoiceSetupNotice() {
           <Info className="h-4 w-4" />
           <AlertDescription>
             Browser WebSocket connections cannot send the <code>Authorization: Bearer</code> headers 
-            required by OpenAI's Realtime API. This is a browser security limitation.
+            required by OpenAI&apos;s Realtime API. This is a browser security limitation.
           </AlertDescription>
         </Alert>
 
@@ -38,14 +38,14 @@ export function VoiceSetupNotice() {
               <h5 className="font-medium">Option 1: WebSocket Proxy Server</h5>
               <p className="text-sm text-muted-foreground mt-1">
                 Create a dedicated WebSocket server (Node.js/Python) that proxies connections 
-                to OpenAI's API with proper authentication headers.
+                to OpenAI&apos;s API with proper authentication headers.
               </p>
             </div>
             
             <div className="p-3 border rounded-lg">
               <h5 className="font-medium">Option 2: Server-Side Voice Processing</h5>
               <p className="text-sm text-muted-foreground mt-1">
-                Use OpenAI's standard API with separate speech-to-text and text-to-speech endpoints,
+                Use OpenAI&apos;s standard API with separate speech-to-text and text-to-speech endpoints,
                 processing audio on your server.
               </p>
             </div>

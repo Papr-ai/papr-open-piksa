@@ -143,11 +143,11 @@ export async function processUnsummarizedChats(
           continue;
         }
 
-        // Convert to UIMessage format
+        // Convert to UIMessage format with proper typing
         const uiMessages = messages.map(msg => ({
           id: msg.id,
           role: msg.role as 'user' | 'assistant' | 'system',
-          parts: msg.parts,
+          parts: msg.parts as any, // Database parts are stored as JSON, cast to match UIMessage parts array
         }));
 
         console.log('[Chat History Context] Processing most recent unsummarized chat:', {
@@ -173,7 +173,7 @@ export async function processUnsummarizedChats(
       } catch (error) {
         console.error('[Chat History Context] Error processing individual chat:', {
           chatId: chatInfo.id,
-          error: error.message,
+          error: error instanceof Error ? error.message : String(error),
         });
       }
     }

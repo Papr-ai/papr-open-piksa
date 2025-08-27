@@ -218,7 +218,6 @@ function extractMessageContent(message: UIMessage): string {
         if (typeof part === 'object') {
           if ('text' in part) return part.text;
           if ('content' in part) return part.content;
-          if (part.type === 'text' && 'text' in part) return (part as any).text;
           return JSON.stringify(part);
         }
         return '';
