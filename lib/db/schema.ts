@@ -60,6 +60,9 @@ export const chat = pgTable('Chat', {
   visibility: varchar('visibility', { enum: ['public', 'private'] })
     .notNull()
     .default('private'),
+  oneSentenceSummary: text('oneSentenceSummary'),
+  fullSummary: text('fullSummary'),
+  insights: jsonb('insights'),
 });
 
 export type Chat = InferSelectModel<typeof chat>;
@@ -127,6 +130,7 @@ export const message = pgTable('Message_v2', {
   memories: jsonb('memories').default(null),
   sources: jsonb('sources').default(null),
   modelId: varchar('modelId'),
+  memoryDecision: jsonb('memoryDecision').default(null),
   createdAt: timestamp('createdAt').notNull(),
 });
 

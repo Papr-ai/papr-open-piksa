@@ -284,6 +284,8 @@ export function createMemoryService(apiKey: string) {
         }
       });
 
+      console.log('[Memory DEBUG] Search response received:', JSON.stringify(response, null, 2));
+
       // Handle different response formats
       let memories: SearchResponse.Data.Memory[] = [];
       
@@ -317,7 +319,14 @@ export function createMemoryService(apiKey: string) {
 
       console.log(`[Memory] Found ${formattedMemories.length} memories`);
       return formattedMemories;
-    } catch (error) {
+    } catch (error: any) {
+      // Handle 404 as a normal "no memories found" case
+      if (error?.status === 404 || error?.message?.includes('404') || error?.message?.includes('No relevant items found')) {
+        console.log('[Memory] No relevant memories found (404)');
+        return [];
+      }
+      
+      // Log other errors as actual problems
       console.error('[Memory] Error searching memories:', error);
       return [];
     }

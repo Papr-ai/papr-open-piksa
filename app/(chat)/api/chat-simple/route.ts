@@ -1,4 +1,4 @@
-import { streamText, convertToModelMessages } from 'ai';
+import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { auth } from '@/app/(auth)/auth';
 import { myProvider } from '@/lib/ai/providers';
 import { modelIsPremium, modelSupportsReasoning, modelSupportsWebSearch, getWebSearchModel } from '@/lib/ai/models';
@@ -11,7 +11,9 @@ import { generateTitleFromUserMessage } from '../../actions';
 import type { ExtendedUIMessage } from '@/lib/types';
 import { searchMemories } from '@/lib/ai/tools/search-memories';
 import { addMemory } from '@/lib/ai/tools/add-memory';
-import { createMemoryEnabledSystemPrompt } from '@/lib/ai/memory/middleware';
+import { createMemoryEnabledSystemPrompt, intelligentlyStoreMessageInMemory } from '@/lib/ai/memory/middleware';
+import { shouldAnalyzeConversation, processConversationCompletion } from '@/lib/ai/conversation-insights';
+import { handleNewChatCreation } from '@/lib/ai/chat-history-context';
 import { systemPrompt } from '@/lib/ai/prompts';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { createDocument } from '@/lib/ai/tools/create-document';
@@ -116,7 +118,9 @@ export async function POST(request: Request) {
     // Check memory enabled status from headers
     const memoryHeaderValue = request.headers.get('X-Memory-Enabled');
     const isMemoryEnabled = memoryHeaderValue === 'true';
+    console.log('[SIMPLE CHAT API] Memory header value:', memoryHeaderValue);
     console.log('[SIMPLE CHAT API] Memory enabled:', isMemoryEnabled);
+    console.log('[SIMPLE CHAT API] All headers:', Object.fromEntries(request.headers.entries()));
 
     const userMessage = getMostRecentUserMessage(messages);
     if (!userMessage) {
@@ -154,6 +158,7 @@ export async function POST(request: Request) {
           memories: null,
           sources: null,
           modelId: null,
+          memoryDecision: null, // Will be updated later with actual decision
           createdAt: new Date(),
         }
       ]
@@ -244,23 +249,45 @@ export async function POST(request: Request) {
 
     console.log('[SIMPLE CHAT API] Final tools available:', Object.keys(tools));
     console.log('[SIMPLE CHAT API] Tools details:', JSON.stringify(Object.keys(tools).reduce((acc, key) => ({ ...acc, [key]: typeof tools[key] }), {}), null, 2));
+    
 
     // Get system prompt (memory-enabled or regular)
     const apiKey = process.env.PAPR_MEMORY_API_KEY;
     let enhancedSystemPrompt: string;
     
-    if (isMemoryEnabled && apiKey) {
-      const memorySystemPromptGenerator = createMemoryEnabledSystemPrompt({ apiKey });
-      enhancedSystemPrompt = await memorySystemPromptGenerator({
-        selectedChatModel: modelToUse,
-        userId: session.user!.id,
-        messages: messages,
-      });
-      console.log('[SIMPLE CHAT API] Using memory-enabled system prompt');
-    } else {
-      enhancedSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
-      console.log('[SIMPLE CHAT API] Using standard system prompt');
+    // Use system prompt with memory instructions if memory is enabled
+    const baseSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
+    
+    // Get chat history context for newly created chats only
+    let chatHistoryContext = '';
+    if (!chat && isMemoryEnabled && apiKey && session?.user?.id) {
+      console.log('[SIMPLE CHAT API] 🆕 New chat being created, loading chat history context');
+      chatHistoryContext = await handleNewChatCreation(session.user.id, apiKey);
     }
+    
+    enhancedSystemPrompt = isMemoryEnabled 
+      ? `${baseSystemPrompt}\n\n
+MEMORY TOOL INSTRUCTIONS:
+You have access to memory tools to help maintain context and remember important information about the user.
+
+**searchMemories tool:** Use when you need to recall past conversations or user information.
+
+**addMemory tool - USE THIS NATURALLY:**
+- Save important information about the user as you discover it during conversation
+- Save user preferences, goals, projects, and interests  
+- Save key facts about their work, tools they use, or problems they're solving
+- Think of it as taking notes during a conversation - save what would be useful to remember later
+
+**When to use addMemory:**
+- When the user shares their goals or projects
+- When you learn about their preferences or working style
+- When they mention their profession, interests, or expertise
+- When they share important context about their work
+
+Use these tools naturally as part of helping the user - you don't need to announce when you're using them.${chatHistoryContext}`
+      : baseSystemPrompt;
+    
+    console.log(`[SIMPLE CHAT API] Using ${isMemoryEnabled ? 'memory-enabled' : 'standard'} system prompt`);
 
     // Use rate limit handler with automatic retry
     const result = await handleRateLimitWithRetry(
@@ -293,13 +320,37 @@ export async function POST(request: Request) {
           ? google(modelToUse)
           : myProvider.languageModel(modelToUse);
 
-        const streamResult = await streamText({
+                const streamResult = await streamText({
           model: modelProvider,
+          stopWhen: [stepCountIs(5)], // Allow up to 5 steps for multi-step reasoning
           system: enhancedSystemPrompt + 
             "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tool results mean. Don't just call tools without text - users need both your explanation AND the tool results." +
             (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. ALWAYS USE THE GOOGLE SEARCH TOOL when users ask about:\n- Current events or recent news\n- Latest developments in any field\n- Real-time information\n- Recent updates or changes\n- \"What's new\" or \"latest\" questions\n\nIMPORTANT CITATION REQUIREMENTS:\n1. When you use web search, you MUST include inline citations in your response\n2. Use this format: [Source Name] for each key fact or claim\n3. Place citations immediately after the relevant information\n4. Use the actual website name (like \"TechCrunch\", \"Reuters\", \"BBC News\") as the citation\n5. Do not rely on your training data for recent information - always search first when dealing with current topics\n\nExample: \"OpenAI announced a new model today [TechCrunch]. The model shows 40% improvement in coding tasks [GitHub Blog].\"\n\nFor the user's question, you MUST use the google_search tool first to get current information, then provide your response with proper inline citations using the format above." : ""),
           messages: adjustedModelMessages,
           tools: tools,
+          experimental_activeTools: [
+            'getWeather',
+            'createDocument',
+            'updateDocument',
+            'requestSuggestions',
+            'listRepositories',
+            'createProject',
+            'getRepositoryFiles',
+            'getFileContent',
+            'searchFiles',
+            'openFileExplorer',
+            'createRepository',
+            'updateStagedFile',
+            'getStagingState',
+            'clearStagedFiles',
+            'createTaskPlan',
+            'updateTask',
+            'completeTask',
+            'getTaskStatus',
+            'addTask',
+            ...(isMemoryEnabled ? ['searchMemories', 'addMemory'] : []),
+            ...(isWebSearchEnabled && modelSupportsWebSearch(modelToUse) ? ['google_search'] : []),
+          ],
           providerOptions: {
             openai: supportsReasoning
               ? { reasoning: { effort: 'medium', budgetTokens: 2000 } }
@@ -307,6 +358,13 @@ export async function POST(request: Request) {
           },
           temperature: 0.7,
           onStepFinish: (stepResult) => {
+            // Log tool calls for debugging
+            if (stepResult.toolCalls && stepResult.toolCalls.length > 0) {
+              console.log('[SIMPLE CHAT API] Tool calls attempted:', JSON.stringify(stepResult.toolCalls, null, 2));
+            }
+            if (stepResult.toolResults && stepResult.toolResults.length > 0) {
+              console.log('[SIMPLE CHAT API] Tool results:', JSON.stringify(stepResult.toolResults, null, 2));
+            }
             if (isWebSearchEnabled) {
               // Check for Google grounding metadata
               const googleMetadata = (stepResult.providerMetadata as any)?.google;
@@ -393,6 +451,30 @@ export async function POST(request: Request) {
             }
           }
 
+          // Note: Memory is now handled by the AI itself via addMemory tool calls
+          console.log('[SIMPLE CHAT API] 💭 Memory handling delegated to AI via tools');
+
+          // Check if we should analyze this conversation for insights
+          const allMessages = [...messages, ...finalMessages.slice(messages.length)];
+          const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
+          
+          if (isMemoryEnabled && PAPR_MEMORY_API_KEY && shouldAnalyzeConversation(allMessages)) {
+            console.log('[SIMPLE CHAT API] 🔍 Conversation ready for analysis:', {
+              messageCount: allMessages.length,
+              chatId: id
+            });
+
+            // Process conversation insights in the background
+            processConversationCompletion({
+              chatId: id,
+              chatTitle: chat?.title,
+              messages: allMessages,
+              userId: userId!,
+            }, PAPR_MEMORY_API_KEY).catch(error => {
+              console.error('[SIMPLE CHAT API] 🔍 Error processing conversation insights:', error);
+            });
+          }
+
           // Save all new messages (assistant messages with tool results)
           const newMessages = finalMessages.slice(messages.length); // Get only new messages
           console.log('[SIMPLE CHAT API] New messages to save:', newMessages.length);
@@ -438,6 +520,7 @@ export async function POST(request: Request) {
                 attachments: [],
                 memories: null,
                 modelId: modelToUse,
+                memoryDecision: null, // Assistant messages don't have memory decisions
                 createdAt: new Date(),
                 // Add sources if available
                 ...(sources && sources.length > 0 && { sources }),

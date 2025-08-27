@@ -48,10 +48,8 @@ export const {
         };
 
         // Store additional data in a separate field that will be passed to jwt callback
-        Object.defineProperty(user, '_paprUserId', {
-          value: dbUser.paprUserId,
-          enumerable: true,
-        });
+        (user as any)._paprUserId = dbUser.paprUserId;
+        console.log(`[Auth] Set _paprUserId on user object:`, dbUser.paprUserId);
 
         return user;
       },
@@ -142,6 +140,9 @@ export const {
         } else {
           // For other providers (like credentials), use the provided user ID
           token.id = user.id;
+          console.log(`[Auth] Credentials login - user object keys:`, Object.keys(user));
+          console.log(`[Auth] Credentials login - _paprUserId in user:`, '_paprUserId' in user);
+          console.log(`[Auth] Credentials login - user._paprUserId:`, (user as any)._paprUserId);
           if ('_paprUserId' in user) {
             token._paprUserId = user._paprUserId;
           }
@@ -165,9 +166,14 @@ export const {
         try {
           const dbUser = await getUserById(token.id as string);
           if (dbUser) {
+            
             // Update session with latest user data
             session.user.name = dbUser.name || session.user.name;
             session.user.image = dbUser.image || session.user.image;
+            
+
+          } else {
+            console.log(`[Auth] Session callback - No DB user found for ID:`, token.id);
           }
         } catch (error) {
           console.error('Error fetching user data for session:', error);

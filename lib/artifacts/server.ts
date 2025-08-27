@@ -1,6 +1,7 @@
 import { imageDocumentHandler } from '@/artifacts/image/server';
 import { sheetDocumentHandler } from '@/artifacts/sheet/server';
 import { textDocumentHandler } from '@/artifacts/text/server';
+import { memoryDocumentHandler } from '@/artifacts/memory/server';
 import type { ArtifactKind } from '@/components/artifact/artifact';
 import type { DataStreamWriter } from '@/lib/types';
 import type { Document } from '../db/schema';
@@ -143,4 +144,5 @@ export const documentHandlersByArtifactKind: Array<DocumentHandler> = [
   textDocumentHandler,
   imageDocumentHandler,
   sheetDocumentHandler,
+  memoryDocumentHandler,
 ];

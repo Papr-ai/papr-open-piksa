@@ -29,7 +29,7 @@ type CreateDocumentOutput = {
 export const createDocument = ({ session, dataStream }: CreateDocumentProps): Tool<CreateDocumentInput, CreateDocumentOutput> =>
   tool({
     description:
-      'Create a document for a writing or content creation activities. This tool will call other functions that will generate the contents of the document based on the title and kind.',
+      'Create a document artifact for writing or content creation. This tool takes exactly two parameters: "title" (string) for the document title, and "kind" (string) which must be one of: "text", "image", "sheet", or "memory". The tool will generate the document content and display it as an interactive artifact.',
     inputSchema: createDocumentSchema,
     execute: async (input: CreateDocumentInput, options: ToolCallOptions): Promise<CreateDocumentOutput> => {
       const { title, kind } = input;

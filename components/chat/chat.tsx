@@ -21,6 +21,7 @@ import { useSession } from 'next-auth/react';
 import { useBreadcrumb } from '@/components/layout/breadcrumb-context';
 import { useLocalStorage } from 'usehooks-ts';
 import { UsageWarning } from '@/components/subscription/usage-warning';
+import { VoiceActivityIndicator } from '@/components/message/voice-activity-indicator';
 
 // Define types for the artifacts
 interface CodeArtifact {
@@ -70,6 +71,21 @@ export function Chat({
   
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
   const webSearchEnabledRef = useRef(false);
+
+  // Track voice chat state for visual indicators
+  const [voiceState, setVoiceState] = useState({
+    isConnected: false,
+    isRecording: false,
+    isPlaying: false,
+    isConnecting: false,
+    isMuted: false,
+    error: null as string | null,
+  });
+
+  // Debug voice state changes
+  useEffect(() => {
+    console.log('[Chat] Voice state updated:', voiceState);
+  }, [voiceState]);
 
   const { mutate } = useSWRConfig();
   const [isClient, setIsClient] = useState(false);
@@ -266,6 +282,14 @@ export function Chat({
       
 
       <div className="flex flex-col h-full w-full">
+        {/* Always visible test component at top of chat */}
+        <div className="bg-blue-100 border-b border-blue-200 p-2 text-center text-sm">
+          <strong>🎤 VOICE STATUS:</strong> 
+          Connected: {voiceState.isConnected ? '✅' : '❌'} | 
+          Recording: {voiceState.isRecording ? '🎙️' : '⭕'} | 
+          Playing: {voiceState.isPlaying ? '🔊' : '🔇'}
+        </div>
+        
         <div className="flex-1 overflow-y-auto w-full">
           <Messages
             chatId={id}
@@ -306,6 +330,7 @@ export function Chat({
               append={append}
               selectedModelId={selectedChatModel}
               selectedVisibilityType={selectedVisibilityType}
+              onVoiceStateChange={setVoiceState}
             />
           )}
         </form>

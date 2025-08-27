@@ -116,15 +116,16 @@ const extractTextFromMessage = (message: UIMessage): string => {
     .join('\n')
     .trim();
 };
-import { ChatMemoryResults } from '../memory/chat-memory-results';
 import { useThinkingState } from '@/lib/thinking-state';
 import { ProcessedMessage } from './processed-message';
 import type { ExtendedUIMessage } from '@/lib/types';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 import Image from 'next/image';
 import { useSession } from 'next-auth/react';
+import { useUserAvatar } from '@/hooks/use-user-avatar';
 import { GitHubRepoResults } from '../github/github-repo-results';
 import { GitHubSearchResults } from '../github/github-search-results';
+import { ChatMemoryResults } from '../memory/chat-memory-results';
 
 import type { Repository } from '@/components/github/github-repo-card';
 
@@ -625,10 +626,22 @@ const PurePreviewMessage = ({
   enableUniversalReasoning?: boolean;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
-  const { data: session } = useSession();
-  const userEmail = session?.user?.email || '';
-  const userName = session?.user?.name || '';
-  const userImage = session?.user?.image;
+  const { data: session, status: sessionStatus } = useSession();
+  const { userImage, userName, userEmail, isLoading: avatarLoading } = useUserAvatar();
+  
+  // Debug session loading for user messages
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && message.role === 'user') {
+      console.log('[Message] Avatar debug:', {
+        sessionStatus,
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        userImage,
+        userEmail,
+        avatarLoading
+      });
+    }
+  }, [sessionStatus, session, userImage, userEmail, message.role, avatarLoading]);
   
   // Debug logging for development only
   useEffect(() => {
@@ -855,13 +868,21 @@ const PurePreviewMessage = ({
                     />
                   </div>
                 ) : (
-                  <Image
-                    src={userImage || `https://avatar.vercel.sh/${userEmail}`}
-                    alt={userName || userEmail || 'User Avatar'}
-                    width={32}
-                    height={32}
-                    className="rounded-full"
-                  />
+                  <div className="relative">
+                    {/* Show loading skeleton while session is loading */}
+                    {sessionStatus === 'loading' || avatarLoading ? (
+                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+                    ) : (
+                      <Image
+                        src={userImage || `https://avatar.vercel.sh/${userEmail}`}
+                        alt={userName || userEmail || 'User Avatar'}
+                        width={32}
+                        height={32}
+                        className="rounded-full"
+                        unoptimized={!userImage} // Don't optimize fallback avatars
+                      />
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1022,7 +1043,9 @@ const PurePreviewMessage = ({
                               result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
                             />
-                          ) : toolName === 'searchMemories' ? null : [
+                          ) : toolName === 'searchMemories' ? (
+                            <ChatMemoryResults message={message} />
+                          ) : [
                             'listRepositories',
                             'createProject', 
                             'getRepositoryFiles',
@@ -1133,8 +1156,10 @@ const PurePreviewMessage = ({
                   return null;
                 })}
 
-                {/* Render ChatMemoryResults once per assistant message, outside the map function */}
-                {message.role === 'assistant' && <ChatMemoryResults message={message as any} />}
+                {/* Render ChatMemoryResults as fallback only if not already rendered by searchMemories tool */}
+                {message.role === 'assistant' && !message.parts?.some((part: any) => 
+                  part.type?.includes('searchMemories') && part.state === 'output-available'
+                ) && <ChatMemoryResults message={message as any} />}
                 
                 {/* Render WebSearchResults if grounding metadata is available */}
                 {message.role === 'assistant' && (message as any).groundingMetadata && (

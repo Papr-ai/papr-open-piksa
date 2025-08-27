@@ -116,6 +116,7 @@ export const searchMemories = ({ session }: { session: Session }): Tool<SearchMe
         const searchResults = await memoryService.searchMemories(paprUserId, query, 25);
         const searchApiDuration = Date.now() - searchApiStartTime;
         console.log('[Memory Tool] Search complete, found memories:', searchResults.length);
+        console.log('[Memory Tool] Search results:', JSON.stringify(searchResults, null, 2));
 
         // Map to our FormattedMemory type
         const memories: FormattedMemory[] = searchResults.map(memory => ({
@@ -145,7 +146,7 @@ export const searchMemories = ({ session }: { session: Session }): Tool<SearchMe
           );
         }
 
-        return {
+        const result = {
           success: true,
           memories: memories,
           memoryData: memories,
@@ -157,6 +158,9 @@ export const searchMemories = ({ session }: { session: Session }): Tool<SearchMe
             api: searchApiDuration
           }
         };
+        
+        console.log('[Memory Tool] Final result:', JSON.stringify(result, null, 2));
+        return result;
       } catch (error) {
         const errorDuration = Date.now() - startTime;
         console.error('[Memory Tool] Error searching memories:', error);

@@ -32,6 +32,7 @@ import { PageContext } from '@/types/app';
 import { AddContextButton } from '@/components/message/context-chip';
 import { useContext } from '@/hooks/use-context';
 import { useArtifact } from '@/hooks/use-artifact';
+import { VoiceButton } from '@/components/message/voice-button';
 import {
   Tooltip,
   TooltipContent,
@@ -57,6 +58,7 @@ function PureMultimodalInput({
   className,
   selectedModelId,
   selectedVisibilityType,
+  onVoiceStateChange,
 }: {
   chatId: string;
   input: string;
@@ -72,6 +74,7 @@ function PureMultimodalInput({
   className?: string;
   selectedModelId: string;
   selectedVisibilityType: VisibilityType;
+  onVoiceStateChange?: (state: any) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -94,6 +97,18 @@ function PureMultimodalInput({
   
   // Track web search enabled state
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
+
+  // Track voice chat state for UI changes
+  const [voiceState, setVoiceState] = useState({
+    isConnected: false,
+    isRecording: false,
+    isPlaying: false,
+    isConnecting: false,
+    isMuted: false,
+    error: null as string | null,
+  });
+
+
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -273,17 +288,17 @@ function PureMultimodalInput({
 
   return (
     <div className="relative w-full flex flex-col gap-2 bg-background p-2 rounded-[15px] dark:border-zinc-700"
-      style={{
-        boxShadow: '0 -2px 10px hsl(var(--ring) / 0.1)',
-      }}
-    >
-      {/* Add Context at the top */}
-      <div className="flex flex-wrap items-center gap-1 mb-1">
-        <AddContextButton
-          selectedContexts={selectedContexts}
-          onContextsChange={updateContexts}
-        />
-      </div>
+        style={{
+          boxShadow: '0 -2px 10px hsl(var(--ring) / 0.1)',
+        }}
+      >
+        {/* Add Context at the top */}
+        <div className="flex flex-wrap items-center gap-1 mb-1">
+          <AddContextButton
+            selectedContexts={selectedContexts}
+            onContextsChange={updateContexts}
+          />
+        </div>
       
       <div className="flex flex-col items-start w-full gap-2">
         <Textarea
@@ -315,9 +330,32 @@ function PureMultimodalInput({
             <WebSearchToggle />
           </div>
           <div className="flex flex-row pb-2 justify-start">
-            <div className="flex flex-row ml-3 mr-2 justify-start">
+            <div className="flex flex-row ml-3 mr-2 justify-start gap-1">
+              <VoiceButton
+                chatId={chatId}
+                selectedModel={selectedModelId}
+                isMemoryEnabled={isMemoryEnabled}
+                isWebSearchEnabled={isWebSearchEnabled}
+                disabled={status === 'streaming'}
+                messages={messages}
+                onVoiceMessage={(message) => {
+                  setInput(message);
+                  adjustHeight();
+                }}
+                onVoiceStateChange={useCallback((state: any) => {
+                  console.log('[MultimodalInput] Received voice state:', state);
+                  setVoiceState(state);
+                  onVoiceStateChange?.(state);
+                }, [onVoiceStateChange])}
+              />
               {status === 'streaming' ? (
                 <StopButton stop={stop} setMessages={setMessages} />
+              ) : voiceState.isConnected ? (
+                <StopVoiceButton onStop={() => {
+                  // We need to trigger the voice disconnect
+                  // Let's dispatch a custom event that the voice button can listen to
+                  window.dispatchEvent(new CustomEvent('voice-disconnect'));
+                }} />
               ) : (
                 <SendButton
                   submitForm={submitForm}
@@ -452,3 +490,21 @@ const SendButton = memo(PureSendButton, (prevProps, nextProps) => {
   if (prevProps.input !== nextProps.input) return false;
   return true;
 });
+
+function PureStopVoiceButton({ onStop }: { onStop: () => void }) {
+  return (
+    <Button
+      data-testid="stop-voice-button"
+      className="rounded-full p-1.5 h-8 w-8 bg-red-500 hover:bg-red-600 text-white cursor-pointer z-10"
+      onClick={(event) => {
+        event.preventDefault();
+        console.log('Stop voice chat clicked');
+        onStop();
+      }}
+    >
+      <StopIcon size={16} />
+    </Button>
+  );
+}
+
+const StopVoiceButton = memo(PureStopVoiceButton);

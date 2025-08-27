@@ -6,6 +6,7 @@ import type { Vote } from '@/lib/db/schema';
 import { AnimatePresence, motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 import { useSession } from 'next-auth/react';
+import { useUserAvatar } from '@/hooks/use-user-avatar';
 import Image from 'next/image';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
@@ -130,10 +131,22 @@ function PurePreviewMessage({
   enableUniversalReasoning,
 }: PreviewMessageProps) {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
-  const { data: session } = useSession();
-  const userEmail = session?.user?.email || '';
-  const userName = session?.user?.name || '';
-  const userImage = session?.user?.image;
+  const { data: session, status: sessionStatus } = useSession();
+  const { userImage, userName, userEmail, isLoading: avatarLoading } = useUserAvatar();
+  
+  // Debug session loading for user messages
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development' && message.role === 'user') {
+      console.log('[PreviewMessage] Avatar debug:', {
+        sessionStatus,
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        userImage,
+        userEmail,
+        avatarLoading
+      });
+    }
+  }, [sessionStatus, session, userImage, userEmail, message.role, avatarLoading]);
 
   // Extract reasoning events and determine if we should show reasoning
   const reasoningEvents = extractReasoningEvents(message);
@@ -186,13 +199,21 @@ function PurePreviewMessage({
                     />
                   </div>
                 ) : (
-                  <Image
-                    src={userImage || `https://avatar.vercel.sh/${userEmail}`}
-                    alt={userName || userEmail || 'User Avatar'}
-                    width={32}
-                    height={32}
-                    className="rounded-full"
-                  />
+                  <div className="relative">
+                    {/* Show loading skeleton while session is loading */}
+                    {sessionStatus === 'loading' || avatarLoading ? (
+                      <div className="w-8 h-8 rounded-full bg-muted animate-pulse" />
+                    ) : (
+                      <Image
+                        src={userImage || `https://avatar.vercel.sh/${userEmail}`}
+                        alt={userName || userEmail || 'User Avatar'}
+                        width={32}
+                        height={32}
+                        className="rounded-full"
+                        unoptimized={!userImage} // Don't optimize fallback avatars
+                      />
+                    )}
+                  </div>
                 )}
               </div>
 

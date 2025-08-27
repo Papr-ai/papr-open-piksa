@@ -2,6 +2,7 @@ import {
   createTextStreamResponse,
   smoothStream,
   streamText,
+  stepCountIs,
 } from 'ai';
 import { auth } from '@/app/(auth)/auth';
 import {
@@ -40,11 +41,14 @@ import { myProvider } from '@/lib/ai/providers';
 import { google } from '@ai-sdk/google';
 import {
   createMemoryEnabledSystemPrompt,
-  storeMessageInMemory,
+  intelligentlyStoreMessageInMemory,
 } from '@/lib/ai/memory/middleware';
+import { shouldAnalyzeConversation, processConversationCompletion } from '@/lib/ai/conversation-insights';
+import { handleNewChatCreation } from '@/lib/ai/chat-history-context';
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { ExtendedUIMessage } from '@/lib/types';
 import type { DataStreamWriter } from '@/lib/types';
+import type { UIMessage } from 'ai';
 import { modelSupportsReasoning, modelSupportsWebSearch, getWebSearchModel } from '@/lib/ai/models';
 import { createToolFeedbackMiddleware } from '@/lib/ai/tools/middleware/feedback';
 import { ToolRegistry } from '@/lib/ai/tools/middleware/registry';
@@ -836,6 +840,7 @@ export async function POST(request: Request) {
           memories: null,
           sources: null,
           modelId: null, // User messages don't have a model
+          memoryDecision: null, // Will be updated later if memory is enabled
           createdAt: new Date(),
         },
       ],
@@ -943,28 +948,49 @@ IMPORTANT INSTRUCTIONS:
 
         // Get base system prompt
         const baseSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
+        
+        // Get chat history context for newly created chats only
+        let chatHistoryContext = '';
+        if (!chat && isMemoryEnabled && PAPR_MEMORY_API_KEY && session.user?.id) {
+          console.log('[CHAT API] 🆕 New chat being created, loading chat history context');
+          chatHistoryContext = await handleNewChatCreation(session.user.id, PAPR_MEMORY_API_KEY);
+        }
 
-        // Add memory context to system prompt if enabled
+        // Always use standard system prompt with memory tool instructions (no auto-search)
         let enhancedSystemPrompt = isMemoryEnabled
           ? `${baseSystemPrompt}\n\n
 IMPORTANT MEMORY TOOL INSTRUCTIONS:
-You have access to a memory search tool that can find relevant past conversations and information. Use it when you need to recall past context or information from previous conversations.
+You have access to memory tools to help maintain context and remember important information about the user.
 
-When using the searchMemories tool:
-1. ONLY use this tool when the user asks about past conversations or when you need context from previous interactions
-2. NEVER include the raw tool response or any JSON in your message text
-3. NEVER format memory results as code blocks or lists in your response
-4. After using the tool, ONLY reference the information in a natural conversational way
-5. The memory results will be automatically displayed to the user in a separate UI component
-6. If the initial search doesn't find what you're looking for, try searching again with different keywords or phrasings
-7. You can make up to 5 memory searches per response to find the most relevant information
+**searchMemories tool:**
+- Use when you need to recall past conversations or user information
+- Use when the user asks about previous interactions
+- Results are displayed automatically in the UI - don't format them in your response
 
-IMPORTANT: If you use the searchMemories tool, do NOT manually format the results in your response. The tool output is handled separately by the UI.
+**addMemory tool - USE THIS NATURALLY:**
+- Save important information about the user as you discover it during conversation
+- Save user preferences, goals, projects, and interests
+- Save key facts about their work, tools they use, or problems they're solving
+- Think of it as taking notes during a conversation - save what would be useful to remember later
+- Examples of what to save:
+  * "User is working on a children's book called 'Naya and the Brave Blue Bike'"
+  * "User prefers concise writing and iterative editing"
+  * "User is learning React and building a chat application"
+  * "User works in marketing and focuses on B2B SaaS companies"
 
-Examples of INCORRECT usage (DO NOT DO THIS):
-- Including JSON output: \`\`\`{ "memories": [...] }\`\`\`
-- Listing memories: "Here are your memories: 1. 2025-01-01: Memory content"
-- Date-based formatting: "2025-01-01: Memory content"
+**When to use addMemory:**
+- When the user shares their goals or projects
+- When you learn about their preferences or working style
+- When they mention their profession, interests, or expertise
+- When they share important context about their work
+- When patterns emerge about how they like to work
+
+**Don't save:**
+- Temporary requests or one-off questions
+- Basic greetings or casual responses
+- Information that's not useful for future conversations
+
+Use these tools naturally as part of helping the user - you don't need to announce when you're using them.${chatHistoryContext}
 
 STAGING WORKFLOW:
 When working with GitHub repositories, you have access to a staging area that prevents conflicts:
@@ -1088,6 +1114,7 @@ AVAILABLE STAGING TOOLS:
           // Create new result with wrapped tools and abort signal
           const resultWithFeedback = await streamText({
             model: modelProvider,
+            stopWhen: [stepCountIs(5)], // Allow up to 5 steps for multi-step reasoning
             system: enhancedSystemPrompt + 
               (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. Use it to find current information when needed." : ""),
             messages: messages.slice(-15).map(sanitizeMessageForAI), // Limit to last 15 messages
@@ -1212,6 +1239,7 @@ AVAILABLE STAGING TOOLS:
                           memories: memories,
                           sources: null, // Web search sources not implemented in main chat route yet
                           modelId: modelToUse,
+                          memoryDecision: null, // Assistant messages don't have memory decisions
                           createdAt: new Date(),
                         },
                       ],
@@ -1219,17 +1247,40 @@ AVAILABLE STAGING TOOLS:
                       console.error('[CHAT API] Error saving assistant message:', error);
                     }) : Promise.resolve(),
 
-                    // Store the user message in memory if enabled
-                    isMemoryEnabled && PAPR_MEMORY_API_KEY ?
-                      storeMessageInMemory({
-                        userId: session.user.id,
-                        chatId: id,
-                        message: userMessage,
-                        apiKey: PAPR_MEMORY_API_KEY,
-                      }).catch(error => {
-                        console.error('[Memory] Error storing message in memory:', error);
-                      })
-                    : Promise.resolve()
+                    // Note: Memory is now handled by the AI itself via addMemory tool calls
+                    Promise.resolve().then(() => {
+                      console.log('[CHAT API] 💭 Memory handling delegated to AI via tools');
+                      
+                      // Check if we should analyze this conversation for insights
+                      const allMessages = [...messages];
+                      if (assistantMessage) {
+                        allMessages.push({
+                          id: assistantId,
+                          role: assistantMessage.role,
+                          parts: assistantMessage.parts || [],
+                        } as UIMessage);
+                      }
+                      
+                      const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
+                      if (isMemoryEnabled && PAPR_MEMORY_API_KEY && shouldAnalyzeConversation(allMessages)) {
+                        console.log('[CHAT API] 🔍 Conversation ready for analysis:', {
+                          messageCount: allMessages.length,
+                          chatId: id
+                        });
+
+                        // Process conversation insights in the background
+                        if (session.user?.id) {
+                          processConversationCompletion({
+                            chatId: id,
+                            chatTitle: chat?.title,
+                            messages: allMessages,
+                            userId: session.user.id,
+                          }, PAPR_MEMORY_API_KEY).catch(error => {
+                            console.error('[CHAT API] 🔍 Error processing conversation insights:', error);
+                          });
+                        }
+                      }
+                    })
                   ]).catch(error => {
                     console.error('[CHAT API] Error in background persistence:', error);
                   });

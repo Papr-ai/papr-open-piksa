@@ -134,10 +134,23 @@ export async function intelligentlyStoreMessageInMemory({
   message: UIMessage;
   apiKey: string;
   conversationHistory?: UIMessage[];
-}): Promise<{ stored: boolean; reason?: string; category?: string }> {
+}): Promise<{ 
+  stored: boolean; 
+  reason?: string; 
+  category?: string | null;
+  decision?: any;
+  storedContent?: string | null;
+  paprUserId?: string | null;
+}> {
   if (!apiKey) {
     console.log('[Memory] No API key provided for intelligent filtering');
-    return { stored: false, reason: 'No API key provided' };
+    return { 
+      stored: false, 
+      reason: 'No API key provided',
+      decision: null,
+      storedContent: null,
+      paprUserId: null,
+    };
   }
 
   try {
@@ -162,12 +175,25 @@ export async function intelligentlyStoreMessageInMemory({
 
     if (!decision) {
       console.log('[Memory] Filter returned null - skipping storage');
-      return { stored: false, reason: 'Filter analysis failed' };
+      return { 
+        stored: false, 
+        reason: 'Filter analysis failed',
+        decision: null,
+        storedContent: null,
+        paprUserId: null,
+      };
     }
 
     if (!decision.shouldStore) {
       console.log('[Memory] AI decided not to store message:', decision.reasoning);
-      return { stored: false, reason: decision.reasoning };
+      return { 
+        stored: false, 
+        reason: decision.reasoning,
+        category: decision.category || undefined,
+        decision: decision,
+        storedContent: null,
+        paprUserId: null,
+      };
     }
 
     console.log('[Memory] AI decided to store message:', {
@@ -183,21 +209,39 @@ export async function intelligentlyStoreMessageInMemory({
       console.warn(
         `[Memory WARNING] Failed to get or create Papr user ID for app user ${userId}.`,
       );
-      return { stored: false, reason: 'Failed to resolve user ID' };
+      return { 
+        stored: false, 
+        reason: 'Failed to resolve user ID',
+        decision: decision,
+        storedContent: null,
+        paprUserId: null,
+      };
     }
 
     // Convert decision to metadata
     const metadata = convertDecisionToMetadata(decision, userId, chatId);
     if (!metadata) {
       console.warn('[Memory] Failed to convert decision to metadata');
-      return { stored: false, reason: 'Invalid decision format' };
+      return { 
+        stored: false, 
+        reason: 'Invalid decision format',
+        decision: decision,
+        storedContent: null,
+        paprUserId: paprUserId,
+      };
     }
 
     // Use custom content if provided, otherwise use original message content
     const contentToStore = decision.content || extractMessageContent(message);
     if (!contentToStore) {
       console.log('[Memory] No content to store after filtering');
-      return { stored: false, reason: 'No content to store' };
+      return { 
+        stored: false, 
+        reason: 'No content to store',
+        decision: decision,
+        storedContent: null,
+        paprUserId: paprUserId,
+      };
     }
 
     // Store using memory service
@@ -221,11 +265,20 @@ export async function intelligentlyStoreMessageInMemory({
       stored: success,
       reason: success ? 'Stored successfully' : 'Storage failed',
       category: decision.category,
+      decision: decision, // Include the full AI decision
+      storedContent: success ? contentToStore : null,
+      paprUserId: paprUserId,
     };
 
   } catch (error) {
     console.error('[Memory] Error in intelligent message filtering:', error);
-    return { stored: false, reason: 'Filter processing error' };
+    return { 
+      stored: false, 
+      reason: 'Filter processing error',
+      decision: null,
+      storedContent: null,
+      paprUserId: null,
+    };
   }
 }
 

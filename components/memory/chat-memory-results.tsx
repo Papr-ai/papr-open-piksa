@@ -142,6 +142,10 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
     }
     
     console.log(`[MEMORY] Processing message ${messageId} for memories`);
+    console.log(`[MEMORY] Message object:`, message);
+    console.log(`[MEMORY] Message parts:`, message.parts);
+    console.log(`[MEMORY] Message toolInvocations:`, (message as any).toolInvocations);
+    console.log(`[MEMORY] Message tool_calls:`, (message as any).tool_calls);
     
     // Start loading
     setIsLoading(true);
@@ -162,6 +166,32 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
       setIsLoading(false);
       setThinkingState('Thinking...', 'memory_direct_found');
       return;
+    }
+    
+    // Check for memories in message.parts (AI SDK v5 format)
+    if ((message as any).parts && Array.isArray((message as any).parts)) {
+      for (const part of (message as any).parts) {
+        if (
+          (part.type === 'tool-searchMemories' || part.type?.includes('searchMemories')) &&
+          part.state === 'output-available' &&
+          part.output?.success &&
+          part.output?.memories?.length
+        ) {
+          const memoriesFromPart = part.output.memories;
+          console.log(`[MEMORY] Found ${memoriesFromPart.length} memories in message.parts`);
+          
+          const processedMemories = processMemories(memoriesFromPart);
+          setMemories(processedMemories);
+          setMemoryCount(processedMemories.length);
+          
+          // Store in localStorage for faster future access
+          storeMemoriesInLocalStorage(messageId, processedMemories);
+          
+          setIsLoading(false);
+          setThinkingState('Thinking...', 'memory_parts_found');
+          return;
+        }
+      }
     }
     
     // Fallback to localStorage for previously stored memories

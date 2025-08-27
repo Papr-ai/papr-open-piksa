@@ -9,6 +9,7 @@ import type { Vote } from '@/lib/db/schema';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { modelSupportsReasoning } from '@/lib/ai/models';
+import type { VoiceChatState } from '@/hooks/use-voice-chat-webrtc';
 
 interface MessagesProps {
   chatId: string;
@@ -22,6 +23,7 @@ interface MessagesProps {
   reasoningSteps?: any[];
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;
+  voiceState?: VoiceChatState;
 }
 
 function PureMessages({
@@ -36,6 +38,7 @@ function PureMessages({
   reasoningSteps = [],
   selectedModelId,
   enableUniversalReasoning,
+  voiceState,
 }: MessagesProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
