@@ -45,6 +45,7 @@ import {
 } from '@/lib/ai/memory/middleware';
 import { shouldAnalyzeConversation, processConversationCompletion } from '@/lib/ai/conversation-insights';
 import { handleNewChatCreation } from '@/lib/ai/chat-history-context';
+import { getOrCreateChatContext } from '@/lib/ai/memory/chat-context';
 import { systemPrompt } from '@/lib/ai/prompts';
 import type { ExtendedUIMessage } from '@/lib/types';
 import type { DataStreamWriter } from '@/lib/types';
@@ -760,16 +761,17 @@ export async function POST(request: Request) {
       return new Response('No user message found', { status: 400 });
     }
 
-    const chat = await getChatById({ id });
+    // Get or create chat with user context (handles both new and existing chats)
+    const { chatExists, userContext, contextString } = await getOrCreateChatContext(
+      id,
+      session.user.id,
+      messages
+    );
 
-    if (!chat) {
-      const title = await generateTitleFromUserMessage({
-        message: userMessage,
-      });
-
-      await saveChat({ id, userId: session.user.id, title });
-    } else {
-      if (chat.userId !== session.user.id) {
+    if (chatExists) {
+      // Verify ownership for existing chat
+      const chat = await getChatById({ id });
+      if (chat && chat.userId !== session.user.id) {
         return new Response('Unauthorized', { status: 401 });
       }
     }
@@ -951,7 +953,7 @@ IMPORTANT INSTRUCTIONS:
         
         // Get chat history context for newly created chats only
         let chatHistoryContext = '';
-        if (!chat && isMemoryEnabled && PAPR_MEMORY_API_KEY && session.user?.id) {
+        if (!chatExists && isMemoryEnabled && PAPR_MEMORY_API_KEY && session.user?.id) {
           console.log('[CHAT API] 🆕 New chat being created, loading chat history context');
           chatHistoryContext = await handleNewChatCreation(session.user.id, PAPR_MEMORY_API_KEY);
         }
@@ -990,7 +992,23 @@ You have access to memory tools to help maintain context and remember important 
 - Basic greetings or casual responses
 - Information that's not useful for future conversations
 
-Use these tools naturally as part of helping the user - you don't need to announce when you're using them.${chatHistoryContext}
+Use these tools naturally as part of helping the user - you don't need to announce when you're using them.${(() => {
+          // Always add user context if available
+          let combinedContext = '';
+          if (contextString) {
+            console.log('[TEXT CHAT] Adding user context to system prompt:');
+            console.log('='.repeat(80));
+            console.log('User Context Length:', contextString.length);
+            console.log('User Context Preview:', contextString.substring(0, 200) + '...');
+            console.log('='.repeat(80));
+            combinedContext += contextString;
+          }
+          if (chatHistoryContext) {
+            console.log('[TEXT CHAT] Adding chat history context');
+            combinedContext += chatHistoryContext;
+          }
+          return combinedContext;
+        })()}
 
 STAGING WORKFLOW:
 When working with GitHub repositories, you have access to a staging area that prevents conflicts:
@@ -1269,15 +1287,20 @@ AVAILABLE STAGING TOOLS:
                         });
 
                         // Process conversation insights in the background
-                        if (session.user?.id) {
-                          processConversationCompletion({
-                            chatId: id,
-                            chatTitle: chat?.title,
-                            messages: allMessages,
-                            userId: session.user.id,
-                          }, PAPR_MEMORY_API_KEY).catch(error => {
-                            console.error('[CHAT API] 🔍 Error processing conversation insights:', error);
-                          });
+                        if (session?.user?.id) {
+                          (async () => {
+                            try {
+                              const currentChat = await getChatById({ id });
+                              await processConversationCompletion({
+                                chatId: id,
+                                chatTitle: currentChat?.title || 'Untitled Chat',
+                                messages: allMessages,
+                                userId: session.user!.id!,
+                              }, PAPR_MEMORY_API_KEY);
+                            } catch (error) {
+                              console.error('[CHAT API] 🔍 Error processing conversation insights:', error);
+                            }
+                          })();
                         }
                       }
                     })

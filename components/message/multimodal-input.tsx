@@ -17,6 +17,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from '@/components/common/icons';
 import { PreviewAttachment } from '@/components/message/preview-attachment';
@@ -78,6 +79,7 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  const isMobile = useIsMobile();
   
   // Use the artifact hook with chat ID for chat-specific artifacts
   const { artifact, setArtifact } = useArtifact(chatId);
@@ -126,7 +128,8 @@ function PureMultimodalInput({
   const resetHeight = () => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = '98px';
+      // Use smaller initial height on mobile
+      textareaRef.current.style.height = isMobile ? '60px' : '98px';
     }
   };
   const storageKey = `chat-input-${chatId}`;
@@ -305,7 +308,9 @@ function PureMultimodalInput({
           ref={textareaRef}
           tabIndex={0}
           placeholder="Ask anything"
-          className=" flex-1 min-h-[40px] max-h-[240px] resize-none bg-background px-4 py-2 overflow-y-auto border-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+          className={`flex-1 resize-none bg-background px-4 py-2 overflow-y-auto border-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0 ${
+            isMobile ? 'min-h-[36px] max-h-[180px] text-base' : 'min-h-[40px] max-h-[240px]'
+          }`}
           value={input}          
           onChange={handleInput}
           onKeyDown={(event) => {
@@ -323,14 +328,16 @@ function PureMultimodalInput({
           }}
           disabled={status === 'streaming'}
         />
-        <div className="flex flex-row items-center justify-between gap-2 w-full">
-          <div className="flex items-center gap-2">
-            <ModelSelector selectedModelId={selectedModelId} className="h-8" />
-            <MemoryToggle />
-            <WebSearchToggle />
+        <div className={`flex items-center justify-between gap-2 w-full ${isMobile ? 'flex-col space-y-2' : 'flex-row'}`}>
+          <div className={`flex items-center gap-2 ${isMobile ? 'w-full justify-between' : ''}`}>
+            <ModelSelector selectedModelId={selectedModelId} className={isMobile ? "h-8 flex-1 max-w-[120px]" : "h-8"} />
+            <div className="flex items-center gap-1">
+              <MemoryToggle />
+              <WebSearchToggle />
+            </div>
           </div>
-          <div className="flex flex-row pb-2 justify-start">
-            <div className="flex flex-row ml-3 mr-2 justify-start gap-1">
+          <div className={`flex flex-row pb-2 ${isMobile ? 'w-full justify-end' : 'justify-start'}`}>
+            <div className={`flex flex-row justify-start gap-1 ${isMobile ? '' : 'ml-3 mr-2'}`}>
               <VoiceButton
                 chatId={chatId}
                 selectedModel={selectedModelId}

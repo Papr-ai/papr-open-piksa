@@ -10,6 +10,7 @@ export interface SubscriptionPlan {
     premiumInteractions: number; // -1 for unlimited, 0 for none
     memoriesAdded: number;
     memoriesSearched: number;
+    voiceChats: number; // Monthly limit for voice chat sessions, -1 for unlimited
   };
   stripePriceId: string;
   isPopular?: boolean;

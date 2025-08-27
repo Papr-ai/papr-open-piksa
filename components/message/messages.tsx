@@ -10,6 +10,7 @@ import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 import type { VoiceChatState } from '@/hooks/use-voice-chat-webrtc';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface MessagesProps {
   chatId: string;
@@ -40,6 +41,9 @@ function PureMessages({
   enableUniversalReasoning,
   voiceState,
 }: MessagesProps) {
+  // Mobile detection hook
+  const isMobile = useIsMobile();
+  
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
   
@@ -159,9 +163,9 @@ function PureMessages({
     <div className="relative ">
       <div
         ref={messagesContainerRef}
-        className={`flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 w-[65%] mx-auto ${
-          isArtifactVisible ? '' : ''
-        }`}
+        className={`flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 mx-auto ${
+          isMobile ? 'w-full px-4' : 'w-[65%]'
+        } ${isArtifactVisible ? '' : ''}`}
         data-testid="messages-container"
         id="messages"
       >
@@ -261,10 +265,24 @@ function PureMessages({
       {isScrolledUp && (
         <button 
           onClick={scrollToBottom}
-          className="fixed bottom-24 right-8 bg-primary text-primary-foreground rounded-full p-2 shadow-md z-10 hover:bg-primary/90 transition-opacity"
+          className={`fixed bg-primary text-primary-foreground rounded-full p-2 shadow-md z-10 hover:bg-primary/90 transition-opacity ${
+            isMobile 
+              ? 'bottom-20 right-4 w-10 h-10' 
+              : 'bottom-24 right-8 w-12 h-12'
+          }`}
           aria-label="Scroll to bottom"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            width={isMobile ? "20" : "24"} 
+            height={isMobile ? "20" : "24"} 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round"
+          >
             <path d="M12 5v14"></path>
             <path d="m19 12-7 7-7-7"></path>
           </svg>

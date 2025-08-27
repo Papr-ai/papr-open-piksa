@@ -22,6 +22,7 @@ import { useSession } from 'next-auth/react';
 import { useBreadcrumb } from '@/components/layout/breadcrumb-context';
 import { useLocalStorage } from 'usehooks-ts';
 import { UsageWarning } from '@/components/subscription/usage-warning';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 // Define types for the artifacts
 interface CodeArtifact {
@@ -66,6 +67,9 @@ export function Chat({
   isReadonly: boolean;
   documentId?: string;
 }) {
+  // Mobile detection hook
+  const isMobile = useIsMobile();
+  
   // Track memory enabled state
   const [isMemoryEnabled, setIsMemoryEnabled] = useState(false);
   const memoryEnabledRef = useRef(false);
@@ -313,7 +317,7 @@ export function Chat({
 
         {/* Voice Activity Indicators - Above chat input */}
         {voiceState.isConnecting && (
-          <div className="mx-auto px-4 w-[70%] mb-2">
+          <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
             <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-500"></div>
@@ -324,7 +328,7 @@ export function Chat({
         )}
         
         {voiceState.isRecording && !voiceState.isMuted && (
-          <div className="mx-auto px-4 w-[70%] mb-2">
+          <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
             <div className="flex items-center justify-center p-4 bg-red-50 border border-red-200 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -336,26 +340,28 @@ export function Chat({
                 <span className="text-sm font-medium text-red-700">AI is listening...</span>
               </div>
               
-              {/* Audio waveform animation */}
-              <div className="flex items-center gap-1 ml-3">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1 bg-red-400 rounded-full animate-pulse"
-                    style={{
-                      height: '8px',
-                      animationDelay: `${i * 0.1}s`,
-                      animationDuration: '0.6s'
-                    }}
-                  />
-                ))}
-              </div>
+              {/* Audio waveform animation - hide on very small screens */}
+              {!isMobile && (
+                <div className="flex items-center gap-1 ml-3">
+                  {[...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-1 bg-red-400 rounded-full animate-pulse"
+                      style={{
+                        height: '8px',
+                        animationDelay: `${i * 0.1}s`,
+                        animationDuration: '0.6s'
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
         
         {voiceState.isPlaying && (
-          <div className="mx-auto px-4 w-[70%] mb-2">
+          <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
             <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className="relative">
@@ -367,30 +373,32 @@ export function Chat({
                 <span className="text-sm font-medium text-blue-700">AI is responding...</span>
               </div>
               
-              {/* Speaking animation */}
-              <div className="flex items-center gap-1 ml-3">
-                {[...Array(4)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="w-1.5 bg-blue-400 rounded-full"
-                    style={{
-                      height: `${Math.random() * 12 + 6}px`,
-                      animation: `pulse 0.8s ease-in-out ${i * 0.1}s infinite alternate`
-                    }}
-                  />
-                ))}
-              </div>
+              {/* Speaking animation - hide on very small screens */}
+              {!isMobile && (
+                <div className="flex items-center gap-1 ml-3">
+                  {[...Array(4)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="w-1.5 bg-blue-400 rounded-full"
+                      style={{
+                        height: `${Math.random() * 12 + 6}px`,
+                        animation: `pulse 0.8s ease-in-out ${i * 0.1}s infinite alternate`
+                      }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
 
         {/* Usage Warning positioned right above the input */}
-        <div className="mx-auto px-7 w-[70%]">
+        <div className={`mx-auto ${isMobile ? 'px-4 w-full' : 'px-7 w-[70%]'}`}>
           <UsageWarning />
         </div>
 
         <form 
-          className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-[70%]"
+          className={`flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}
           onSubmit={onSubmit}
         >
           {!isReadonly && (

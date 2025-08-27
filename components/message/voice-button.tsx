@@ -41,15 +41,23 @@ export function VoiceButton({
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const connectionAttemptedRef = useRef(false);
   
-  const config: VoiceChatConfig = useMemo(() => ({
-    chatId,
-    selectedModel: selectedModel.includes('realtime') ? selectedModel : 'gpt-4o-realtime-preview',
-    isMemoryEnabled,
-    isWebSearchEnabled,
-    onStateChange: onVoiceStateChange,
-    messages,
-    userId: session?.user?.id,
-  }), [chatId, selectedModel, isMemoryEnabled, isWebSearchEnabled, onVoiceStateChange, messages, session?.user?.id]);
+  const config: VoiceChatConfig = useMemo(() => {
+    console.log('[VoiceButton] Creating config with messages:', {
+      chatId,
+      messageCount: messages?.length || 0,
+      messages: messages?.slice(-2) // Log last 2 messages for debugging
+    });
+    
+    return {
+      chatId,
+      selectedModel: selectedModel.includes('realtime') ? selectedModel : 'gpt-4o-realtime-preview',
+      isMemoryEnabled,
+      isWebSearchEnabled,
+      onStateChange: onVoiceStateChange,
+      messages,
+      userId: session?.user?.id,
+    };
+  }, [chatId, selectedModel, isMemoryEnabled, isWebSearchEnabled, onVoiceStateChange, messages, session?.user?.id]);
 
   const {
     isConnected,

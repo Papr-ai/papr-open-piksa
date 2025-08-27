@@ -63,6 +63,7 @@ export const chat = pgTable('Chat', {
   oneSentenceSummary: text('oneSentenceSummary'),
   fullSummary: text('fullSummary'),
   insights: jsonb('insights'),
+  userContext: text('userContext'), // Store fetched user context to avoid re-fetching
 });
 
 export type Chat = InferSelectModel<typeof chat>;
@@ -258,6 +259,7 @@ export const usage = pgTable('Usage', {
   premiumInteractions: integer('premiumInteractions').notNull().default(0),
   memoriesAdded: integer('memoriesAdded').notNull().default(0),
   memoriesSearched: integer('memoriesSearched').notNull().default(0),
+  voiceChats: integer('voiceChats').notNull().default(0), // Voice chat sessions per month
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (table) => ({

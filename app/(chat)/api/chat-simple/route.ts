@@ -8,6 +8,7 @@ import { getMostRecentUserMessage } from '@/lib/utils';
 import { generateUUID } from '@/lib/utils';
 import { saveMessages, getChatById, saveChat } from '@/lib/db/queries';
 import { generateTitleFromUserMessage } from '../../actions';
+import { getOrCreateChatContext } from '@/lib/ai/memory/chat-context';
 import type { ExtendedUIMessage } from '@/lib/types';
 import { searchMemories } from '@/lib/ai/tools/search-memories';
 import { addMemory } from '@/lib/ai/tools/add-memory';
@@ -127,18 +128,21 @@ export async function POST(request: Request) {
       return new Response('No user message found', { status: 400 });
     }
 
-    // Ensure chat exists (create if it doesn't)
-    const chat = await getChatById({ id });
-    if (!chat) {
-      const title = await generateTitleFromUserMessage({
-        message: userMessage,
-      });
-      await saveChat({ id, userId: session.user.id, title });
-      console.log('[SIMPLE CHAT API] Created new chat with title:', title);
-    } else {
-      if (chat.userId !== session.user.id) {
+    // Get or create chat with user context (handles both new and existing chats)
+    const { chatExists, userContext, contextString } = await getOrCreateChatContext(
+      id,
+      session.user.id,
+      messages
+    );
+
+    if (chatExists) {
+      // Verify ownership for existing chat
+      const chat = await getChatById({ id });
+      if (chat && chat.userId !== session.user.id) {
         return new Response('Unauthorized', { status: 401 });
       }
+    } else {
+      console.log('[SIMPLE CHAT API] Created new chat with user context');
     }
 
     // Save user message
@@ -260,13 +264,32 @@ export async function POST(request: Request) {
     
     // Get chat history context for newly created chats only
     let chatHistoryContext = '';
-    if (!chat && isMemoryEnabled && apiKey && session?.user?.id) {
+    if (!chatExists && isMemoryEnabled && apiKey && session?.user?.id) {
       console.log('[SIMPLE CHAT API] 🆕 New chat being created, loading chat history context');
       chatHistoryContext = await handleNewChatCreation(session.user.id, apiKey);
     }
     
+    // Always include user context if available (regardless of memory toggle)
+    let contextualSystemPrompt = baseSystemPrompt;
+    
+    if (contextString) {
+      console.log('[SIMPLE TEXT CHAT] Adding user context to system prompt:');
+      console.log('='.repeat(80));
+      console.log('User Context Length:', contextString.length);
+      console.log('User Context Preview:', contextString.substring(0, 200) + '...');
+      console.log('='.repeat(80));
+      
+      contextualSystemPrompt += `\n\n${contextString}`;
+    }
+    
+    if (chatHistoryContext) {
+      console.log('[SIMPLE TEXT CHAT] Adding chat history context');
+      contextualSystemPrompt += `\n\n${chatHistoryContext}`;
+    }
+    
+    // Add memory tool instructions if memory is enabled
     enhancedSystemPrompt = isMemoryEnabled 
-      ? `${baseSystemPrompt}\n\n
+      ? `${contextualSystemPrompt}\n\n
 MEMORY TOOL INSTRUCTIONS:
 You have access to memory tools to help maintain context and remember important information about the user.
 
@@ -284,8 +307,8 @@ You have access to memory tools to help maintain context and remember important 
 - When they mention their profession, interests, or expertise
 - When they share important context about their work
 
-Use these tools naturally as part of helping the user - you don't need to announce when you're using them.${chatHistoryContext}`
-      : baseSystemPrompt;
+Use these tools naturally as part of helping the user - you don't need to announce when you're using them.`
+      : contextualSystemPrompt;
     
     console.log(`[SIMPLE CHAT API] Using ${isMemoryEnabled ? 'memory-enabled' : 'standard'} system prompt`);
 
@@ -465,9 +488,10 @@ Use these tools naturally as part of helping the user - you don't need to announ
             });
 
             // Process conversation insights in the background
+            const currentChat = await getChatById({ id });
             processConversationCompletion({
               chatId: id,
-              chatTitle: chat?.title,
+              chatTitle: currentChat?.title,
               messages: allMessages,
               userId: userId!,
             }, PAPR_MEMORY_API_KEY).catch(error => {

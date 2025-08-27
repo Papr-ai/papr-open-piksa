@@ -245,15 +245,16 @@ export async function handleNewChatCreation(
       });
     }
 
-    // Return context for system prompt
-    const context = generateChatHistoryContext(recentChats);
-    console.log('[Chat History Context] ✅ Generated context for new chat:', {
+    // Return chat history context (user context will be handled by getOrCreateChatContext)
+    const chatHistoryContext = generateChatHistoryContext(recentChats);
+    
+    console.log('[Chat History Context] ✅ Generated chat history context for new chat:', {
       recentChatsCount: recentChats.length,
-      contextLength: context.length,
+      contextLength: chatHistoryContext.length,
       hasUnsummarized: recentChats.some(chat => !chat.oneSentenceSummary)
     });
     
-    return context;
+    return chatHistoryContext;
 
   } catch (error) {
     console.error('[Chat History Context] Error handling new chat creation:', error);

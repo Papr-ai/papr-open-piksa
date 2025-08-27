@@ -112,6 +112,32 @@ export async function trackBasicInteraction(userId: string): Promise<void> {
   await incrementUsage(userId, 'basicInteractions', 1);
 }
 
+export async function checkVoiceChatLimit(userId: string): Promise<UsageCheckResult> {
+  const thresholds = await checkUsageThresholds(userId);
+  const { current, limit, percentage } = thresholds.voiceChats;
+  
+  // Allow if unlimited (-1) or under limit
+  if (limit === -1 || current < limit) {
+    return {
+      allowed: true,
+      usage: { current, limit, percentage },
+      shouldShowUpgrade: percentage >= 80 && limit !== -1,
+    };
+  }
+  
+  return {
+    allowed: false,
+    reason: `You've reached your monthly limit of ${limit} voice chat sessions. Please upgrade your plan to continue using voice chat.`,
+    usage: { current, limit, percentage },
+    shouldShowUpgrade: true,
+  };
+}
+
+export async function trackVoiceChat(userId: string): Promise<void> {
+  await incrementUsage(userId, 'voiceChats', 1);
+  console.log('[Usage Middleware] Tracked voice chat for user:', userId);
+}
+
 export async function trackPremiumInteraction(userId: string): Promise<void> {
   await incrementUsage(userId, 'premiumInteractions', 1);
 }
@@ -174,6 +200,16 @@ export async function getUsageWarnings(userId: string): Promise<{
       percentage: thresholds.memoriesSearched.percentage,
       current: thresholds.memoriesSearched.current,
       limit: thresholds.memoriesSearched.limit,
+    });
+  }
+
+  if (thresholds.voiceChats.percentage >= 80 && thresholds.voiceChats.limit !== -1) {
+    warnings.push({
+      type: 'voiceChats',
+      message: `You've used ${thresholds.voiceChats.percentage.toFixed(0)}% of your monthly voice chat sessions`,
+      percentage: thresholds.voiceChats.percentage,
+      current: thresholds.voiceChats.current,
+      limit: thresholds.voiceChats.limit,
     });
   }
   
