@@ -522,6 +522,8 @@ export async function getVotesByChatId({ id }: { id: string }) {
   }
 }
 
+// getBookChapters function removed - now handled by /api/books endpoint
+
 export async function saveDocument({
   id,
   title,
@@ -537,6 +539,12 @@ export async function saveDocument({
 }) {
   try {
     console.log(`[DB] Saving document (ID: ${id}, Title: ${title})`);
+
+    // Books are handled by the dedicated books table and API, not the Document table
+    if (kind === 'book') {
+      console.log(`[DB] Skipping save for book artifact - books are handled by /api/books endpoint`);
+      return { success: true, message: 'Books are handled by dedicated books system' };
+    }
 
     // Get all existing versions of this document
     const existingVersions = await db

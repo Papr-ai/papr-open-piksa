@@ -27,14 +27,16 @@ interface DocumentToolResultProps {
   type: 'create' | 'update' | 'request-suggestions';
   result: { id: string; title: string; kind: ArtifactKind };
   isReadonly: boolean;
+  chatId?: string;
 }
 
 function PureDocumentToolResult({
   type,
   result,
   isReadonly,
+  chatId,
 }: DocumentToolResultProps) {
-  const { setArtifact } = useArtifact();
+  const { setArtifact } = useArtifact(chatId);
 
   return (
     <button
@@ -84,7 +86,12 @@ function PureDocumentToolResult({
   );
 }
 
-export const DocumentToolResult = memo(PureDocumentToolResult, () => true);
+export const DocumentToolResult = memo(PureDocumentToolResult, (prevProps, nextProps) => 
+  prevProps.type === nextProps.type &&
+  prevProps.result === nextProps.result && 
+  prevProps.isReadonly === nextProps.isReadonly &&
+  prevProps.chatId === nextProps.chatId
+);
 
 interface DocumentToolCallProps {
   type: 'create' | 'update' | 'request-suggestions';

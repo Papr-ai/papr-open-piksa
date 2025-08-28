@@ -25,6 +25,7 @@ import { imageArtifact } from '@/artifacts/image/client';
 import { sheetArtifact } from '@/artifacts/sheet/client';
 import { textArtifact } from '@/artifacts/text/client';
 import { memoryArtifact } from '@/artifacts/memory/client';
+import { bookArtifact } from '@/artifacts/book/client';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from '@/components/message/visibility-selector';
@@ -50,6 +51,7 @@ export const artifactDefinitions = [
   imageArtifact,
   sheetArtifact,
   memoryArtifact,
+  bookArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]['kind'];
 
@@ -104,7 +106,7 @@ function PureArtifact({
   selectedModelId: string;
   selectedVisibilityType: VisibilityType;
 }) {
-  const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
+  const { artifact, setArtifact, metadata, setMetadata } = useArtifact(chatId);
 
   // Handle chat stop - ensure artifact status is updated when chat is stopped
   useEffect(() => {
@@ -579,7 +581,7 @@ function PureArtifact({
             <div className="p-2 flex flex-row justify-between items-start w-full">
               <div className="w-full mx-auto flex flex-row justify-between items-start">
                 <div className="flex flex-row gap-4 items-start">
-                  <ArtifactCloseButton />
+                  <ArtifactCloseButton chatId={chatId} />
 
                   <div className="flex flex-col">
                     <div className="font-medium">{artifact.title}</div>

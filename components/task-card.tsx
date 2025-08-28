@@ -251,7 +251,53 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
 // Helper function to detect task tracker data in content
 export function detectTaskTrackerData(content: string): TaskCardProps | null {
   try {
-    // Strip markdown code fences if present
+    // First, try to detect if there are multiple JSON objects
+    const jsonObjectRegex = /\{[\s\S]*?\}/g;
+    const jsonMatches = content.match(jsonObjectRegex);
+    
+    if (jsonMatches && jsonMatches.length > 0) {
+      // Process each JSON object and find the most recent/relevant one
+      let latestTaskData: TaskCardProps | null = null;
+      
+      for (const jsonMatch of jsonMatches) {
+        try {
+          const parsed = JSON.parse(jsonMatch.trim());
+          
+          if (parsed.type && typeof parsed.type === 'string' && parsed.type.startsWith('task-')) {
+            // Prioritize certain types: task-plan-created > task-completed > task-updated
+            const priority = {
+              'task-plan-created': 3,
+              'task-completed': 2,
+              'task-updated': 1,
+              'task-status': 1
+            };
+            
+            const currentPriority = priority[parsed.type as keyof typeof priority] || 0;
+            const latestPriority = latestTaskData ? priority[latestTaskData.type as keyof typeof priority] || 0 : 0;
+            
+            // Update if this is higher priority or if we don't have any task data yet
+            if (currentPriority >= latestPriority || !latestTaskData) {
+              latestTaskData = {
+                type: parsed.type,
+                tasks: parsed.tasks,
+                task: parsed.task,
+                nextTask: parsed.nextTask,
+                progress: parsed.progress,
+                allCompleted: parsed.allCompleted,
+                message: parsed.message,
+              };
+            }
+          }
+        } catch (e) {
+          // Skip invalid JSON objects
+          continue;
+        }
+      }
+      
+      return latestTaskData;
+    }
+    
+    // Fallback to original logic for single JSON objects
     let jsonString = content.trim();
     const codeFenceMatch = jsonString.match(/```(?:json)?\s*([\s\S]*?)```/);
     if (codeFenceMatch) {

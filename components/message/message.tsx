@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, memo, useEffect } from 'react';
+import { useState, memo, useEffect, useRef } from 'react';
 import type { UIMessage, ToolUIPart, ReasoningUIPart, TextUIPart, UIMessagePart } from 'ai';
 import { isToolUIPart } from 'ai';
+import { useArtifact } from '@/hooks/use-artifact';
+import { generateUUID } from '@/lib/utils';
 
 // Import existing tool result types  
 import type { ArtifactKind } from '@/components/artifact/artifact';
@@ -92,6 +94,78 @@ import cx from 'classnames';
 import { AnimatePresence, motion } from 'framer-motion';
 import type { Vote } from '@/lib/db/schema';
 import { DocumentToolCall, DocumentToolResult } from '@/components/document/document';
+import { BookToolCall, BookToolResult } from '@/components/book/book-tool-result';
+import { AddMemoryResults } from '@/components/memory/add-memory-results';
+import { SearchBooksResults } from '@/components/book/search-books-results';
+import { TaskCard } from '@/components/task-card';
+import { ImageResult } from '@/components/common/image-result';
+import { ImageEditResult } from '@/components/common/image-edit-result';
+
+// Tool input/output types
+type CreateBookInput = {
+  bookTitle: string;
+  chapterTitle: string;
+  chapterNumber: number;
+  description?: string;
+};
+
+type CreateBookOutput = {
+  id: string;
+  bookId?: string;
+  bookTitle: string;
+  chapterTitle: string;
+  chapterNumber: number;
+  content: string;
+  saveError?: string;
+  saved?: boolean;
+};
+
+type AddMemoryInput = {
+  content: string;
+  category?: string;
+  type?: string;
+};
+
+type AddMemoryOutput = {
+  success: boolean;
+  message?: string;
+  memoryId?: string;
+  error?: string;
+};
+
+type SearchBooksInput = {
+  bookTitle?: string;
+};
+
+type SearchBooksOutput = {
+  books: Array<{
+    bookId: string;
+    bookTitle: string;
+    chapterCount: number;
+    lastChapterNumber: number;
+    lastUpdated: string;
+  }>;
+};
+
+type GenerateImageOutput = {
+  id: string;
+  imageUrl: string;
+  prompt: string;
+  style: string;
+  context?: string;
+  title?: string;
+  subtitle?: string;
+};
+
+type EditImageOutput = {
+  id: string;
+  originalImageUrl: string;
+  editedImageUrl: string;
+  prompt: string;
+  editType: string;
+  preserveOriginal: boolean;
+  context?: string;
+};
 import { PencilEditIcon, SparklesIcon, LoaderIcon, CopyIcon } from '../common/icons';
 import { Markdown } from '../common/markdown';
 import { MessageActions } from './message-actions';
@@ -628,6 +702,10 @@ const PurePreviewMessage = ({
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const { data: session, status: sessionStatus } = useSession();
   const { userImage, userName, userEmail, isLoading: avatarLoading } = useUserAvatar();
+  const { setArtifact } = useArtifact(chatId);
+  
+  // Track processed createBook results to prevent duplicate artifact opening
+  const processedCreateBookResults = useRef<Set<string>>(new Set());
   
   // Debug session loading for user messages
   useEffect(() => {
@@ -656,6 +734,67 @@ const PurePreviewMessage = ({
       });
     }
   }, [message]);
+
+  // Auto-open book artifact when createBook tool completes successfully
+  useEffect(() => {
+    if (message.role === 'assistant' && message.parts) {
+      // Look for completed createBook tool calls
+      const createBookResults = message.parts.filter((part: any) => 
+        part.type === 'tool-createBook' && 
+        part.state === 'output-available' && 
+        part.output?.bookId && 
+        part.output?.saved !== false // Only if not explicitly failed
+      );
+
+      // Process only new results that haven't been handled yet
+      const newResults = createBookResults.filter((result: any) => {
+        const resultId = `${result.output.bookId}-${result.output.chapterNumber}`;
+        return !processedCreateBookResults.current.has(resultId);
+      });
+
+      if (newResults.length > 0) {
+        // Get the most recent new result
+        const latestResult = newResults[newResults.length - 1] as any;
+        const output = latestResult.output as CreateBookOutput;
+        const resultId = `${output.bookId}-${output.chapterNumber}`;
+        
+        // Mark this result as processed
+        processedCreateBookResults.current.add(resultId);
+        
+        console.log('[Message] Auto-opening book artifact for new chapter:', {
+          bookId: output.bookId,
+          bookTitle: output.bookTitle,
+          chapterNumber: output.chapterNumber,
+          saved: output.saved,
+          resultId
+        });
+
+        // Create the book artifact with the new chapter
+        const bookContent = JSON.stringify({
+          bookId: output.bookId,
+          bookTitle: output.bookTitle,
+          chapterNumber: output.chapterNumber,
+          chapterTitle: output.chapterTitle,
+          content: output.content,
+        });
+
+        setArtifact({
+          title: `📖 ${output.bookTitle}`,
+          documentId: output.bookId || generateUUID(),
+          kind: 'book',
+          content: bookContent,
+          isVisible: true,
+          status: 'idle',
+          boundingBox: {
+            top: 100,
+            left: 100,
+            width: 1000,
+            height: 700
+          },
+        });
+      }
+    }
+  }, [message, setArtifact]);
   
   // Extract reasoning events from message parts
   const reasoningEvents = message.parts?.reduce((events, part) => {
@@ -1030,21 +1169,65 @@ const PurePreviewMessage = ({
                               type="create"
                               result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
+                              chatId={chatId}
                             />
                           ) : toolName === 'updateDocument' ? (
                             <DocumentToolResult
                               type="update"
                               result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
+                              chatId={chatId}
                             />
                           ) : toolName === 'requestSuggestions' ? (
                             <DocumentToolResult
                               type="request-suggestions"
                               result={output as DocumentToolOutput}
                               isReadonly={isReadonly}
+                              chatId={chatId}
                             />
                           ) : toolName === 'searchMemories' ? (
                             <ChatMemoryResults message={message} />
+                          ) : toolName === 'createBook' ? (
+                            <BookToolResult
+                              result={output as CreateBookOutput}
+                              isReadonly={isReadonly}
+                              chatId={chatId}
+                            />
+                          ) : toolName === 'searchBooks' ? (
+                            <SearchBooksResults
+                              searchResult={output as SearchBooksOutput}
+                            />
+                          ) : toolName === 'generateImage' ? (
+                            <ImageResult
+                              result={output as GenerateImageOutput}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'editImage' ? (
+                            <ImageEditResult
+                              result={output as EditImageOutput}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'addMemory' ? (
+                            <AddMemoryResults
+                              memoryResult={{
+                                success: (output as AddMemoryOutput)?.success || false,
+                                message: (output as AddMemoryOutput)?.message,
+                                memoryId: (output as AddMemoryOutput)?.memoryId,
+                                error: (output as AddMemoryOutput)?.error,
+                                category: (input as AddMemoryInput)?.category || (input as AddMemoryInput)?.type,
+                                content: (input as AddMemoryInput)?.content,
+                              }}
+                            />
+                          ) : ['createTaskPlan', 'updateTask', 'completeTask', 'getTaskStatus', 'addTask'].includes(toolName) ? (
+                            <TaskCard 
+                              type={(output as any)?.type || 'task-status'}
+                              tasks={(output as any)?.tasks}
+                              task={(output as any)?.task}
+                              nextTask={(output as any)?.nextTask}
+                              progress={(output as any)?.progress}
+                              allCompleted={(output as any)?.allCompleted}
+                              message={(output as any)?.message}
+                            />
                           ) : [
                             'listRepositories',
                             'createProject', 
@@ -1146,6 +1329,51 @@ const PurePreviewMessage = ({
                               args={{title: '', ...input}}
                               isReadonly={isReadonly}
                             />
+                                                ) : toolName === 'createBook' ? (
+                        <BookToolCall
+                          args={input as CreateBookInput}
+                          isReadonly={isReadonly}
+                        />
+                      ) : toolName === 'searchBooks' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
+                          <div className="text-blue-600 mt-1">🔍</div>
+                          <div className="text-left">
+                            <div className="font-medium">Searching Books</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as SearchBooksInput)?.bookTitle ? 
+                                `Looking for "${(input as SearchBooksInput)?.bookTitle}"` : 
+                                'Finding all books in your library'
+                              }
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'generateImage' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-purple-50 border-purple-200">
+                          <div className="text-purple-600 mt-1">🎨</div>
+                          <div className="text-left">
+                            <div className="font-medium">Generating Image</div>
+                            <div className="text-sm text-muted-foreground">
+                              Creating: {(input as any)?.prompt?.substring(0, 50)}...
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'addMemory' ? (
+                            <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
+                              <div className="text-blue-600 mt-1">💾</div>
+                              <div className="text-left">
+                                <div className="font-medium">Adding {(input as AddMemoryInput)?.category || (input as AddMemoryInput)?.type || 'General'} Memory</div>
+                                <div className="text-sm text-muted-foreground">Saving to your knowledge base...</div>
+                              </div>
+                              <div className="animate-spin mt-1">
+                                <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
+                              </div>
+                            </div>
                           ) : null}
                         </div>
                       );

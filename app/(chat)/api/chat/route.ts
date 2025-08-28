@@ -1,3 +1,4 @@
+//this isn't being used. check simple chat route.
 import {
   createTextStreamResponse,
   smoothStream,
@@ -24,6 +25,8 @@ import { getWeather } from '@/lib/ai/tools/get-weather';
 import { searchMemories } from '@/lib/ai/tools/search-memories';
 import { addMemory } from '@/lib/ai/tools/add-memory';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
+import { generateImage } from '@/lib/ai/tools/generate-image';
+import { editImage } from '@/lib/ai/tools/edit-image';
 import { 
   createListRepositoriesTool,
   createCreateProjectTool,
@@ -203,6 +206,10 @@ function getToolCallStartMessage(toolName: string, args: Record<string, any>): s
       return `📊 Checking task progress`;
     case 'addTask':
       return `📋 Adding tasks to plan`;
+    case 'generateImage':
+      return `🎨 Generating image: "${args.prompt?.substring(0, 50)}${args.prompt?.length > 50 ? '...' : ''}"`;
+    case 'editImage':
+      return `✏️ Editing image (${args.editType}): "${args.prompt?.substring(0, 50)}${args.prompt?.length > 50 ? '...' : ''}"`;
     default:
       return `🔧 Running ${toolName}`;
   }
@@ -284,6 +291,10 @@ function getToolCallResultMessage(toolName: string, result: Record<string, any>)
       } else {
         return `✅ Task tracker completed`;
       }
+    case 'generateImage':
+      return result.imageUrl ? `✅ Image generated successfully` : `❌ Failed to generate image`;
+    case 'editImage':
+      return result.editedImageUrl ? `✅ Image edited successfully` : `❌ Failed to edit image`;
     default:
       return `✅ ${toolName} completed successfully`;
   }
@@ -1066,6 +1077,8 @@ AVAILABLE STAGING TOOLS:
             createDocument: createToolWrapper('createDocument')(createDocument({ session, dataStream })),
             updateDocument: createToolWrapper('updateDocument')(updateDocument({ session, dataStream })),
             requestSuggestions: createToolWrapper('requestSuggestions')(requestSuggestions({ session, dataStream })),
+            generateImage: createToolWrapper('generateImage')(generateImage({ session, dataStream })),
+            editImage: createToolWrapper('editImage')(editImage({ session, dataStream })),
             listRepositories: createToolWrapper('listRepositories')(createListRepositoriesTool({ session, dataStream })),
             createProject: createToolWrapper('createProject')(createCreateProjectTool({ session, dataStream })),
             getRepositoryFiles: createToolWrapper('getRepositoryFiles')(createGetRepositoryFilesTool({ session, dataStream })),
@@ -1280,6 +1293,16 @@ AVAILABLE STAGING TOOLS:
                       }
                       
                       const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
+                      
+                      console.log('[CHAT API] 🔍 Checking conversation analysis conditions:', {
+                        messageCount: allMessages.length,
+                        isMemoryEnabled,
+                        hasApiKey: !!PAPR_MEMORY_API_KEY,
+                        shouldAnalyze: shouldAnalyzeConversation(allMessages),
+                        hasUserId: !!session?.user?.id,
+                        chatId: id
+                      });
+                      
                       if (isMemoryEnabled && PAPR_MEMORY_API_KEY && shouldAnalyzeConversation(allMessages)) {
                         console.log('[CHAT API] 🔍 Conversation ready for analysis:', {
                           messageCount: allMessages.length,
@@ -1302,6 +1325,8 @@ AVAILABLE STAGING TOOLS:
                             }
                           })();
                         }
+                      } else {
+                        console.log('[CHAT API] 🔍 Skipping conversation analysis - conditions not met');
                       }
                     })
                   ]).catch(error => {

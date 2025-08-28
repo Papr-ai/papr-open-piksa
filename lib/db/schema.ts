@@ -193,6 +193,8 @@ export const document = pgTable(
     })
       .notNull()
       .default('text'),
+    chapterNumber: integer('chapterNumber'),
+    bookTitle: text('bookTitle'),
     userId: uuid('userId')
       .notNull()
       .references(() => user.id),
@@ -269,9 +271,27 @@ export const usage = pgTable('Usage', {
 
 export type Usage = InferSelectModel<typeof usage>;
 
-// Add the following comment to understand the current schema
-// We need to understand the document schema to implement a Git-like structure
-// Currently, we're looking at:
-// - What fields exist on documents
-// - How document relationships are stored
-// - What types of documents are currently supported
+// Books table - separate from documents for better book management
+export const Book = pgTable(
+  'Books',
+  {
+    id: uuid('id').primaryKey().notNull().defaultRandom(),
+    bookId: uuid('bookId').notNull(), // Unique identifier for the book (multiple chapters share this)
+    bookTitle: text('bookTitle').notNull(),
+    chapterNumber: integer('chapterNumber').notNull(),
+    chapterTitle: text('chapterTitle').notNull(),
+    content: text('content').notNull(),
+    userId: uuid('userId')
+      .notNull()
+      .references(() => user.id),
+    createdAt: timestamp('createdAt').notNull().defaultNow(),
+    updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+  },
+  (table) => {
+    return {
+      uniqueBookChapter: primaryKey({ columns: [table.bookId, table.chapterNumber, table.userId] }),
+    };
+  },
+);
+
+export type Book = InferSelectModel<typeof Book>;

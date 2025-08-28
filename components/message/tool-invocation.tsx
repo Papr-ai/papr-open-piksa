@@ -2,6 +2,8 @@
 
 import { Weather } from '../weather';
 import { DocumentToolCall, DocumentToolResult } from '@/components/document/document';
+import { BookToolCall, BookToolResult } from '@/components/book/book-tool-result';
+import { AddMemoryResults } from '@/components/memory/add-memory-results';
 // Remove GitHub file results imports
 import { GitHubSearchResults } from '../github/github-search-results';
 import { TruncatedFileDisplay } from './truncated-file';
@@ -54,6 +56,8 @@ function getToolIcon(toolName: string) {
     case 'createDocument':
     case 'updateDocument':
       return '📝';
+    case 'createBook':
+      return '📚';
     case 'requestSuggestions':
       return '💡';
     case 'searchMemories':
@@ -93,6 +97,8 @@ function getToolLabel(toolName: string, args?: any) {
       return `Creating document: ${args?.title || '...'}`;
     case 'updateDocument':
       return `Updating document: ${args?.title || '...'}`;
+    case 'createBook':
+      return `Creating book chapter: ${args?.chapterTitle || '...'}`;
     case 'requestSuggestions':
       return 'Generating suggestions';
     case 'searchMemories':
@@ -523,6 +529,57 @@ export function ToolInvocation({
         result={result}
         isReadonly={isReadonly}
       />
+    );
+  }
+
+
+
+  // Special handling for createBook tool
+  if (toolName === 'createBook') {
+    return state === 'call' ? (
+      <BookToolCall
+        args={args}
+        isReadonly={isReadonly}
+      />
+    ) : (
+      <BookToolResult
+        result={result}
+        isReadonly={isReadonly}
+      />
+    );
+  }
+
+  // Special handling for addMemory tool
+  if (toolName === 'addMemory') {
+    return state === 'result' ? (
+      <AddMemoryResults
+        memoryResult={{
+          success: result?.success || false,
+          message: result?.message,
+          memoryId: result?.memoryId || result?.memory_id,
+          error: result?.error,
+          category: args?.category || args?.type,
+          content: args?.content,
+        }}
+      />
+    ) : (
+      // For call state, show a simple loading state
+      <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
+        <div className="text-blue-600 mt-1">
+          💾
+        </div>
+        <div className="text-left">
+          <div className="font-medium">
+            Adding {args?.category || args?.type || 'General'} Memory
+          </div>
+          <div className="text-sm text-muted-foreground">
+            Saving to your knowledge base...
+          </div>
+        </div>
+        <div className="animate-spin mt-1">
+          <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
+        </div>
+      </div>
     );
   }
 

@@ -19,8 +19,11 @@ import { systemPrompt } from '@/lib/ai/prompts';
 import { getWeather } from '@/lib/ai/tools/get-weather';
 import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
+import { createBook } from '@/lib/ai/tools/create-book';
+import { searchBooks } from '@/lib/ai/tools/search-books';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
+import { generateImage } from '@/lib/ai/tools/generate-image';
 import { 
   createListRepositoriesTool,
   createCreateProjectTool,
@@ -209,7 +212,10 @@ export async function POST(request: Request) {
     tools.getWeather = getWeather;
     tools.createDocument = createDocument({ session, dataStream });
     tools.updateDocument = updateDocument({ session, dataStream });
+    tools.createBook = createBook({ session, dataStream });
+    tools.searchBooks = searchBooks({ session });
     tools.requestSuggestions = requestSuggestions({ session, dataStream });
+    tools.generateImage = generateImage({ session, dataStream });
     
     // GitHub tools
     tools.listRepositories = createListRepositoriesTool({ session, dataStream });
@@ -347,7 +353,7 @@ Use these tools naturally as part of helping the user - you don't need to announ
           model: modelProvider,
           stopWhen: [stepCountIs(5)], // Allow up to 5 steps for multi-step reasoning
           system: enhancedSystemPrompt + 
-            "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tool results mean. Don't just call tools without text - users need both your explanation AND the tool results." +
+            "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tools accomplish. DO NOT include raw tool response data or JSON in your text - the UI will handle displaying tool results automatically. Focus on natural language explanations of your actions." +
             (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. ALWAYS USE THE GOOGLE SEARCH TOOL when users ask about:\n- Current events or recent news\n- Latest developments in any field\n- Real-time information\n- Recent updates or changes\n- \"What's new\" or \"latest\" questions\n\nIMPORTANT CITATION REQUIREMENTS:\n1. When you use web search, you MUST include inline citations in your response\n2. Use this format: [Source Name] for each key fact or claim\n3. Place citations immediately after the relevant information\n4. Use the actual website name (like \"TechCrunch\", \"Reuters\", \"BBC News\") as the citation\n5. Do not rely on your training data for recent information - always search first when dealing with current topics\n\nExample: \"OpenAI announced a new model today [TechCrunch]. The model shows 40% improvement in coding tasks [GitHub Blog].\"\n\nFor the user's question, you MUST use the google_search tool first to get current information, then provide your response with proper inline citations using the format above." : ""),
           messages: adjustedModelMessages,
           tools: tools,
@@ -355,7 +361,10 @@ Use these tools naturally as part of helping the user - you don't need to announ
             'getWeather',
             'createDocument',
             'updateDocument',
+            'createBook',
+            'searchBooks',
             'requestSuggestions',
+            'generateImage',
             'listRepositories',
             'createProject',
             'getRepositoryFiles',
@@ -481,6 +490,14 @@ Use these tools naturally as part of helping the user - you don't need to announ
           const allMessages = [...messages, ...finalMessages.slice(messages.length)];
           const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
           
+          console.log('[SIMPLE CHAT API] 🔍 Checking conversation analysis conditions:', {
+            messageCount: allMessages.length,
+            isMemoryEnabled,
+            hasApiKey: !!PAPR_MEMORY_API_KEY,
+            shouldAnalyze: shouldAnalyzeConversation(allMessages),
+            chatId: id
+          });
+          
           if (isMemoryEnabled && PAPR_MEMORY_API_KEY && shouldAnalyzeConversation(allMessages)) {
             console.log('[SIMPLE CHAT API] 🔍 Conversation ready for analysis:', {
               messageCount: allMessages.length,
@@ -497,6 +514,8 @@ Use these tools naturally as part of helping the user - you don't need to announ
             }, PAPR_MEMORY_API_KEY).catch(error => {
               console.error('[SIMPLE CHAT API] 🔍 Error processing conversation insights:', error);
             });
+          } else {
+            console.log('[SIMPLE CHAT API] 🔍 Skipping conversation analysis - conditions not met');
           }
 
           // Save all new messages (assistant messages with tool results)

@@ -6,6 +6,8 @@ import { ThinkBlock, processThinkBlocks } from './think-block';
 import { GitHubRepoResults, detectGitHubRepositories } from '../github/github-repo-results';
 import { GitHubSearchResults, detectGitHubSearchResults } from '../github/github-search-results';
 import { TaskCard, detectTaskTrackerData } from '../task-card';
+import { MemoryCard, detectMemoryData } from '../memory-card';
+
 
 import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
@@ -90,6 +92,13 @@ export function ProcessedMessage({ content, isAssistantMessage = false }: Proces
     return detectTaskTrackerData(content);
   }, [content]);
 
+  // Check for memory data
+  const memoryData = useMemo(() => {
+    return detectMemoryData(content);
+  }, [content]);
+
+
+
 
 
   // Process the content to extract think blocks
@@ -101,6 +110,13 @@ export function ProcessedMessage({ content, isAssistantMessage = false }: Proces
   if (taskData) {
     return <TaskCard {...taskData} />;
   }
+
+  // If memory data is detected, show memory card
+  if (memoryData) {
+    return <MemoryCard {...memoryData} />;
+  }
+
+
 
   // If repository approval is required, show approval card
   if (approvalData) {

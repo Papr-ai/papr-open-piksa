@@ -99,7 +99,7 @@ export function DocumentPreview({
     : artifact.status === 'streaming' || artifact.content
       ? {
           title: artifact.title,
-          kind: artifact.kind,
+          kind: artifact.kind === 'book' ? 'text' : artifact.kind, // Convert book to text for Document type
           content:
             typeof artifact.content === 'string'
               ? artifact.content
@@ -109,6 +109,8 @@ export function DocumentPreview({
           userId: 'noop',
           is_latest: true,
           version: '1',
+          chapterNumber: null,
+          bookTitle: null,
         }
       : null;
 

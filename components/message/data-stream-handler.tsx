@@ -15,6 +15,8 @@ export type DataStreamDelta = {
     | 'code-delta'
     | 'sheet-delta'
     | 'image-delta'
+    | 'image-generated'
+    | 'image-edited'
     | 'title'
     | 'id'
     | 'suggestion'
@@ -483,6 +485,28 @@ Please reply with **Approve** to proceed with creation, or **Stop** to cancel.`,
             status: 'idle',
             isVisible: true,
           }));
+          break;
+
+        case 'image-generated':
+          // Handle image generation events
+          const imageGeneratedData = dataPart.data as any;
+          console.log('[DATA STREAM] Image generated:', imageGeneratedData);
+          
+          // Update thinking state with success message
+          if (imageGeneratedData.content) {
+            setThinkingState('✅ Image generated successfully', 'tool-result-success');
+          }
+          break;
+
+        case 'image-edited':
+          // Handle image editing events
+          const imageEditedData = dataPart.data as any;
+          console.log('[DATA STREAM] Image edited:', imageEditedData);
+          
+          // Update thinking state with success message
+          if (imageEditedData.content) {
+            setThinkingState('✅ Image edited successfully', 'tool-result-success');
+          }
           break;
 
         case 'repository-created':

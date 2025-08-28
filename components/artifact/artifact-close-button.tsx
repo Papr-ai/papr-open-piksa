@@ -3,8 +3,12 @@ import { CrossIcon } from '@/components/common/icons';
 import { Button } from '@/components/ui/button';
 import { initialArtifactData, useArtifact } from '@/hooks/use-artifact';
 
-function PureArtifactCloseButton() {
-  const { setArtifact } = useArtifact();
+interface ArtifactCloseButtonProps {
+  chatId?: string;
+}
+
+function PureArtifactCloseButton({ chatId }: ArtifactCloseButtonProps) {
+  const { setArtifact } = useArtifact(chatId);
 
   return (
     <Button
@@ -27,4 +31,6 @@ function PureArtifactCloseButton() {
   );
 }
 
-export const ArtifactCloseButton = memo(PureArtifactCloseButton, () => true);
+export const ArtifactCloseButton = memo(PureArtifactCloseButton, (prevProps, nextProps) => 
+  prevProps.chatId === nextProps.chatId
+);

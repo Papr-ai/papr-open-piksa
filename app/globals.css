@@ -242,6 +242,10 @@
     }
 }
 
+.prose {
+    max-width: 100%;
+}
+
 .explore-button {
     animation: fadeIn 0.8s ease-out, bounce 2s infinite 1s;
 }
