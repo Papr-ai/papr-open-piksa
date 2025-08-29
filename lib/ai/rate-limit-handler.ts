@@ -26,14 +26,14 @@ export function estimateConversationTokens(messages: UIMessage[]): number {
   return messages.reduce((total, message) => total + estimateMessageTokens(message), 0);
 }
 
-// Model-specific rate limits (tokens per minute)
+// Model-specific context limits (tokens per request)
 export const MODEL_RATE_LIMITS: Record<string, number> = {
   'openai/gpt-oss-120b': 8000,
   'openai/gpt-oss-20b': 8000,
   'deepseek-r1-distill-llama-70b': 30000,
   'llama-3.3-70b-versatile': 30000,
-  'gpt-5': 50000,
-  'gpt-5-mini': 50000,
+  'gpt-5': 180000,  // Updated to handle larger contexts
+  'gpt-5-mini': 180000,  // Updated to handle larger contexts
   // Add more models as needed
 };
 
@@ -55,6 +55,11 @@ export function isRateLimitError(error: any): boolean {
     errorString.includes('tokens per minute') ||
     errorString.includes('tpm') ||
     errorString.includes('limit 8000') ||
+    errorString.includes('prompt is too long') ||
+    errorString.includes('tokens >') ||
+    errorString.includes('maximum') ||
+    errorString.includes('context length') ||
+    errorString.includes('token limit') ||
     (error.status === 429)
   );
 }
@@ -69,7 +74,20 @@ export function truncateConversation(
   
   // Always preserve system message if it exists
   const systemMessage = messages.find(m => m.role === 'system');
-  const otherMessages = messages.filter(m => m.role !== 'system');
+  let otherMessages = messages.filter(m => m.role !== 'system');
+  
+  // First pass: Remove very large tool messages (likely image generation results)
+  const filteredMessages = otherMessages.filter(msg => {
+    const msgSize = estimateMessageTokens(msg);
+    if (msgSize > 50000) { // Messages over 50k tokens
+      console.log(`[RATE LIMIT] Removing large tool message: ${msg.role}, ~${msgSize} tokens`);
+      return false;
+    }
+    return true;
+  });
+  
+  console.log(`[RATE LIMIT] Removed ${otherMessages.length - filteredMessages.length} large messages`);
+  otherMessages = filteredMessages;
   
   // If preserving last user message, separate it
   let lastUserMessage: UIMessage | undefined;
@@ -129,9 +147,11 @@ export function truncateConversation(
 export function parseRateLimitError(error: any): { limit?: number; requested?: number } {
   const errorMessage = error.message || error.toString() || '';
   
-  // Try to extract numbers from error message like "Limit 8000, Requested 8689"
-  const limitMatch = errorMessage.match(/limit\s*(\d+)/i);
-  const requestedMatch = errorMessage.match(/requested\s*(\d+)/i);
+  // Try to extract numbers from different error formats:
+  // "Limit 8000, Requested 8689"
+  // "prompt is too long: 238129 tokens > 200000 maximum"
+  const limitMatch = errorMessage.match(/limit\s*(\d+)/i) || errorMessage.match(/>\s*(\d+)\s*maximum/i);
+  const requestedMatch = errorMessage.match(/requested\s*(\d+)/i) || errorMessage.match(/(\d+)\s*tokens\s*>/i);
   
   return {
     limit: limitMatch ? parseInt(limitMatch[1]) : undefined,
@@ -149,26 +169,42 @@ export async function handleRateLimitWithRetry<T>(
   let currentMessages = messages;
   let lastError: any;
   
+  console.log(`[RATE LIMIT] Starting handleRateLimitWithRetry with ${messages.length} messages, estimated ${estimateConversationTokens(messages)} tokens`);
+  console.log(`[RATE LIMIT] WARNING: Token estimation may be inaccurate due to message conversion - actual tokens could be much higher`);
+  
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
+      console.log(`[RATE LIMIT] Attempt ${attempt + 1} with ${currentMessages.length} messages`);
       return await apiCall(currentMessages);
     } catch (error) {
       lastError = error;
       
+      console.log(`[RATE LIMIT] Attempt ${attempt + 1} failed with error:`, (error as Error).message);
+      console.log(`[RATE LIMIT] Is rate limit error?`, isRateLimitError(error));
+      
       if (!isRateLimitError(error) || attempt === maxRetries) {
+        console.log(`[RATE LIMIT] Not retrying - isRateLimit: ${isRateLimitError(error)}, attempt: ${attempt}/${maxRetries}`);
         throw error;
       }
       
       console.log(`[RATE LIMIT] Attempt ${attempt + 1} failed, truncating messages...`);
       
       // Parse the actual limit from the error if available
-      const { limit } = parseRateLimitError(error);
+      const { limit, requested } = parseRateLimitError(error);
+      console.log(`[RATE LIMIT] Parsed from error - limit: ${limit}, requested: ${requested}`);
+      
       const modelLimit = limit || getModelRateLimit(modelId);
+      console.log(`[RATE LIMIT] Using limit: ${modelLimit} for model: ${modelId}`);
       
-      // Reduce limit by 20% for safety margin
-      const safeLimit = Math.floor(modelLimit * 0.8);
+      // For very large token overages, be more aggressive with truncation
+      const overage = requested ? (requested - modelLimit) / modelLimit : 1;
+      const aggressiveFactor = overage > 1 ? 0.3 : 0.8; // More aggressive truncation for large overages
       
-      // Truncate messages
+      const safeLimit = Math.floor(modelLimit * aggressiveFactor);
+      console.log(`[RATE LIMIT] Overage factor: ${overage.toFixed(2)}, using ${aggressiveFactor} safety factor`);
+      console.log(`[RATE LIMIT] Safe limit after reduction: ${safeLimit}`);
+      
+      // Truncate messages more aggressively
       currentMessages = truncateConversation(currentMessages, safeLimit);
       
       // If we can't truncate further, give up

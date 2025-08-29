@@ -11,21 +11,33 @@ import { z } from 'zod';
 import type { UIMessage } from 'ai';
 import { storeContentInMemory } from '@/lib/ai/memory/middleware';
 
-// Schema for conversation insights
+// Schema for conversation insights - flexible limits
 const ConversationInsightsSchema = z.object({
-  oneLineSummary: z.string().max(100).describe('One sentence summary'),
-  longerSummary: z.string().max(300).describe('2 sentence detailed summary'),
-  keyInsights: z.array(z.string()).max(2).describe('Top 2 insights'),
-  userGoals: z.array(z.string()).max(2).describe('User goals'),
-  userPreferences: z.array(z.string()).max(2).describe('User preferences'),
-  topicsDiscussed: z.array(z.string()).max(3).describe('Main topics'),
-  actionItems: z.array(z.string()).max(2).describe('Action items'),
-  userExpertise: z.array(z.string()).max(2).describe('User expertise'),
-  toolsUsed: z.array(z.string()).max(3).describe('Tools used'),
-  conversationType: z.enum(['creative', 'technical', 'planning', 'learning', 'problem-solving', 'casual', 'mixed']).describe('Type'),
+  oneLineSummary: z.string().min(10).max(400).describe('Concise summary of the conversation'),
+  longerSummary: z.string().min(20).max(1000).describe('Detailed summary with key points'),
+  keyInsights: z.array(z.string()).min(1).max(8).describe('Key insights from the conversation'),
+  userGoals: z.array(z.string()).min(0).max(8).describe('User goals mentioned or implied'),
+  userPreferences: z.array(z.string()).min(0).max(8).describe('User preferences discovered'),
+  topicsDiscussed: z.array(z.string()).min(1).max(10).describe('Main topics covered'),
+  actionItems: z.array(z.string()).min(0).max(8).describe('Action items or next steps'),
+  userExpertise: z.array(z.string()).min(0).max(8).describe('User expertise areas shown'),
+  toolsUsed: z.array(z.string()).min(0).max(15).describe('Tools used in the conversation'),
+  conversationType: z.enum(['creative', 'technical', 'planning', 'learning', 'problem-solving', 'casual', 'mixed']).describe('Primary conversation type'),
 });
 
 type ConversationInsights = z.infer<typeof ConversationInsightsSchema>;
+
+// Type for the insights stored in the database
+interface StoredInsights {
+  chunkedSummaries?: Record<string, ConversationInsights>;
+  latestSummary?: {
+    messageCount: number;
+    oneLineSummary: string;
+    longerSummary: string;
+    conversationType: string;
+  };
+  [key: string]: any; // Allow other properties
+}
 
 interface ConversationData {
   chatId: string;
@@ -37,6 +49,9 @@ interface ConversationData {
 /**
  * Analyze a completed conversation and extract insights
  */
+/**
+ * Analyze the most recent 15 messages of a conversation
+ */
 export async function analyzeConversation(
   conversationData: ConversationData,
   apiKey: string
@@ -44,11 +59,18 @@ export async function analyzeConversation(
   try {
     const { messages, chatTitle } = conversationData;
     
-    // Extract text content from messages
-    const conversationText = messages
+    // Always analyze the most recent 15 messages
+    const recentMessages = messages.slice(-15);
+    const messageCount = messages.length;
+    
+    console.log(`[Conversation Insights] Analyzing most recent 15 messages (total: ${messageCount})`);
+    
+    // Extract text content from recent messages
+    const conversationText = recentMessages
       .map((msg, index) => {
         const content = extractMessageContent(msg);
-        return `[${index + 1}] ${msg.role}: ${content}`;
+        const messageNumber = messageCount - 15 + index + 1;
+        return `[${messageNumber}] ${msg.role}: ${content}`;
       })
       .join('\n\n');
 
@@ -65,13 +87,26 @@ export async function analyzeConversation(
       model: 'gpt-5-mini'
     });
 
-    const systemPrompt = `Extract insights from conversation. Be very concise.`;
+    const systemPrompt = `Extract insights from the most recent 15 messages of this ${messageCount}-message conversation. Be thorough but concise:
 
-    const userPrompt = `${chatTitle || 'Untitled'}
+- oneLineSummary: Brief overview of recent activity (10-400 chars)
+- longerSummary: Detailed summary of recent interactions (20-1000 chars)
+- keyInsights: Important discoveries from recent messages (1-8 items)
+- userGoals: What the user wants to achieve (0-8 items)
+- userPreferences: User's stated or implied preferences (0-8 items)
+- topicsDiscussed: Main subjects covered recently (1-10 items)
+- actionItems: Next steps or tasks mentioned (0-8 items)
+- userExpertise: Skills or knowledge areas shown (0-8 items)
+- toolsUsed: Tools utilized in recent messages (0-15 items)
 
+Focus on quality over quantity. Include what's relevant and meaningful from this recent conversation segment. These are flexible limits - prioritize completeness and accuracy over strict length constraints.`;
+
+    const userPrompt = `Title: ${chatTitle || 'Untitled'}
+
+Conversation:
 ${truncatedConversation}
 
-Extract: goals, preferences, expertise, outcomes.`;
+Extract key insights, goals, preferences, expertise, and outcomes. Be concise and stay within limits.`;
 
     const result = await generateObject({
       model: myProvider.languageModel('gpt-5-mini'),
@@ -137,7 +172,7 @@ CONVERSATION TYPE: ${insights.conversationType}`;
     const success = await storeContentInMemory({
       userId,
       content: memoryContent,
-      type: 'conversation_summary',
+      type: 'text',
       metadata: {
         sourceType: 'PaprChat_ConversationSummary',
         chatId,
@@ -165,29 +200,58 @@ CONVERSATION TYPE: ${insights.conversationType}`;
       });
     }
 
-    // Also store in chat table for quick access
+    // Also store in chat table with chunked summaries
     try {
       const { db, chat, eq } = await import('@/lib/db/queries-minimal');
+      const messageCount = conversationData.messages.length;
+      const chunkKey = messageCount.toString();
+      
+      // Get existing insights to preserve previous chunks
+      const existingChat = await db.select({ insights: chat.insights }).from(chat).where(eq(chat.id, chatId)).limit(1);
+      const existingInsights = (existingChat[0]?.insights as StoredInsights) || {};
+      const existingChunkedSummaries = existingInsights.chunkedSummaries || {};
+      
+      // Add new chunk summary
+      const updatedChunkedSummaries = {
+        ...existingChunkedSummaries,
+        [chunkKey]: {
+          oneLineSummary: insights.oneLineSummary,
+          longerSummary: insights.longerSummary,
+          keyInsights: insights.keyInsights,
+          userGoals: insights.userGoals,
+          userPreferences: insights.userPreferences,
+          topicsDiscussed: insights.topicsDiscussed,
+          actionItems: insights.actionItems,
+          userExpertise: insights.userExpertise,
+          toolsUsed: insights.toolsUsed,
+          conversationType: insights.conversationType,
+          analyzedAt: new Date().toISOString(),
+        }
+      };
+      
       await db
         .update(chat)
         .set({
-          oneSentenceSummary: insights.oneLineSummary,
-          fullSummary: insights.longerSummary,
+          oneSentenceSummary: insights.oneLineSummary, // Keep latest for backward compatibility
+          fullSummary: insights.longerSummary, // Keep latest for backward compatibility
           insights: {
-            keyInsights: insights.keyInsights,
-            userGoals: insights.userGoals,
-            userPreferences: insights.userPreferences,
-            topicsDiscussed: insights.topicsDiscussed,
-            actionItems: insights.actionItems,
-            userExpertise: insights.userExpertise,
-            toolsUsed: insights.toolsUsed,
-            conversationType: insights.conversationType,
+            ...existingInsights,
+            chunkedSummaries: updatedChunkedSummaries,
+            // Keep latest summary at top level for quick access
+            latestSummary: {
+              messageCount,
+              oneLineSummary: insights.oneLineSummary,
+              longerSummary: insights.longerSummary,
+              conversationType: insights.conversationType,
+            }
           },
         })
         .where(eq(chat.id, chatId));
 
-      console.log('[Conversation Insights] Successfully updated chat table with insights:', {
+      console.log('[Conversation Insights] Successfully updated chat table with chunked insights:', {
         chatId,
+        chunkKey,
+        totalChunks: Object.keys(updatedChunkedSummaries).length,
         oneLineSummary: insights.oneLineSummary.substring(0, 100) + '...',
       });
     } catch (dbError) {
@@ -231,43 +295,71 @@ function extractMessageContent(message: UIMessage): string {
 }
 
 /**
- * Check if a conversation should be analyzed (15+ messages or new chat started)
+ * Check if a conversation should be analyzed at specific message counts (15, 30, 45, etc.)
  */
 export function shouldAnalyzeConversation(
   messages: UIMessage[],
-  isNewChat: boolean = false
+  existingChunkedSummaries?: Record<string, any>
 ): boolean {
-  // Only analyze substantial conversations (5+ messages) or when reaching 15+ messages
-  // For shorter conversations, the title is sufficient context
-  const meaningfulMessages = messages.filter(msg => {
-    const content = extractMessageContent(msg);
-    return content.length > 10; // More than just greetings
-  });
+  const messageCount = messages.length;
   
-  return messages.length >= 15 || (isNewChat && meaningfulMessages.length >= 5);
+  // Check if we've reached a multiple of 15 messages
+  if (messageCount < 15 || messageCount % 15 !== 0) {
+    return false;
+  }
+  
+  // Check if we already have a summary for this chunk
+  const chunkKey = messageCount.toString();
+  if (existingChunkedSummaries && existingChunkedSummaries[chunkKey]) {
+    console.log(`[Conversation Insights] Already have summary for ${messageCount} messages, skipping`);
+    return false;
+  }
+  
+  console.log(`[Conversation Insights] Should analyze: ${messageCount} messages reached, no existing summary`);
+  return true;
 }
 
 /**
- * Process conversation completion - analyze and store insights
+ * Process conversation completion - analyze and store insights at 15, 30, 45 message intervals
  */
 export async function processConversationCompletion(
   conversationData: ConversationData,
   apiKey: string
 ): Promise<boolean> {
   try {
+    const { messages, chatId } = conversationData;
+    
+    // First, get existing chunked summaries from the chat table
+    let existingChunkedSummaries = {};
+    try {
+      const { db, chat, eq } = await import('@/lib/db/queries-minimal');
+      const existingChat = await db.select({ insights: chat.insights }).from(chat).where(eq(chat.id, chatId)).limit(1);
+      existingChunkedSummaries = (existingChat[0]?.insights as StoredInsights)?.chunkedSummaries || {};
+    } catch (dbError) {
+      console.warn('[Conversation Insights] Could not fetch existing summaries:', dbError);
+    }
+    
     console.log('[Conversation Insights] Processing conversation completion:', {
-      chatId: conversationData.chatId,
-      messageCount: conversationData.messages.length,
+      chatId,
+      messageCount: messages.length,
+      existingChunks: Object.keys(existingChunkedSummaries),
+      strategy: 'simple chunked analysis (15, 30, 45, etc.)'
     });
 
-    // Analyze the conversation
+    // Check if we should analyze (at 15, 30, 45, etc. and not already done)
+    if (!shouldAnalyzeConversation(messages, existingChunkedSummaries)) {
+      console.log('[Conversation Insights] No analysis needed at this time');
+      return true; // Not an error, just nothing to do
+    }
+
+    // Analyze the most recent 15 messages
     const insights = await analyzeConversation(conversationData, apiKey);
     if (!insights) {
       console.warn('[Conversation Insights] Failed to analyze conversation');
       return false;
     }
 
-    // Store insights in memory
+    // Store insights with chunked format
     const success = await storeConversationInsights(insights, conversationData, apiKey);
     
     return success;

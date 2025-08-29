@@ -71,21 +71,19 @@ function PureBookToolResult({
           height: rect.height,
         };
 
-        // Create a book artifact with the book title and content, including bookId
-        const artifactContent = result.bookId 
-          ? JSON.stringify({
-              bookId: result.bookId,
-              bookTitle: result.bookTitle,
-              chapterNumber: result.chapterNumber,
-              chapterTitle: result.chapterTitle,
-              content: result.content
-            })
-          : `bookTitle: "${result.bookTitle}"\n\n# Chapter ${result.chapterNumber}: ${result.chapterTitle}\n\n${result.content}`;
+        // Create a book artifact and let it load content from database
+        // Pass minimal JSON with navigation info, but let the book artifact load actual content
+        const navigationInfo = JSON.stringify({
+          bookId: result.bookId,
+          bookTitle: result.bookTitle,
+          chapterNumber: result.chapterNumber,
+          // Don't include content - let the book artifact load it from database
+        });
         
         setArtifact({
-          documentId: result.id,
+          documentId: result.bookId || result.id, // Use bookId if available, fallback to result.id
           kind: 'book', // Use book kind to trigger book artifact
-          content: artifactContent,
+          content: navigationInfo, // Just navigation info, not actual chapter content
           title: result.bookTitle,
           isVisible: true,
           status: 'idle',

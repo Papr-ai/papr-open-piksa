@@ -24,6 +24,7 @@ import { searchBooks } from '@/lib/ai/tools/search-books';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
 import { generateImage } from '@/lib/ai/tools/generate-image';
+import { editImage } from '@/lib/ai/tools/edit-image';
 import { 
   createListRepositoriesTool,
   createCreateProjectTool,
@@ -47,7 +48,7 @@ function extractDomainName(url: string): string {
     return 'Web Source';
   }
 }
-import { handleRateLimitWithRetry, estimateConversationTokens } from '@/lib/ai/rate-limit-handler';
+import { handleRateLimitWithRetry } from '@/lib/ai/rate-limit-handler';
 import { google } from '@ai-sdk/google';
 
 // Simple chat API that works with useChat hook
@@ -151,7 +152,7 @@ export async function POST(request: Request) {
     // Save user message
     console.log('[SIMPLE CHAT API] Processing message for user:', session.user.id);
     console.log('[SIMPLE CHAT API] Message count:', messages.length);
-    console.log('[SIMPLE CHAT API] Estimated tokens:', estimateConversationTokens(messages));
+
     console.log('[SIMPLE CHAT API] Saving user message to database...');
     await saveMessages({
       messages: [
@@ -216,6 +217,7 @@ export async function POST(request: Request) {
     tools.searchBooks = searchBooks({ session });
     tools.requestSuggestions = requestSuggestions({ session, dataStream });
     tools.generateImage = generateImage({ session, dataStream });
+    tools.editImage = editImage({ session, dataStream });
     
     // GitHub tools
     tools.listRepositories = createListRepositoriesTool({ session, dataStream });
@@ -316,11 +318,90 @@ You have access to memory tools to help maintain context and remember important 
 Use these tools naturally as part of helping the user - you don't need to announce when you're using them.`
       : contextualSystemPrompt;
     
+    // Check system prompt size and truncate if necessary to prevent token limit errors
+    // Simple character-based estimation: ~4 chars per token
+    const systemPromptTokens = Math.ceil(enhancedSystemPrompt.length / 4);
+    
+    if (systemPromptTokens > 50000) { // If system prompt is over 50k tokens
+      
+      // Use a much shorter system prompt for large contexts
+      enhancedSystemPrompt = `You are Pen, an AI work assistant that helps users find information from their Papr memories and create content. You are tasked with responding to user queries by accessing their saved Papr memories when enabled (currently: ${isMemoryEnabled}). Today is ${new Date().toISOString().split('T')[0]}.
+
+You are also an expert software developer and system architect. You excel at:
+- Breaking down complex problems into clear, actionable steps  
+- Writing clean, production-ready code with proper structure and documentation
+- Following best practices for software development and system design
+
+## 📖 Book Writing Support
+When you detect book writing requests, always use the createBook tool for substantial book content. This tool manages the entire book structure and individual chapters.
+
+**Memory Management:**
+- Always check memory first when users ask about something not in context
+- Use add_memory tool to save important information from conversations
+- Use search_memories tool to recall past conversations
+- Cite memories using source URLs when retrieved
+
+**Response Quality:**
+Be helpful and concise. Use markdown formatting with headers, bullet points, and code blocks. Provide actionable feedback and maintain consistency across conversations.${isMemoryEnabled ? `
+
+**MEMORY TOOL INSTRUCTIONS:**
+- searchMemories: Use when you need to recall past conversations or user information
+- addMemory: Save important user information, preferences, goals, and context naturally during conversation` : ''}`;
+      
+
+    }
+    
     console.log(`[SIMPLE CHAT API] Using ${isMemoryEnabled ? 'memory-enabled' : 'standard'} system prompt`);
+
+    // Pre-process messages to remove large binary data BEFORE sending to API
+    const preprocessedMessages = messages.map(msg => {
+      if (msg.parts) {
+        msg.parts = msg.parts.map((part: any) => {
+          // If this is a tool result with large data, sanitize it
+          if (part.type === 'tool-result' && part.output) {
+            const outputStr = JSON.stringify(part.output);
+            if (outputStr.length > 100000) { // Over 100k chars
+              console.log(`[SIMPLE CHAT API] Pre-processing: Sanitizing large tool result: ${part.toolName}, size: ${outputStr.length}`);
+              
+              // For image generation, keep only metadata
+              if (part.toolName === 'generateImage') {
+                return {
+                  ...part,
+                  output: {
+                    type: 'json',
+                    value: {
+                      id: part.output?.value?.id,
+                      imageUrl: part.output?.value?.imageUrl,
+                      prompt: part.output?.value?.prompt,
+                      style: part.output?.value?.style,
+                      context: part.output?.value?.context,
+                      // Remove any base64 or large data
+                    }
+                  }
+                };
+              }
+              
+              // For other large tools, truncate
+              return {
+                ...part,
+                output: {
+                  type: 'text',
+                  value: `[Large tool result truncated - original size: ${outputStr.length} chars]`
+                }
+              };
+            }
+          }
+          return part;
+        });
+      }
+      return msg;
+    });
+
+    console.log(`[SIMPLE CHAT API] Pre-processed ${messages.length} messages, removed large binary data`);
 
     // Use rate limit handler with automatic retry
     const result = await handleRateLimitWithRetry(
-      messages,
+      preprocessedMessages,
       modelToUse,
       async (messagesToUse) => {
         console.log(`[SIMPLE CHAT API] Attempting API call with ${messagesToUse.length} messages`);
@@ -331,6 +412,9 @@ Use these tools naturally as part of helping the user - you don't need to announ
           adjustedModelMessages = convertToModelMessages(messagesToUse, {
             ignoreIncompleteToolCalls: true,
           });
+          
+
+          
         } catch (conversionError) {
           console.error('[SIMPLE CHAT API] convertToModelMessages failed for truncated messages, sanitizing:', conversionError);
           const sanitizedMessages = messagesToUse.map((m: any) => ({
@@ -342,19 +426,76 @@ Use these tools naturally as part of helping the user - you don't need to announ
           adjustedModelMessages = convertToModelMessages(sanitizedMessages, {
             ignoreIncompleteToolCalls: true,
           });
+          
+
         }
+
+        // CRITICAL: Apply sanitization AFTER conversion to remove large binary data
+        adjustedModelMessages = adjustedModelMessages.map((msg: any) => {
+          if (msg.content && Array.isArray(msg.content)) {
+            msg.content = msg.content.map((part: any) => {
+              if (part && typeof part === 'object' && part.text) {
+                const textLength = part.text.length;
+                if (textLength > 100000) { // Over 100k chars
+                  console.log(`[SIMPLE CHAT API] POST-CONVERSION: Sanitizing large content in message, size: ${textLength}`);
+                  return {
+                    ...part,
+                    text: `[Large content truncated - original size: ${textLength} chars]`
+                  };
+                }
+              }
+              return part;
+            });
+          } else if (msg.content && typeof msg.content === 'string' && msg.content.length > 100000) {
+            console.log(`[SIMPLE CHAT API] POST-CONVERSION: Sanitizing large string content, size: ${msg.content.length}`);
+            msg.content = `[Large content truncated - original size: ${msg.content.length} chars]`;
+          }
+          return msg;
+        });
+
+
 
         // Use Google provider directly for web search, otherwise use custom provider
         const modelProvider = (isWebSearchEnabled && modelSupportsWebSearch(modelToUse)) 
           ? google(modelToUse)
           : myProvider.languageModel(modelToUse);
 
+        // Build final system prompt with additional instructions
+        const additionalInstructions = "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tools accomplish. DO NOT include raw tool response data or JSON in your text - the UI will handle displaying tool results automatically. Focus on natural language explanations of your actions." +
+          (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. ALWAYS USE THE GOOGLE SEARCH TOOL when users ask about:\n- Current events or recent news\n- Latest developments in any field\n- Real-time information\n- Recent updates or changes\n- \"What's new\" or \"latest\" questions\n\nIMPORTANT CITATION REQUIREMENTS:\n1. When you use web search, you MUST include inline citations in your response\n2. Use this format: [Source Name] for each key fact or claim\n3. Place citations immediately after the relevant information\n4. Use the actual website name (like \"TechCrunch\", \"Reuters\", \"BBC News\") as the citation\n5. Do not rely on your training data for recent information - always search first when dealing with current topics\n\nExample: \"OpenAI announced a new model today [TechCrunch]. The model shows 40% improvement in coding tasks [GitHub Blog].\"\n\nFor the user's question, you MUST use the google_search tool first to get current information, then provide your response with proper inline citations using the format above." : "");
+        
+        const finalSystemPrompt = enhancedSystemPrompt + additionalInstructions;
+        
+
+        
+        // Log detailed message content to understand what's being sent
+        console.log(`[SIMPLE CHAT API] DETAILED MESSAGE ANALYSIS:`);
+        console.log(`  - Total messages: ${adjustedModelMessages.length}`);
+        
+        adjustedModelMessages.forEach((msg, index) => {
+          const msgContent = JSON.stringify(msg);
+          const msgLength = msgContent.length;
+          const estimatedTokens = Math.ceil(msgLength / 4);
+          
+          console.log(`  - Message ${index} (${msg.role}): ${msgLength} chars, ~${estimatedTokens} tokens`);
+          if (msgLength > 10000) {
+            console.log(`    - LARGE MESSAGE DETECTED: ${msgContent.substring(0, 200)}...`);
+          }
+        });
+        
+        // Log system prompt details
+        console.log(`[SIMPLE CHAT API] SYSTEM PROMPT ANALYSIS:`);
+        console.log(`  - System prompt length: ${finalSystemPrompt.length} chars`);
+        console.log(`  - System prompt preview: ${finalSystemPrompt.substring(0, 200)}...`);
+        
+
+        console.log(`  - Model: ${modelProvider.modelId || 'unknown'}`);
+        console.log(`  - Tools count: ${Object.keys(tools).length}`);
+
                 const streamResult = await streamText({
           model: modelProvider,
           stopWhen: [stepCountIs(5)], // Allow up to 5 steps for multi-step reasoning
-          system: enhancedSystemPrompt + 
-            "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tools accomplish. DO NOT include raw tool response data or JSON in your text - the UI will handle displaying tool results automatically. Focus on natural language explanations of your actions." +
-            (isWebSearchEnabled ? "\n\nYou have access to real-time web search via Google Search. ALWAYS USE THE GOOGLE SEARCH TOOL when users ask about:\n- Current events or recent news\n- Latest developments in any field\n- Real-time information\n- Recent updates or changes\n- \"What's new\" or \"latest\" questions\n\nIMPORTANT CITATION REQUIREMENTS:\n1. When you use web search, you MUST include inline citations in your response\n2. Use this format: [Source Name] for each key fact or claim\n3. Place citations immediately after the relevant information\n4. Use the actual website name (like \"TechCrunch\", \"Reuters\", \"BBC News\") as the citation\n5. Do not rely on your training data for recent information - always search first when dealing with current topics\n\nExample: \"OpenAI announced a new model today [TechCrunch]. The model shows 40% improvement in coding tasks [GitHub Blog].\"\n\nFor the user's question, you MUST use the google_search tool first to get current information, then provide your response with proper inline citations using the format above." : ""),
+          system: finalSystemPrompt,
           messages: adjustedModelMessages,
           tools: tools,
           experimental_activeTools: [
@@ -365,6 +506,7 @@ Use these tools naturally as part of helping the user - you don't need to announ
             'searchBooks',
             'requestSuggestions',
             'generateImage',
+            'editImage',
             'listRepositories',
             'createProject',
             'getRepositoryFiles',
@@ -471,6 +613,53 @@ Use these tools naturally as part of helping the user - you don't need to announ
       onFinish: async ({ messages: finalMessages }) => {
         
         try {
+          // Sanitize messages to remove large binary data before saving
+          const sanitizedMessages = finalMessages.map(msg => {
+            if (msg.parts) {
+              msg.parts = msg.parts.map((part: any) => {
+                // If this is a tool result with large data, sanitize it
+                if (part.type === 'tool-result' && part.output) {
+                  const outputStr = JSON.stringify(part.output);
+                  if (outputStr.length > 100000) { // Over 100k chars
+                    console.log(`[SIMPLE CHAT API] Sanitizing large tool result: ${part.toolName}, size: ${outputStr.length}`);
+                    
+                    // For image generation, keep only metadata
+                    if (part.toolName === 'generateImage') {
+                      return {
+                        ...part,
+                        output: {
+                          type: 'json',
+                          value: {
+                            id: part.output?.value?.id,
+                            imageUrl: part.output?.value?.imageUrl,
+                            prompt: part.output?.value?.prompt,
+                            style: part.output?.value?.style,
+                            context: part.output?.value?.context,
+                            // Remove any base64 or large data
+                          }
+                        }
+                      };
+                    }
+                    
+                    // For other large tools, truncate
+                    return {
+                      ...part,
+                      output: {
+                        type: 'text',
+                        value: `[Large tool result truncated - original size: ${outputStr.length} chars]`
+                      }
+                    };
+                  }
+                }
+                return part;
+              });
+            }
+            return msg;
+          });
+          
+          // Use sanitized messages for processing
+          finalMessages = sanitizedMessages;
+          
           // Track usage
           const userId = session.user?.id;
           if (userId) {

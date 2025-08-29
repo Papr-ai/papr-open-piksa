@@ -11,7 +11,7 @@ interface EditImageProps {
 }
 
 const editImageSchema = z.object({
-  imageUrl: z.string().describe('The base64 data URL or URL of the image to edit'),
+  imageUrl: z.string().describe('The image to edit - can be a base64 data URL (data:image/...;base64,...) or an HTTP(S) URL to an image file'),
   prompt: z.string().describe('Detailed description of the changes to make to the image'),
   editType: z.enum(['modify', 'add', 'remove', 'replace', 'style-change']).default('modify').describe('Type of edit to perform'),
   preserveOriginal: z.boolean().default(true).describe('Whether to preserve the original style and composition'),
@@ -36,6 +36,28 @@ interface GeminiResponsePart {
     mimeType: string;
     data: string;
   };
+}
+
+// Helper function to convert URL to base64
+async function urlToBase64(url: string): Promise<string> {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64 = buffer.toString('base64');
+    
+    // Determine mime type from response headers or URL extension
+    const contentType = response.headers.get('content-type') || 'image/png';
+    
+    return `data:${contentType};base64,${base64}`;
+  } catch (error) {
+    console.error('Error converting URL to base64:', error);
+    throw new Error(`Failed to convert image URL to base64: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 // Function to edit image using Gemini 2.5 Flash Image Preview API
@@ -142,7 +164,7 @@ async function editImageWithGemini(
 
 export const editImage = ({ session, dataStream }: EditImageProps) =>
   tool({
-    description: 'Edit an existing image using Gemini 2.5 Flash Image Preview. This tool can modify, add elements to, remove elements from, replace parts of, or change the style of existing images while preserving the original composition and quality.',
+    description: 'Edit an existing image using Gemini 2.5 Flash Image Preview. Accepts both image URLs and base64 data URLs - URLs will be automatically converted to base64. This tool can modify, add elements to, remove elements from, replace parts of, or change the style of existing images while preserving the original composition and quality.',
     inputSchema: editImageSchema,
     execute: async (input: EditImageInput): Promise<EditImageOutput> => {
       const { imageUrl, prompt, editType, preserveOriginal, context } = input;
@@ -159,9 +181,22 @@ export const editImage = ({ session, dataStream }: EditImageProps) =>
       }
 
       try {
+        // Convert URL to base64 if needed
+        let imageBase64: string;
+        if (imageUrl.startsWith('data:')) {
+          // Already base64 data URL
+          imageBase64 = imageUrl;
+        } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+          // Convert URL to base64
+          console.log('[Edit Image] Converting URL to base64:', imageUrl);
+          imageBase64 = await urlToBase64(imageUrl);
+        } else {
+          throw new Error('Invalid image URL format. Must be a data URL or HTTP(S) URL.');
+        }
+
         // Edit the image using direct Gemini API call
         const editedImageBase64 = await editImageWithGemini(
-          imageUrl, 
+          imageBase64, 
           enhancedPrompt, 
           editType, 
           preserveOriginal

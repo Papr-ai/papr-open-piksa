@@ -20,6 +20,7 @@ const createBookSchema = z.object({
   chapterNumber: z.number().describe('The chapter number (1, 2, 3, etc.)'),
   description: z.string().optional().describe('Optional description or outline for the chapter'),
   bookId: z.string().optional().describe('Optional bookId for existing book. Use searchBooks tool first to find existing books and their bookIds. If not provided, a new book will be created.'),
+  bookContext: z.string().optional().describe('Optional context about the book, characters, plot, and writing style from previous chapters. Use searchMemories tool first to gather relevant context before calling this tool.'),
 });
 
 type CreateBookInput = z.infer<typeof createBookSchema>;
@@ -37,10 +38,10 @@ type CreateBookOutput = {
 export const createBook = ({ session, dataStream }: CreateBookProps) =>
   tool({
     description:
-      'Create or add to a book with chapters. This tool manages the entire book structure and can add new chapters to existing books. Use this instead of createDocument for book content. IMPORTANT: Use searchBooks tool first to check for existing books and get their bookIds to avoid creating duplicate books.',
+      'Create or add to a book with chapters. This tool manages the entire book structure and can add new chapters to existing books. Use this instead of createDocument for book content. IMPORTANT WORKFLOW: 1) Use searchBooks tool first to check for existing books and get their bookIds, 2) Use searchMemories tool to gather relevant context about the book, characters, plot, and writing style, 3) Pass the relevant context via the bookContext parameter to maintain consistency across chapters.',
     inputSchema: createBookSchema,
     execute: async (input: CreateBookInput): Promise<CreateBookOutput> => {
-      const { bookTitle, chapterTitle, chapterNumber, description, bookId: existingBookId } = input;
+      const { bookTitle, chapterTitle, chapterNumber, description, bookId: existingBookId, bookContext } = input;
       const id = generateUUID();
 
       dataStream.write?.({
@@ -58,17 +59,28 @@ export const createBook = ({ session, dataStream }: CreateBookProps) =>
         content: id,
       });
 
+      // Use provided book context from the main LLM's memory search
+      if (bookContext) {
+        console.log(`[createBook] Using provided book context for "${bookTitle}" (${bookContext.length} chars)`);
+      } else {
+        console.log(`[createBook] No book context provided for "${bookTitle}"`);
+      }
+
       // Generate chapter content
       let draftContent = '';
       
       const contentGenerationPrompt = `You are an expert children's book author. Create engaging, age-appropriate content for young readers. Focus on storytelling, character development, and adventure themes that children will love.
 
-IMPORTANT: You are generating the actual chapter content - write the story content directly. Do not include any tool calls, instructions, or meta-commentary.`;
+IMPORTANT: You are generating the actual chapter content - write the story content directly. Do not include any tool calls, instructions, or meta-commentary.
+
+${bookContext ? `\n\nBOOK CONTEXT FROM PREVIOUS WORK:\n${bookContext}\n\nUse this context to maintain consistency with characters, plot, and writing style.` : ''}`;
 
       const chapterPrompt = description 
         ? `Create Chapter ${chapterNumber}: "${chapterTitle}" for the book "${bookTitle}".
 
 Chapter Description/Outline: ${description}
+
+${bookContext ? 'Based on the book context provided above, maintain consistency with established characters, plot, and style.' : ''}
 
 Write a complete, engaging chapter suitable for young readers (ages 4-8). Include:
 - Vivid descriptions that spark imagination  
@@ -79,6 +91,8 @@ Write a complete, engaging chapter suitable for young readers (ages 4-8). Includ
 
 Write the actual story content for this chapter.`
         : `Create Chapter ${chapterNumber}: "${chapterTitle}" for the book "${bookTitle}".
+
+${bookContext ? 'Based on the book context provided above, maintain consistency with established characters, plot, and style.' : ''}
 
 Write a complete, engaging chapter suitable for young readers (ages 4-8). Include:
 - Vivid descriptions that spark imagination
@@ -148,7 +162,7 @@ Write the actual story content for this chapter.`;
             const existingId = existingChapter[0].id;
             const currentVersion = parseInt(String(existingChapter[0].version || '1'));
             const nextVersion = (currentVersion + 1).toString();
-            const newTimestamp = new Date();
+            const newTimestamp = new Date().toISOString();
 
             // Mark existing version as not latest
             await db.execute(

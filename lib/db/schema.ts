@@ -1,4 +1,5 @@
 import type { InferSelectModel } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   varchar,
@@ -11,6 +12,7 @@ import {
   boolean,
   jsonb,
   integer,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('User', {
@@ -286,12 +288,10 @@ export const Book = pgTable(
       .references(() => user.id),
     createdAt: timestamp('createdAt').notNull().defaultNow(),
     updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+    version: text('version').notNull().default('1'), // Version number for chapter revisions
+    is_latest: boolean('is_latest').notNull().default(true), // Flag to mark the latest version
   },
-  (table) => {
-    return {
-      uniqueBookChapter: primaryKey({ columns: [table.bookId, table.chapterNumber, table.userId] }),
-    };
-  },
+  // No additional constraints - allow multiple versions per chapter
 );
 
 export type Book = InferSelectModel<typeof Book>;

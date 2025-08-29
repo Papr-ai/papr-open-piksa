@@ -23,13 +23,13 @@ import { getSuggestions } from '../actions';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { TextSelectionImageGenerator } from '@/components/book/text-selection-image-generator';
+// Removed TextSelectionImageGenerator import
 
 // Helper function to get book chapters from database using bookId or bookTitle
-async function getBookChapters(bookIdentifier: string, isBookId: boolean = false) {
+async function getBookChapters(bookIdentifier: string, isBookId: boolean = false, signal?: AbortSignal) {
   try {
     const param = isBookId ? `bookId=${encodeURIComponent(bookIdentifier)}` : `bookTitle=${encodeURIComponent(bookIdentifier)}`;
-    const response = await fetch(`/api/books?${param}`);
+    const response = await fetch(`/api/books?${param}`, { signal });
     if (response.ok) {
       const chapters = await response.json();
       return chapters
@@ -45,7 +45,12 @@ async function getBookChapters(bookIdentifier: string, isBookId: boolean = false
     }
     return [];
   } catch (error) {
-    console.error('Failed to fetch book chapters:', error);
+    // Handle AbortError gracefully - this is expected when component unmounts
+    if (error instanceof Error && error.name === 'AbortError') {
+      console.log('[BookArtifact] Fetch aborted (component unmounted)');
+      return [];
+    }
+    console.error('[BookArtifact] Failed to fetch book chapters:', error);
     return [];
   }
 }
@@ -184,36 +189,37 @@ function BookPage({
   metadata,
 }: BookPageProps) {
   const [showChapterDropdown, setShowChapterDropdown] = useState(false);
-  const [selectedText, setSelectedText] = useState('');
+  // Removed selectedText state
   const [viewMode, setViewMode] = useState<'single' | 'two-column'>('single');
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
-  const [showImageGenerator, setShowImageGenerator] = useState(false);
-  const [isGeneratingImage, setIsGeneratingImage] = useState(false);
+  // Removed image generation and text editing functionality
   const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
   const [debouncedSaveTimeout, setDebouncedSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  // Removed selectionTimeout state
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Function to split content into pages for two-column view with better height-based pagination
-  const splitContentIntoPages = (content: string, wordsPerPage: number = 120) => {
+  // Function to split content into individual pages for book view based on estimated height
+  const splitContentIntoPages = (content: string, linesPerPage: number = 25) => {
     if (!content) return [];
     
     // Split by paragraphs first to maintain better formatting
     const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
     const pages: string[] = [];
     let currentPage = '';
-    let currentWordCount = 0;
+    let currentLineCount = 0;
     
     for (const paragraph of paragraphs) {
-      const paragraphWords = paragraph.split(/\s+/).filter(word => word.length > 0);
-      const paragraphWordCount = paragraphWords.length;
+      // Estimate lines in this paragraph (assuming ~80 chars per line)
+      const estimatedLines = Math.max(1, Math.ceil(paragraph.length / 80)) + 1; // +1 for paragraph spacing
       
-      // If adding this paragraph would exceed the word limit, start a new page
-      if (currentWordCount > 0 && currentWordCount + paragraphWordCount > wordsPerPage) {
+      // If adding this paragraph would exceed the line limit, start a new page
+      if (currentPage && currentLineCount + estimatedLines > linesPerPage) {
         pages.push(currentPage.trim());
         currentPage = paragraph;
-        currentWordCount = paragraphWordCount;
+        currentLineCount = estimatedLines;
       } else {
         // Add paragraph to current page
         if (currentPage) {
@@ -221,7 +227,7 @@ function BookPage({
         } else {
           currentPage = paragraph;
         }
-        currentWordCount += paragraphWordCount;
+        currentLineCount += estimatedLines;
       }
     }
     
@@ -249,8 +255,23 @@ function BookPage({
     };
 
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
+
+  // Cleanup effect for all timeouts
+  useEffect(() => {
+    return () => {
+      // Clear any pending timeouts on component unmount
+      if (debouncedSaveTimeout) {
+        clearTimeout(debouncedSaveTimeout);
+      }
+      if (hoverTimeoutRef.current) {
+        clearTimeout(hoverTimeoutRef.current);
+      }
+    };
+  }, [debouncedSaveTimeout]);
   
   // Reset page index when switching chapters, view modes, or content changes
   useEffect(() => {
@@ -266,8 +287,81 @@ function BookPage({
     }
   }, [totalPages, currentPageIndex, effectiveViewMode]);
   
+  // Simple page navigation function
+  const goToPage = useCallback((newPageIndex: number) => {
+    setCurrentPageIndex(newPageIndex);
+  }, []);
+  
+  // Enhanced navigation handlers with animation - book spread navigation
+  const maxSpreadIndex = Math.ceil(totalPages / 2) - 1; // Maximum spread index
+  
+  const handlePreviousPage = useCallback(() => {
+    if (currentPageIndex > 0) {
+      const newIndex = currentPageIndex - 1;
+      goToPage(newIndex);
+    } else if (currentPageIndex === 0 && chapterNumber > 1) {
+      // Go to previous chapter and navigate to its last page
+      
+      // Get the previous chapter's content to calculate its last page
+      if (metadata && metadata.chapters && metadata.chapters[chapterNumber - 2]) {
+        const prevChapterContent = metadata.chapters[chapterNumber - 2].content || '';
+        const prevChapterPages = splitContentIntoPages(prevChapterContent);
+        const lastPageIndex = Math.max(0, Math.ceil(prevChapterPages.length / 2) - 1);
+        
+        // Navigate to previous chapter
+        onPrevious();
+        
+        // Set a flag to navigate to the last page after chapter change
+        setTimeout(() => {
+          setCurrentPageIndex(lastPageIndex);
+        }, 50);
+      } else {
+        // Fallback to regular chapter navigation
+        onPrevious();
+      }
+    }
+  }, [currentPageIndex, chapterNumber, totalPages, goToPage, onPrevious, metadata, splitContentIntoPages, setCurrentPageIndex]);
+  
+  const handleNextPage = useCallback(() => {
+    if (currentPageIndex < maxSpreadIndex) {
+      const newIndex = currentPageIndex + 1;
+      goToPage(newIndex);
+    } else if (chapterNumber < totalChapters) {
+      // Go to next chapter and start from first page
+      
+      // Navigate to next chapter
+      onNext();
+      
+      // Reset to first page after chapter change
+      setTimeout(() => {
+        setCurrentPageIndex(0);
+      }, 50);
+    }
+  }, [currentPageIndex, maxSpreadIndex, chapterNumber, totalChapters, goToPage, onNext, setCurrentPageIndex]);
+  
+  // Calculate which pages to show based on real book layout
+  // Real books: left pages = odd numbers (1, 3, 5...), right pages = even numbers (2, 4, 6...)
+  // First spread: left=page 1, right=page 2
+  // Second spread: left=page 3, right=page 4, etc.
+  const getPageLayout = (pageIndex: number) => {
+    // Convert pageIndex to actual page spreads
+    // pageIndex 0 = pages 1-2, pageIndex 1 = pages 3-4, etc.
+    const leftPageNumber = (pageIndex * 2) + 1; // 1, 3, 5, 7...
+    const rightPageNumber = (pageIndex * 2) + 2; // 2, 4, 6, 8...
+    
+    return {
+      leftPageIndex: pageIndex * 2, // 0, 2, 4, 6... (maps to pages 1, 3, 5, 7...)
+      rightPageIndex: (pageIndex * 2) + 1 < totalPages ? (pageIndex * 2) + 1 : -1, // 1, 3, 5, 7... (maps to pages 2, 4, 6, 8...)
+      leftPageNumber: leftPageNumber <= totalPages ? leftPageNumber : null,
+      rightPageNumber: rightPageNumber <= totalPages ? rightPageNumber : null
+    };
+  };
+  
+  const pageLayout = getPageLayout(currentPageIndex);
+  
   // Debounced save function for content updates
   const handleSaveContent = useCallback((updatedContent: string, debounce: boolean) => {
+    
     // Clear any existing timeout
     if (debouncedSaveTimeout) {
       clearTimeout(debouncedSaveTimeout);
@@ -277,7 +371,6 @@ function BookPage({
     if (debounce) {
       // Save with 1000ms debounce
       const timeout = setTimeout(() => {
-        console.log('Saving content with debounce');
         if (onSaveContent) {
           onSaveContent(updatedContent, false);
         }
@@ -286,7 +379,6 @@ function BookPage({
       setDebouncedSaveTimeout(timeout);
     } else {
       // Save immediately
-      console.log('Saving content immediately');
       if (onSaveContent) {
         onSaveContent(updatedContent, false);
       }
@@ -299,6 +391,8 @@ function BookPage({
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowChapterDropdown(false);
       }
+      
+      // Removed text edit dialog handling
     }
 
     document.addEventListener('mousedown', handleClickOutside);
@@ -321,58 +415,48 @@ function BookPage({
     }, 150);
   };
 
-  // Handle text selection for image generation
-  useEffect(() => {
-    const handleSelectionChange = () => {
-      const selection = window.getSelection();
-      if (selection && selection.toString().trim()) {
-        const text = selection.toString().trim();
-        // Only show image generator for substantial text selections (more than 10 characters)
-        if (text.length > 10) {
-          setSelectedText(text);
-          setShowImageGenerator(true);
-        }
-      } else {
-        setShowImageGenerator(false);
-        setSelectedText('');
-      }
-    };
+  // Removed text selection handling
 
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
-    };
-  }, []);
+  // Removed handleGenerateImage function
 
-  const handleGenerateImage = async (params: {
-    prompt: string;
-    context: string;
-    style: string;
-    title?: string;
-    subtitle?: string;
-  }) => {
-    setIsGeneratingImage(true);
-    try {
-      // This would typically call the AI tool through the chat interface
-      // For now, we'll show a toast indicating the feature is working
-      toast.success('Image generation started! Check the chat for results.');
-      console.log('Generate image params:', params);
-      
-      // Close the generator after starting
-      setShowImageGenerator(false);
-      setSelectedText('');
-      
-      // Clear text selection
-      window.getSelection()?.removeAllRanges();
-    } catch (error) {
-      console.error('Error generating image:', error);
-      toast.error('Failed to generate image');
-    } finally {
-      setIsGeneratingImage(false);
-    }
-  };
+  // Removed handleEditText function
+
   return (
     <div className="flex flex-col h-full bg-white dark:bg-zinc-900">
+      {/* Custom CSS for 3D perspective and page flip animations */}
+      <style jsx>{`
+
+        
+
+        
+        .bg-cream {
+          background-color: #fefdfb;
+        }
+        
+        .z-5 {
+          z-index: 5;
+        }
+        
+        /* Book shadow effect */
+        .book-shadow {
+          filter: drop-shadow(0 25px 50px rgba(0, 0, 0, 0.25));
+        }
+        
+        /* Page hover effects */
+        .page-hover:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        /* Subtle page texture */
+        .page-texture {
+          background-image: 
+            radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.1) 0%, transparent 50%),
+            radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.8) 0%, transparent 50%),
+            radial-gradient(circle at 40% 40%, rgba(120, 119, 198, 0.05) 0%, transparent 50%);
+        }
+      `}</style>
+      
       {/* Minimal Top Bar - Apple Style */}
       <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-zinc-800">
         <div 
@@ -420,30 +504,69 @@ function BookPage({
             {shouldForceSingleColumn && <span className="text-xs opacity-60">(Screen too small)</span>}
           </Button>
           
-          <span className="text-sm text-gray-500 dark:text-gray-400">
-            {chapterNumber} of {totalChapters}
-          </span>
-          
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onPrevious}
-              disabled={chapterNumber <= 1}
-              className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
-            >
-              <ChevronLeftIcon size={16} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onNext}
-              disabled={chapterNumber >= totalChapters}
-              className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
-            >
-              <ChevronRightIcon size={16} />
-            </Button>
-          </div>
+          {effectiveViewMode === 'single' ? (
+            <>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                {chapterNumber} of {totalChapters}
+              </span>
+              
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onPrevious}
+                  disabled={chapterNumber <= 1}
+                  className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
+                >
+                  <ChevronLeftIcon size={16} />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={onNext}
+                  disabled={chapterNumber >= totalChapters}
+                  className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
+                >
+                  <ChevronRightIcon size={16} />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handlePreviousPage}
+                  disabled={(currentPageIndex <= 0 && chapterNumber <= 1) }
+                  className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
+                >
+                  <ChevronLeftIcon size={16} />
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-sm text-gray-600 dark:text-gray-400 px-3 h-8 cursor-default"
+                >
+                  {pageLayout.leftPageNumber && pageLayout.rightPageNumber 
+                    ? `${pageLayout.leftPageNumber}-${pageLayout.rightPageNumber}` 
+                    : pageLayout.rightPageNumber || pageLayout.leftPageNumber || '1'
+                  } / {totalPages}
+                </Button>
+                
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleNextPage}
+                  disabled={(currentPageIndex >= maxSpreadIndex && chapterNumber >= totalChapters) }
+                  className="h-8 w-8 p-0 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
+                >
+                  <ChevronRightIcon size={16} />
+                </Button>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -483,232 +606,237 @@ function BookPage({
             </div>
           </div>
         ) : (
-          // Two Column View (Book Pages)
-          <div className="h-full flex flex-col">
-            {/* Book Pages with Side Navigation */}
-            <div className="flex-1 flex items-center justify-center p-4">
-              <div className="flex items-center gap-8 max-w-screen-2xl w-full h-full">
-                {/* Left Navigation Button */}
-                {totalPages > 1 && (
-                  <div className="flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="lg"
-                      onClick={() => {
-                        const newIndex = Math.max(0, currentPageIndex - 2);
-                        console.log(`Previous: currentPageIndex=${currentPageIndex}, newIndex=${newIndex}`);
-                        setCurrentPageIndex(newIndex);
-                      }}
-                      disabled={currentPageIndex <= 0}
-                      className="h-16 w-16 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-zinc-800"
-                    >
-                      <ChevronLeftIcon size={24} />
-                    </Button>
-                  </div>
-                )}
-                
-                {/* Book Pages Container */}
-                <div className="flex gap-6 flex-1 h-full justify-center">
-                {/* Left Page */}
-                <div className="w-1/2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-gray-200 dark:border-zinc-700 p-6 h-[calc(100%-170px)] max-h-[700px] overflow-hidden">
-                  <div className="h-full flex flex-col">
-                    {/* Left Page Header */}
-                    {currentPageIndex === 0 && (chapterNumber || chapterTitle) && (
-                      <div className="mb-8">
-                        <div className="flex items-center gap-3 mb-4">
-                          <div className="h-px bg-gray-200 dark:bg-zinc-700 flex-1"></div>
-                          <span className="text-sm font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                            Chapter {chapterNumber}
-                          </span>
-                          <div className="h-px bg-gray-200 dark:bg-zinc-700 flex-1"></div>
-                        </div>
-                        {chapterTitle && (
-                          <h1 className="text-xl font-serif font-semibold text-gray-900 dark:text-gray-100 text-center">
-                            {chapterTitle}
-                          </h1>
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Left Page Content */}
-                    <div className="flex-1 prose prose-sm max-w-none w-full font-serif leading-relaxed text-gray-800 dark:text-gray-200 text-justify overflow-hidden">
-                      <Editor
-                        content={pages[currentPageIndex] || ''}
-                        suggestions={[]}
-                        isCurrentVersion={isCurrentVersion}
-                        currentVersionIndex={0}
-                        status="idle"
-                        onSaveContent={(updatedContent, debounce) => {
-                          // For two-column view, we need to update the specific page
-                          // and then combine all pages into a single content string
-                          const updatedPages = [...pages];
-                          updatedPages[currentPageIndex] = updatedContent;
-                          const combinedContent = updatedPages.join('\n\n');
-                          handleSaveContent(combinedContent, debounce);
-                        }}
-                      />
-                    </div>
-                    
-                    {/* Left Page Number */}
-                    <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-4">
-                      {currentPageIndex * 2 + 1}
-                    </div>
-                  </div>
-                </div>
+          // Two Column View (Realistic Book with Flip Animation)
+          <div className="h-full flex items-center justify-center bg-gradient-to-b from-stone-100 to-stone-200 dark:from-zinc-900 dark:to-zinc-800 p-8">
+            <div className="flex items-center gap-12 max-w-7xl w-full">
+              {/* Left Navigation Button */}
+              <div className="flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={handlePreviousPage}
+                  disabled={(currentPageIndex <= 0 && chapterNumber <= 1) }
+                  className="h-16 w-16 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 disabled:opacity-30 hover:bg-white/80 dark:hover:bg-zinc-800/80 shadow-lg transition-all duration-200"
+                >
+                  <ChevronLeftIcon size={28} />
+                </Button>
+              </div>
 
-                {/* Right Page */}
-                <div className="w-1/2 bg-white dark:bg-zinc-800 rounded-lg shadow-lg border border-gray-200 dark:border-zinc-700 p-6 h-[calc(100%-170px)] max-h-[700px] overflow-hidden">
-                  <div className="h-full flex flex-col">
-                    {/* Right Page Content */}
-                    <div className="flex-1 prose prose-sm max-w-none w-full font-serif leading-relaxed text-gray-800 dark:text-gray-200 text-justify overflow-hidden">
-                      {pages[currentPageIndex + 1] ? (
-                        <Editor
-                          content={pages[currentPageIndex + 1]}
-                          suggestions={[]}
-                          isCurrentVersion={isCurrentVersion}
-                          currentVersionIndex={0}
-                          status="idle"
-                          onSaveContent={(updatedContent, debounce) => {
-                            // For two-column view, we need to update the specific page
-                            // and then combine all pages into a single content string
-                            const updatedPages = [...pages];
-                            updatedPages[currentPageIndex + 1] = updatedContent;
-                            const combinedContent = updatedPages.join('\n\n');
-                            handleSaveContent(combinedContent, debounce);
-                          }}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-gray-400 dark:text-gray-500">
-                          <div className="text-center">
-                            <BookOpenIcon size={48} />
-                            <p className="text-sm mt-4">End of chapter</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* Right Page Number */}
-                    {pages[currentPageIndex + 1] && (
-                      <div className="text-center text-xs text-gray-400 dark:text-gray-500 mt-4">
-                        {currentPageIndex * 2 + 2}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                </div>
+              {/* Book Container */}
+              <div className="relative flex-1 max-w-5xl perspective-1000">
+                {/* Book Base Shadow */}
+                <div className="absolute inset-x-0 bottom-0 h-12 bg-black/30 rounded-full blur-3xl scale-110 transform translate-y-4"></div>
                 
-                {/* Right Navigation Button */}
-                {totalPages > 1 && (
-                  <div className="flex-shrink-0">
-                    <Button
-                      variant="ghost"
-                      size="lg"
-                      onClick={() => {
-                        if (currentPageIndex + 2 < totalPages) {
-                          const newIndex = currentPageIndex + 2;
-                          console.log(`Next: currentPageIndex=${currentPageIndex}, newIndex=${newIndex}`);
-                          setCurrentPageIndex(newIndex);
-                        } else {
-                          console.log(`Next chapter: currentPageIndex=${currentPageIndex}, totalPages=${totalPages}`);
-                          onNext();
-                        }
-                      }}
-                      disabled={currentPageIndex + 2 >= totalPages && chapterNumber >= totalChapters}
-                      className="h-16 w-16 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30 hover:bg-gray-100 dark:hover:bg-zinc-800"
-                    >
-                      <ChevronRightIcon size={24} />
-                    </Button>
+                {/* Book Container with Realistic Appearance */}
+                <div className="relative bg-gradient-to-r from-amber-900 via-amber-800 to-amber-900 dark:from-amber-950 dark:via-amber-900 dark:to-amber-950 rounded-lg shadow-2xl book-shadow" style={{ transformStyle: 'preserve-3d' }}>
+                  {/* Book Spine */}
+                  <div className="absolute left-1/2 top-0 bottom-0 w-8 bg-gradient-to-r from-amber-800 via-amber-700 to-amber-800 dark:from-amber-900 dark:via-amber-800 dark:to-amber-900 transform -translate-x-1/2 z-30 shadow-lg rounded-sm">
+                    <div className="h-full w-full bg-gradient-to-b from-transparent via-black/20 to-transparent"></div>
+                    <div className="absolute inset-y-0 left-1 w-px bg-amber-900/60 dark:bg-amber-950/60"></div>
+                    <div className="absolute inset-y-0 right-1 w-px bg-amber-600/40 dark:bg-amber-700/40"></div>
+                    <div className="absolute left-1/2 top-4 bottom-4 w-px bg-amber-500/30 transform -translate-x-1/2"></div>
                   </div>
-                )}
+
+                  {/* Book Pages Container */}
+                  <div className="relative flex bg-white dark:bg-zinc-100 rounded-lg overflow-hidden shadow-inner" style={{ height: 'calc(100% - 170px)' }}>
+                    {/* Left Page Container */}
+                    <div className="relative w-1/2 bg-cream">
+                      {/* Main Left Page */}
+                      <div className="relative w-full h-full bg-cream dark:bg-stone-50 border-2 border-stone-300 dark:border-stone-400 border-r-stone-400 dark:border-r-stone-500 rounded-r-sm p-8 pr-12 z-10">
+                        {/* Paper Texture */}
+                        <div className="absolute inset-0 opacity-10 page-texture pointer-events-none"></div>
+                        
+                        {/* Binding Holes */}
+                        <div className="absolute right-6 top-16 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        <div className="absolute right-6 top-32 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        <div className="absolute right-6 bottom-32 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        <div className="absolute right-6 bottom-16 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        
+                        {/* Page Content */}
+                        <div className="relative h-full overflow-hidden flex flex-col">
+                          {pageLayout.leftPageIndex >= 0 ? (
+                            <>
+                              <div className="prose prose-sm max-w-none font-serif leading-relaxed text-gray-800 overflow-hidden text-justify" style={{ height: 'calc(100% - 40px)', maxHeight: 'calc(100% - 40px)' }}>
+                                <Editor
+                                  content={pages[pageLayout.leftPageIndex] || ''}
+                                  suggestions={[]}
+                                  isCurrentVersion={isCurrentVersion}
+                                  currentVersionIndex={0}
+                                  status={(status as 'streaming' | 'idle') || 'idle'}
+                                                                  onSaveContent={(updatedContent, debounce) => {
+                                  console.log('[BOOK] Left page save triggered:', { 
+                                    debounce, 
+                                    pageIndex: pageLayout.leftPageIndex, 
+                                    contentLength: updatedContent.length 
+                                  });
+                                  const updatedPages = [...pages];
+                                  updatedPages[pageLayout.leftPageIndex] = updatedContent;
+                                  const combinedContent = updatedPages.join('\n\n');
+                                  console.log('[BOOK] Combined content length:', combinedContent.length);
+                                  handleSaveContent(combinedContent, debounce);
+                                }}
+                                />
+                              </div>
+                              {pageLayout.leftPageNumber && (
+                                <div className="flex-shrink-0 text-center text-xs text-gray-500 mt-4 font-serif">
+                                  {pageLayout.leftPageNumber}
+                                </div>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center justify-center text-gray-400" style={{ height: 'calc(100% - 40px)', maxHeight: 'calc(100% - 40px)' }}>
+                              <div className="text-center opacity-50">
+                                <BookOpenIcon size={64} />
+                                <p className="text-sm font-serif italic mt-4">Beginning of chapter</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right Page Container */}
+                    <div className="relative w-1/2">
+                      {/* Multiple Page Stack Effect - Right Side Only (showing remaining pages) */}
+                      {currentPageIndex < maxSpreadIndex && (
+                        <>
+                          <div className="absolute left-0.5 top-0.5 w-full h-full bg-stone-200 dark:bg-stone-300 border border-stone-300 dark:border-stone-400 rounded-l-sm shadow-sm z-[1]"></div>
+                          <div className="absolute left-1 top-1 w-full h-full bg-stone-100 dark:bg-stone-200 border border-stone-300 dark:border-stone-400 rounded-l-sm shadow-sm z-[2]"></div>
+                          <div className="absolute left-1.5 top-1.5 w-full h-full bg-stone-50 dark:bg-stone-100 border border-stone-300 dark:border-stone-400 rounded-l-sm shadow-sm z-[3]"></div>
+                          <div className="absolute left-2 top-2 w-full h-full bg-stone-50 dark:bg-stone-100 border border-stone-300 dark:border-stone-400 rounded-l-sm shadow-sm z-[4]"></div>
+                          <div className="absolute left-2.5 top-2.5 w-full h-full bg-stone-50 dark:bg-stone-100 border border-stone-300 dark:border-stone-400 rounded-l-sm shadow-sm z-[5]"></div>
+                        </>
+                      )}
+                      
+                      {/* Main Right Page */}
+                      <div className="relative w-full h-full bg-cream dark:bg-stone-50 border-2 border-stone-300 dark:border-stone-400 border-l-stone-400 dark:border-l-stone-500 rounded-l-sm p-8 pl-12 z-10">
+                        {/* Paper Texture */}
+                        <div className="absolute inset-0 opacity-10 page-texture pointer-events-none"></div>
+                        
+                        {/* Binding Holes */}
+                        <div className="absolute left-6 top-16 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        <div className="absolute left-6 top-32 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        <div className="absolute left-6 bottom-32 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        <div className="absolute left-6 bottom-16 w-1.5 h-1.5 bg-stone-400 dark:bg-stone-600 rounded-full opacity-60"></div>
+                        
+                        {/* Page Content */}
+                        <div className="relative h-full overflow-hidden flex flex-col">
+                          {/* Chapter header on first page */}
+                          {pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) && (
+                            <div className="flex-shrink-0 mb-8">
+                              <div className="flex items-center gap-3 mb-4">
+                                <div className="h-px bg-stone-300 flex-1"></div>
+                                <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                                  Chapter {chapterNumber}
+                                </span>
+                                <div className="h-px bg-stone-300 flex-1"></div>
+                              </div>
+                              {chapterTitle && (
+                                <h1 className="text-lg font-serif font-semibold text-gray-900 text-center leading-tight">
+                                  {chapterTitle}
+                                </h1>
+                              )}
+                            </div>
+                          )}
+                          
+                          <div className="prose prose-sm max-w-none font-serif leading-relaxed text-gray-800 overflow-hidden text-justify" style={{ height: pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) ? 'calc(100% - 140px)' : 'calc(100% - 40px)', maxHeight: pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) ? 'calc(100% - 140px)' : 'calc(100% - 40px)' }}>
+                            {pageLayout.rightPageIndex >= 0 ? (
+                              <Editor
+                                content={pages[pageLayout.rightPageIndex]}
+                                suggestions={[]}
+                                isCurrentVersion={isCurrentVersion}
+                                currentVersionIndex={0}
+                                status={(status as 'streaming' | 'idle') || 'idle'}
+                                onSaveContent={(updatedContent, debounce) => {
+                                  const updatedPages = [...pages];
+                                  updatedPages[pageLayout.rightPageIndex] = updatedContent;
+                                  const combinedContent = updatedPages.join('\n\n');
+                                  handleSaveContent(combinedContent, debounce);
+                                }}
+                              />
+                            ) : (
+                              <div className="flex items-center justify-center h-full text-gray-400">
+                                <div className="text-center">
+                                  <div className="mx-auto mb-4 opacity-50">
+                                    <BookOpenIcon size={48} />
+                                  </div>
+                                  <p className="text-sm font-serif italic">End of chapter</p>
+                                  {chapterNumber < totalChapters && (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={onNext}
+                                      className="mt-4 font-serif"
+                                    >
+                                      Next Chapter
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {pageLayout.rightPageNumber && (
+                            <div className="flex-shrink-0 text-center text-xs text-gray-500 mt-4 font-serif">
+                              {pageLayout.rightPageNumber}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Navigation Button */}
+              <div className="flex-shrink-0">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={handleNextPage}
+                  disabled={(currentPageIndex >= maxSpreadIndex && chapterNumber >= totalChapters) }
+                  className="h-16 w-16 rounded-full flex items-center justify-center text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 disabled:opacity-30 hover:bg-white/80 dark:hover:bg-zinc-800/80 shadow-lg transition-all duration-200"
+                >
+                  <ChevronRightIcon size={28} />
+                </Button>
               </div>
             </div>
           </div>
         )}
       </div>
 
-      {/* Bottom Navigation Bar */}
-      <div className="flex justify-between items-center px-6 py-3 border-t border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50">
-        {effectiveViewMode === 'single' ? (
-          // Single Column Navigation (Chapter-based)
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onPrevious}
-              disabled={chapterNumber <= 1}
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
-            >
-              <ChevronLeftIcon size={14} />
-              Previous Chapter
-            </Button>
-            
-            <div className="text-xs text-gray-400 dark:text-gray-500">
-              {content ? `${content.split(' ').filter(word => word.length > 0).length} words` : '0 words'}
-            </div>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onNext}
-              disabled={chapterNumber >= totalChapters}
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
-            >
-              Next Chapter
-              <ChevronRightIcon size={14} />
-            </Button>
-          </>
-        ) : (
-          // Two Column Navigation (Chapter-based)
-          <>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onPrevious}
-              disabled={chapterNumber <= 1}
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
-            >
-              <ChevronLeftIcon size={14} />
-              Previous Chapter
-            </Button>
-            
-            <div className="text-xs text-gray-400 dark:text-gray-500 text-center">
-              <div>Chapter {chapterNumber} of {totalChapters}</div>
-              {totalPages > 1 && (
-                <div className="mt-1">
-                  Pages {currentPageIndex + 1}-{Math.min(currentPageIndex + 2, totalPages)} of {totalPages}
-                </div>
-              )}
-            </div>
-            
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onNext}
-              disabled={chapterNumber >= totalChapters}
-              className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
-            >
-              Next Chapter
-              <ChevronRightIcon size={14} />
-            </Button>
-          </>
-        )}
-      </div>
-
-      {/* Text Selection Image Generator */}
-      {showImageGenerator && selectedText && (
-        <TextSelectionImageGenerator
-          selectedText={selectedText}
-          bookTitle={metadata?.bookTitle}
-          chapterTitle={chapterTitle}
-          onClose={() => {
-            setShowImageGenerator(false);
-            setSelectedText('');
-            window.getSelection()?.removeAllRanges();
-          }}
-          onGenerateImage={handleGenerateImage}
-          isGenerating={isGeneratingImage}
-        />
+      {/* Bottom Status Bar - Single Column Only */}
+      {effectiveViewMode === 'single' && (
+        <div className="flex justify-between items-center px-6 py-3 border-t border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onPrevious}
+            disabled={chapterNumber <= 1}
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
+          >
+            <ChevronLeftIcon size={14} />
+            Previous Chapter
+          </Button>
+          
+          <div className="text-xs text-gray-400 dark:text-gray-500">
+            {content ? `${content.split(' ').filter(word => word.length > 0).length} words` : '0 words'}
+          </div>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onNext}
+            disabled={chapterNumber >= totalChapters}
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 disabled:opacity-30"
+          >
+            Next Chapter
+            <ChevronRightIcon size={14} />
+          </Button>
+        </div>
       )}
+
+            {/* Removed all text selection and image generation UI components */}
     </div>
   );
 }
@@ -818,8 +946,13 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
   }) => {
     // Extract book title from content and load chapters from database
     useEffect(() => {
+      const abortController = new AbortController();
+      
       const loadBookChapters = async () => {
         if (!content || !setMetadata) return;
+        
+        // Check if component is still mounted
+        if (abortController.signal.aborted) return;
 
         // Try to extract book title from content - handle both JSON and text formats
         let extractedBookTitle = 'Untitled Book';
@@ -843,37 +976,48 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
         
         // Try to get bookId from content first, fallback to bookTitle
         let bookId = null;
+        let targetChapterNumber = null;
         try {
           const parsedContent = JSON.parse(content);
           if (parsedContent.bookId) {
             bookId = parsedContent.bookId;
+            // Also get the target chapter number for navigation
+            if (parsedContent.chapterNumber) {
+              targetChapterNumber = parsedContent.chapterNumber;
+            }
           }
         } catch {}
         
+        // Check if component is still mounted before async operation
+        if (abortController.signal.aborted) return;
+        
         // Load chapters for this book
         const chapters = bookId 
-          ? await getBookChapters(bookId, true)
-          : await getBookChapters(extractedBookTitle, false);
+          ? await getBookChapters(bookId, true, abortController.signal)
+          : await getBookChapters(extractedBookTitle, false, abortController.signal);
+        
+        // Check again after async operation
+        if (abortController.signal.aborted) return;
         
         if (chapters.length > 0) {
           const totalWords = chapters.reduce((sum: number, chapter: any) => sum + chapter.wordCount, 0);
           
-          // Check if content contains a specific chapter number to navigate to
+          // Navigate to the target chapter if specified, otherwise go to the newest chapter
           let targetChapterIndex = 0;
-          try {
-            const parsedContent = JSON.parse(content);
-            if (parsedContent.chapterNumber) {
-              // Find the chapter with the specified chapter number
-              const chapterIndex = chapters.findIndex((ch: any) => ch.chapterNumber === parsedContent.chapterNumber);
-              if (chapterIndex >= 0) {
-                targetChapterIndex = chapterIndex;
-                console.log(`[BookArtifact] Navigating to chapter ${parsedContent.chapterNumber} (index ${targetChapterIndex})`);
-              }
+          if (targetChapterNumber) {
+            // Find the chapter with the specified chapter number
+            const chapterIndex = chapters.findIndex((ch: any) => ch.chapterNumber === targetChapterNumber);
+            if (chapterIndex >= 0) {
+              targetChapterIndex = chapterIndex;
+              console.log(`[BookArtifact] Navigating to chapter ${targetChapterNumber} (index ${targetChapterIndex})`);
+            } else {
+              console.log(`[BookArtifact] Chapter ${targetChapterNumber} not found, defaulting to newest`);
+              targetChapterIndex = chapters.length - 1;
             }
-          } catch {
-            // If not JSON or no specific chapter, default to the last chapter (newest)
+          } else {
+            // Default to the newest chapter
             targetChapterIndex = chapters.length - 1;
-            console.log(`[BookArtifact] Navigating to newest chapter (index ${targetChapterIndex})`);
+            console.log(`[BookArtifact] No target chapter specified, navigating to newest chapter (index ${targetChapterIndex})`);
           }
           
           setMetadata((prev) => ({
@@ -892,10 +1036,42 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
         }
       };
       
-      loadBookChapters();
+      loadBookChapters().catch(error => {
+        if (!abortController.signal.aborted) {
+          console.error('[BookArtifact] Error loading book chapters:', error);
+        } else {
+          console.log('[BookArtifact] Book chapters load was aborted (expected)');
+        }
+      });
+      
+      // Cleanup function
+      return () => {
+        console.log('[BookArtifact] 🧹 CLEANUP: Aborting book chapters load');
+        console.log('[BookArtifact] Content length:', content?.length || 0);
+        console.log('[BookArtifact] Has setMetadata:', !!setMetadata);
+        
+        try {
+          abortController.abort();
+          console.log('[BookArtifact] ✅ AbortController.abort() completed successfully');
+        } catch (abortError) {
+          console.error('[BookArtifact] ❌ Error during abort:', abortError);
+        }
+        
+        console.log('[BookArtifact] 🏁 Cleanup completed');
+      };
     }, [content, setMetadata]);
 
-    if (isLoading) {
+    // Show loading skeleton if loading or if we only have JSON content without chapters loaded
+    const hasOnlyJsonContent = (() => {
+      try {
+        JSON.parse(content || '');
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+
+    if (isLoading || (hasOnlyJsonContent && (!metadata?.chapters || metadata.chapters.length === 0))) {
       return <DocumentSkeleton artifactKind="book" />;
     }
 
@@ -921,9 +1097,41 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
 
     const currentChapterData = chapters[currentChapter] || chapters[0];
 
+    // Don't render JSON content directly - only show formatted chapter content
+    const getDisplayContent = () => {
+      // If we have chapter data from database, use it (highest priority)
+      if (currentChapterData?.content) {
+        return currentChapterData.content;
+      }
+      
+      // If content looks like JSON from createBook tool, extract the actual content
+      try {
+        const parsedContent = JSON.parse(content || '');
+        if (parsedContent.content && typeof parsedContent.content === 'string') {
+          return parsedContent.content;
+        }
+      } catch {
+        // Not JSON, continue to fallback logic
+      }
+      
+      // Fallback to original content, but avoid displaying raw JSON
+      const fallbackContent = content || '';
+      
+      // Check if content is JSON - if so, don't display it directly
+      try {
+        JSON.parse(fallbackContent);
+        // If it's valid JSON but we couldn't extract meaningful content, 
+        // return empty string to show loading/skeleton state
+        return '';
+      } catch {
+        // Not JSON, safe to display as-is
+        return fallbackContent;
+      }
+    };
+
     return (
       <BookPage
-        content={currentChapterData?.content || content || ''}
+        content={getDisplayContent()}
         chapterTitle={currentChapterData?.title || ''}
         chapterNumber={currentChapter + 1}
         totalChapters={chapters.length}

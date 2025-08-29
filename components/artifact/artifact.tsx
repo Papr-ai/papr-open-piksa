@@ -108,6 +108,43 @@ function PureArtifact({
 }) {
   const { artifact, setArtifact, metadata, setMetadata } = useArtifact(chatId);
 
+  // Add global error handler for debugging freezes
+  useEffect(() => {
+    const handleUnhandledError = (event: ErrorEvent) => {
+      console.error('[ARTIFACT] 🚨 Unhandled error detected:', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        error: event.error,
+        artifactState: {
+          isVisible: artifact.isVisible,
+          status: artifact.status,
+          documentId: artifact.documentId
+        }
+      });
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('[ARTIFACT] 🚨 Unhandled promise rejection:', {
+        reason: event.reason,
+        artifactState: {
+          isVisible: artifact.isVisible,
+          status: artifact.status,
+          documentId: artifact.documentId
+        }
+      });
+    };
+
+    window.addEventListener('error', handleUnhandledError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('error', handleUnhandledError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, [artifact.isVisible, artifact.status, artifact.documentId]);
+
   // Handle chat stop - ensure artifact status is updated when chat is stopped
   useEffect(() => {
     if (status !== 'streaming' && artifact.status === 'streaming') {
@@ -119,15 +156,53 @@ function PureArtifact({
     }
   }, [status, artifact.status, setArtifact]);
 
+  // Cleanup effect when artifact is hidden or unmounted
+  useEffect(() => {
+    console.log('[ARTIFACT] 👁️ Visibility changed:', {
+      isVisible: artifact.isVisible,
+      status: artifact.status,
+      documentId: artifact.documentId
+    });
+    
+    return () => {
+      console.log('[ARTIFACT] 🧹 CLEANUP EFFECT TRIGGERED');
+      console.log('[ARTIFACT] Artifact state during cleanup:', {
+        isVisible: artifact.isVisible,
+        status: artifact.status,
+        documentId: artifact.documentId
+      });
+      
+      // Cancel any pending operations when artifact is unmounted
+      if (!artifact.isVisible) {
+        console.log('[ARTIFACT] 🔄 Artifact hidden, performing cleanup operations');
+        // Note: SWR cleanup will be handled by the separate effect below
+      }
+      
+      console.log('[ARTIFACT] ✅ Cleanup effect completed');
+    };
+  }, [artifact.isVisible, artifact.documentId]);
+
+  const shouldFetchDocuments = artifact.documentId !== 'init' && artifact.status !== 'streaming';
+  console.log('[ARTIFACT] Document fetch condition:', {
+    documentId: artifact.documentId,
+    status: artifact.status,
+    shouldFetch: shouldFetchDocuments,
+    fetchUrl: shouldFetchDocuments ? `/api/document?id=${artifact.documentId}` : null
+  });
+
   const {
     data: documents,
     isLoading: isDocumentsFetching,
     mutate: mutateDocuments,
   } = useSWR<Array<Document>>(
-    artifact.documentId !== 'init' && artifact.status !== 'streaming'
-      ? `/api/document?id=${artifact.documentId}`
-      : null,
+    shouldFetchDocuments ? `/api/document?id=${artifact.documentId}` : null,
     fetcher,
+    {
+      // Prevent automatic revalidation when component unmounts
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
+    }
   );
 
   const [mode, setMode] = useState<'edit' | 'diff'>('edit');
@@ -137,10 +212,20 @@ function PureArtifact({
   const { open: isSidebarOpen } = useSidebar();
 
   useEffect(() => {
+    console.log('[ARTIFACT] Documents effect triggered:', {
+      hasDocuments: !!documents,
+      documentsLength: documents?.length || 0,
+      isLoading: isDocumentsFetching
+    });
+    
     if (documents && documents.length > 0) {
       const mostRecentDocument = documents.at(-1);
 
       if (mostRecentDocument) {
+        console.log('[ARTIFACT] Setting document from loaded data:', {
+          documentId: mostRecentDocument.id,
+          contentLength: mostRecentDocument.content?.length || 0
+        });
         setDocument(mostRecentDocument);
         setCurrentVersionIndex(documents.length - 1);
         setArtifact((currentArtifact) => {
@@ -157,12 +242,28 @@ function PureArtifact({
           };
         });
       }
+    } else {
+      console.log('[ARTIFACT] No documents available to set');
     }
-  }, [documents, setArtifact]);
+  }, [documents, setArtifact, isDocumentsFetching]);
 
   useEffect(() => {
-    mutateDocuments();
-  }, [artifact.status, mutateDocuments]);
+    // Only mutate documents if artifact is visible and not in the process of closing
+    if (artifact.isVisible) {
+      mutateDocuments();
+    }
+  }, [artifact.status, artifact.isVisible, mutateDocuments]);
+
+  // Separate cleanup effect for SWR (after mutateDocuments is defined)
+  useEffect(() => {
+    return () => {
+      // Cancel any pending SWR requests when artifact is closed
+      if (!artifact.isVisible && artifact.documentId && artifact.documentId !== 'init') {
+        console.log('[ARTIFACT] 🔄 Cancelling pending SWR requests');
+        mutateDocuments(undefined, { revalidate: false });
+      }
+    };
+  }, [artifact.isVisible, artifact.documentId, mutateDocuments]);
 
   const { mutate } = useSWRConfig();
   const [isContentDirty, setIsContentDirty] = useState(false);
@@ -197,17 +298,37 @@ function PureArtifact({
           if (currentDocument.content !== updatedContent) {
             console.log('Content changed, sending update request');
 
+            const requestBody = {
+              title: artifact.title,
+              content: updatedContent,
+              kind: artifact.kind,
+            };
+            console.log('[ARTIFACT] Making API request to /api/document:', {
+              url: `/api/document?id=${artifact.documentId}`,
+              method: 'POST',
+              bodyPreview: {
+                title: requestBody.title,
+                kind: requestBody.kind,
+                contentLength: requestBody.content?.length || 0
+              }
+            });
+
             const response = await fetch(
               `/api/document?id=${artifact.documentId}`,
               {
                 method: 'POST',
-                body: JSON.stringify({
-                  title: artifact.title,
-                  content: updatedContent,
-                  kind: artifact.kind,
-                }),
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
               },
             );
+
+            console.log('[ARTIFACT] API response received:', {
+              status: response.status,
+              statusText: response.statusText,
+              ok: response.ok
+            });
 
             if (!response.ok) {
               console.error(
@@ -246,17 +367,77 @@ function PureArtifact({
 
   const saveContent = useCallback(
     (updatedContent: string, debounce: boolean) => {
+      console.log('[ARTIFACT] saveContent called:', {
+        artifactKind: artifact.kind,
+        hasDocument: !!document,
+        contentChanged: document ? updatedContent !== document.content : 'no document',
+        debounce,
+        contentLength: updatedContent.length,
+        currentContentLength: document?.content?.length || 0
+      });
+      
+      // Special handling for book artifacts - they don't use the Document table
+      if (artifact.kind === 'book') {
+        console.log('[ARTIFACT] Book artifact detected - using book-specific save');
+        
+        // Update artifact content immediately
+        setArtifact((currentArtifact) => ({
+          ...currentArtifact,
+          content: updatedContent,
+        }));
+        
+        // Save to Books table via API
+        const saveToDatabase = async () => {
+          try {
+            console.log('[ARTIFACT] Saving book to database via /api/book/save');
+            const response = await fetch('/api/book/save', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                bookId: artifact.documentId,
+                content: updatedContent,
+                currentChapter: metadata?.currentChapter || 1, // Get current chapter from metadata
+              }),
+            });
+
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('[ARTIFACT] Failed to save book:', errorText);
+            } else {
+              console.log('[ARTIFACT] Book saved successfully to database');
+            }
+          } catch (error) {
+            console.error('[ARTIFACT] Error saving book:', error);
+          }
+        };
+
+        if (debounce) {
+          // Use a simple timeout for debouncing book saves
+          setTimeout(saveToDatabase, 1000);
+        } else {
+          saveToDatabase();
+        }
+        
+        return;
+      }
+      
       if (document && updatedContent !== document.content) {
         setIsContentDirty(true);
 
         if (debounce) {
+          console.log('[ARTIFACT] Using debounced save');
           debouncedHandleContentChange(updatedContent);
         } else {
+          console.log('[ARTIFACT] Using immediate save');
           handleContentChange(updatedContent);
         }
+      } else {
+        console.log('[ARTIFACT] Save skipped - no document or content unchanged');
       }
     },
-    [document, debouncedHandleContentChange, handleContentChange],
+    [artifact.kind, document, debouncedHandleContentChange, handleContentChange, setArtifact],
   );
 
   function getDocumentContentById(index: number) {
@@ -423,10 +604,17 @@ function PureArtifact({
       {artifact.isVisible && (
         <motion.div
           data-testid="artifact"
-          className="flex flex-row h-dvh w-dvw fixed top-0 left-0 z-50 bg-transparent"
+          className={`flex flex-row h-dvh w-dvw fixed top-0 left-0 z-50 bg-transparent ${
+            !artifact.isVisible ? 'pointer-events-none' : ''
+          }`}
           initial={{ opacity: 1 }}
           animate={{ opacity: 1 }}
-          exit={{ opacity: 0, transition: { delay: 0.4 } }}
+          exit={{ 
+            opacity: 0, 
+            pointerEvents: 'none',
+            transition: { delay: 0.0, duration: 0.12 } 
+          }}
+          style={{ pointerEvents: artifact.isVisible ? 'auto' : 'none' }}
         >
           {!isMobile && (
             <motion.div
@@ -437,8 +625,9 @@ function PureArtifact({
               }}
               animate={{ width: windowWidth, right: 0 }}
               exit={{
-                width: isSidebarOpen ? windowWidth - 256 : windowWidth,
-                right: 0,
+                opacity: 0,
+                pointerEvents: 'none',
+                transition: { duration: 0.1 }
               }}
             />
           )}
@@ -461,8 +650,8 @@ function PureArtifact({
               exit={{
                 opacity: 0,
                 x: windowWidth,
-                scale: 1,
-                transition: { duration: 0 },
+                pointerEvents: 'none',
+                transition: { duration: 0.0 },
               }}
             >
               <AnimatePresence>
@@ -542,11 +731,9 @@ function PureArtifact({
                     width: windowWidth ? windowWidth : 'calc(100dvw)',
                     borderRadius: 0,
                     transition: {
-                      delay: 0,
                       type: 'spring',
                       stiffness: 200,
                       damping: 30,
-                      duration: 5000,
                     },
                   }
                 : {
@@ -559,23 +746,17 @@ function PureArtifact({
                       : 'calc(100dvw-400px)',
                     borderRadius: 0,
                     transition: {
-                      delay: 0,
                       type: 'spring',
                       stiffness: 200,
                       damping: 30,
-                      duration: 5000,
                     },
                   }
             }
             exit={{
               opacity: 0,
-              scale: 0.5,
-              transition: {
-                delay: 0.1,
-                type: 'spring',
-                stiffness: 600,
-                damping: 30,
-              },
+              scale: 0.95,
+              pointerEvents: 'none',
+              transition: { duration: 0.12 },
             }}
           >
             <div className="p-2 flex flex-row justify-between items-start w-full">

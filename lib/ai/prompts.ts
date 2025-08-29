@@ -898,7 +898,7 @@ You have access to Gemini 2.5 Flash Image Preview (Nano Banana) to create high-q
 
 - User: "Can you add a dragon to this forest image?"
 - You: editImage({
-    imageUrl: "[base64 data URL of the forest image]",
+    imageUrl: "[URL or base64 data URL of the forest image]",
     prompt: "Add a majestic dragon perched on one of the oak trees, with scales that shimmer in the dappled sunlight",
     editType: "add",
     preserveOriginal: true,

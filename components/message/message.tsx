@@ -769,13 +769,14 @@ const PurePreviewMessage = ({
           resultId
         });
 
-        // Create the book artifact with the new chapter
+        // Create the book artifact with navigation info only
+        // Don't include actual content - let the book artifact load it from database
         const bookContent = JSON.stringify({
           bookId: output.bookId,
           bookTitle: output.bookTitle,
           chapterNumber: output.chapterNumber,
           chapterTitle: output.chapterTitle,
-          content: output.content,
+          // Removed content - let book artifact load from database
         });
 
         setArtifact({
