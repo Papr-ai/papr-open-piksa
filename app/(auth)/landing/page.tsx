@@ -677,7 +677,7 @@ export default function LandingPage() {
                 <div>
                   <h3 className="text-xl font-semibold mb-2">Lightning-Fast Memory Retrieval</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Retrieve relevant information from vast datasets in milliseconds with our optimized memory APIs.
+                    Retrieve relevant information from vast datasets in milliseconds with our predictive memory APIs.
                   </p>
                 </div>
               </div>
@@ -703,9 +703,9 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-2">Superior Accuracy</h3>
+                  <h3 className="text-xl font-semibold mb-2">Top ranked retrieval</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Industry-leading retrieval accuracy with 81% Hit@1 performance on Stanford benchmarks.
+                    Industry-leading retrieval accuracy ranked number 1 on Stanford benchmarks.
                   </p>
                 </div>
               </div>
@@ -745,10 +745,12 @@ client = papr_memory.Papr(api_key="your_api_key")
 client.memory.add({
   "content": "Q4 sales increased 23% YoY",
   "metadata": {
-    "type": "sales", 
-    "quarter": "Q4",
-    "department": "enterprise",
-    "confidence": 0.95
+    "custom_metadata": {
+      "type": "sales", 
+      "quarter": "Q4",
+      "department": "enterprise",
+      "confidence": 0.95
+    }
   }
 })
 
@@ -761,7 +763,7 @@ results = client.memory.search(
 for result in results:
   print(f"Score: {result.score}")
   print(f"Content: {result.content}")
-  print(f"Custom metadata: {result.metadata}")
+  print(f"Custom metadata: {result.metadata.custom_metadata}")
 `}
               </pre>
             </div>
@@ -1077,8 +1079,8 @@ for result in results:
                 <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-sm font-medium">Most Popular</span>
               </div>
               <div className="text-center mb-6">
-                <h3 className="text-xl font-bold mb-2">Pro</h3>
-                <div className="text-3xl font-bold mb-1">$29</div>
+                <h3 className="text-xl font-bold mb-2">Starter</h3>
+                <div className="text-3xl font-bold mb-1">$20</div>
                 <p className="text-gray-500 dark:text-gray-400">per month</p>
               </div>
               <ul className="space-y-3 mb-8">
@@ -1086,7 +1088,7 @@ for result in results:
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  5,000 messages per month
+                  1,200 messages per month
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
@@ -1107,43 +1109,43 @@ for result in results:
                   All AI models
                 </li>
               </ul>
-              <Button className="w-full bg-blue-500 hover:bg-blue-600">Start Pro Trial</Button>
+              <Button className="w-full bg-blue-500 hover:bg-blue-600">Start Starter Trial</Button>
             </div>
 
-            {/* Enterprise Plan */}
+            {/* Pro Plan */}
             <div className="bg-white dark:bg-zinc-900 rounded-lg border border-gray-200 dark:border-gray-700 p-8">
               <div className="text-center mb-6">
-                <h3 className="text-xl font-bold mb-2">Enterprise</h3>
-                <div className="text-3xl font-bold mb-1">Custom</div>
-                <p className="text-gray-500 dark:text-gray-400">For large organizations</p>
+                <h3 className="text-xl font-bold mb-2">Pro</h3>
+                <div className="text-3xl font-bold mb-1">$200</div>
+                <p className="text-gray-500 dark:text-gray-400">per month</p>
               </div>
               <ul className="space-y-3 mb-8">
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Unlimited messages
+                  Unlimited basic messages
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Custom integrations
+                  3,000 premium interactions
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Dedicated support
+                  100K memories stored
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  SLA guarantee
+                  Priority support
                 </li>
               </ul>
-              <Button className="w-full" variant="outline">Contact Sales</Button>
+              <Button className="w-full" variant="outline">Start Pro Trial</Button>
             </div>
           </div>
         </div>
