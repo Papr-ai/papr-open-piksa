@@ -26,8 +26,14 @@ export const authConfig = {
         return Response.redirect(new URL('/', nextUrl as unknown as URL));
       }
 
-      if (isOnRegister || isOnLogin || isOnLanding || isOnOnboarding) {
-        return true; // Always allow access to register, login, landing, and onboarding pages
+      if (isOnRegister || isOnLogin || isOnLanding) {
+        return true; // Always allow access to register, login, and landing pages
+      }
+
+      // Onboarding requires authentication
+      if (isOnOnboarding) {
+        if (isLoggedIn) return true;
+        return Response.redirect(new URL('/login', nextUrl as unknown as URL));
       }
 
       // Protected routes that require authentication

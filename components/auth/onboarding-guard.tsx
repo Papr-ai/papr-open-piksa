@@ -34,13 +34,8 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
         return;
       }
 
-      // For onboarding page specifically - redirect unauthenticated users to login
+      // For onboarding page specifically - always allow (middleware handles auth)
       if (pathname === '/onboarding') {
-        if (status === 'unauthenticated' || !session?.user) {
-          router.replace('/login');
-          return;
-        }
-        // Authenticated users can access onboarding page
         setIsChecking(false);
         return;
       }
