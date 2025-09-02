@@ -17,9 +17,8 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
 
   useEffect(() => {
     const checkOnboardingStatus = async () => {
-      // Skip check for certain paths - always allow these paths
+      // Skip check for certain paths - always allow these paths (except onboarding)
       if (
-        pathname === '/onboarding' ||
         pathname === '/login' ||
         pathname === '/register' ||
         pathname === '/landing' ||
@@ -35,8 +34,19 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
         return;
       }
 
-      // Not authenticated - no need to check onboarding
-      if (!session?.user) {
+      // For onboarding page specifically - redirect unauthenticated users to login
+      if (pathname === '/onboarding') {
+        if (status === 'unauthenticated' || !session?.user) {
+          router.replace('/login');
+          return;
+        }
+        // Authenticated users can access onboarding page
+        setIsChecking(false);
+        return;
+      }
+
+      // Not authenticated - no need to check onboarding for other pages
+      if (status === 'unauthenticated' || !session?.user) {
         setIsChecking(false);
         hasCheckedRef.current = false;
         return;
@@ -57,7 +67,7 @@ export function OnboardingGuard({ children }: OnboardingGuardProps) {
           const { onboardingCompleted } = await response.json();
           
           if (!onboardingCompleted) {
-            router.push('/onboarding');
+            router.replace('/onboarding');
             return;
           }
         }

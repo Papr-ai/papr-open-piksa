@@ -23,13 +23,13 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
   const currentUser = clientSession?.user || user;
   
   // Debug logging to see what's happening with both sessions
-  console.log('ConditionalLayout:', { 
-    hasServerUser: !!user, 
-    hasClientUser: !!clientSession?.user, 
-    sessionStatus: status,
-    pathname, 
-    isCollapsed 
-  });
+  // console.log('ConditionalLayout:', { 
+  //   hasServerUser: !!user, 
+  //   hasClientUser: !!clientSession?.user, 
+  //   sessionStatus: status,
+  //   pathname, 
+  //   isCollapsed 
+  // });
   
   // Special pages that don't use the sidebar layout
   const isSpecialPage = pathname === '/onboarding' || 

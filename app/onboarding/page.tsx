@@ -44,23 +44,18 @@ export default function OnboardingPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [data, setData] = useState<OnboardingData>({});
 
-  // Check if user needs onboarding
+  // Pre-populate data for OAuth users
   useEffect(() => {
     if (status === 'loading') return;
     
-    if (!session?.user) {
-      router.push('/login');
-      return;
-    }
-
     // Pre-populate data for OAuth users
-    if (session.user.name || session.user.image) {
+    if (session?.user?.name || session?.user?.image) {
       setData({
         name: session.user.name || '',
         image: session.user.image || '',
       });
     }
-  }, [session, status, router]);
+  }, [session, status]);
 
   const handleComplete = async () => {
     // Validate required fields
@@ -92,7 +87,7 @@ export default function OnboardingPage() {
       }
 
       toast({ type: 'success', description: 'Welcome to Papr! Your account is all set up.' });
-      router.push('/');
+      router.replace('/');
     } catch (error) {
       console.error('Onboarding error:', error);
       toast({ type: 'error', description: 'Failed to complete onboarding. Please try again.' });
