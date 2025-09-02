@@ -11,8 +11,12 @@ import { useSubscription } from '@/hooks/use-subscription';
 
 export default function SubscriptionPage() {
   const { data: session, status: sessionStatus } = useSession();
-  const subscriptionStatus = useSubscription(true); // Sync with Stripe when loading subscription page
+  // Only start fetching subscription data after we have a confirmed authenticated session
+  const subscriptionStatus = useSubscription(sessionStatus === 'authenticated' && !!session?.user);
   const [subscribing, setSubscribing] = useState(false);
+
+  // Debug logging to help identify the issue
+  console.log('Subscription page render:', { sessionStatus, hasUser: !!session?.user, subscriptionLoading: subscriptionStatus.loading });
 
   const handleSubscribe = async (planId: string) => {
     if (!session?.user || planId === 'free') return;
@@ -63,8 +67,8 @@ export default function SubscriptionPage() {
     }
   };
 
-  // Show loading state while session is loading
-  if (sessionStatus === 'loading' || subscriptionStatus.loading) {
+  // Show loading state while session is loading or subscription data is loading
+  if (sessionStatus === 'loading' || (sessionStatus === 'authenticated' && subscriptionStatus.loading)) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
@@ -75,12 +79,24 @@ export default function SubscriptionPage() {
   }
 
   // Show login message if not authenticated
-  if (sessionStatus === 'unauthenticated' || !session?.user) {
+  // Only show unauthenticated state if we're certain the session is not loading
+  if (sessionStatus === 'unauthenticated') {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
           <h1 className="text-3xl font-bold mb-4">Subscription</h1>
           <p>Please log in to manage your subscription.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If we have a session but no user data, wait for it to load
+  if (!session?.user && sessionStatus === 'authenticated') {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold mb-4">Loading user data...</h1>
         </div>
       </div>
     );

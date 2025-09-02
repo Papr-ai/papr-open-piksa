@@ -99,7 +99,9 @@ import { AddMemoryResults } from '@/components/memory/add-memory-results';
 import { SearchBooksResults } from '@/components/book/search-books-results';
 import { TaskCard } from '@/components/task-card';
 import { ImageResult } from '@/components/common/image-result';
+import { MergedImagesResult } from '@/components/message/merged-images-result';
 import { ImageEditResult } from '@/components/common/image-edit-result';
+import { CreateImageResult } from './create-image-result';
 
 // Tool input/output types
 type CreateBookInput = {
@@ -195,6 +197,7 @@ import { ProcessedMessage } from './processed-message';
 import type { ExtendedUIMessage } from '@/lib/types';
 import { modelSupportsReasoning } from '@/lib/ai/models';
 import Image from 'next/image';
+import { ContinueButton, shouldShowContinueButton } from './continue-button';
 import { useSession } from 'next-auth/react';
 import { useUserAvatar } from '@/hooks/use-user-avatar';
 import { GitHubRepoResults } from '../github/github-repo-results';
@@ -688,6 +691,8 @@ const PurePreviewMessage = ({
   isReadonly,
   selectedModelId,
   enableUniversalReasoning,
+  setInput,
+  handleSubmit,
 }: {
   chatId: string;
   message: UIMessage;
@@ -698,6 +703,8 @@ const PurePreviewMessage = ({
   isReadonly: boolean;
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;
+  setInput?: (input: string) => void;
+  handleSubmit?: (e?: React.FormEvent) => void;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const { data: session, status: sessionStatus } = useSession();
@@ -1198,6 +1205,11 @@ const PurePreviewMessage = ({
                             <SearchBooksResults
                               searchResult={output as SearchBooksOutput}
                             />
+                          ) : toolName === 'createImage' ? (
+                            <CreateImageResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
                           ) : toolName === 'generateImage' ? (
                             <ImageResult
                               result={output as GenerateImageOutput}
@@ -1207,6 +1219,14 @@ const PurePreviewMessage = ({
                             <ImageEditResult
                               result={output as EditImageOutput}
                               isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'mergeImages' ? (
+                            <MergedImagesResult
+                              mergedImageUrl={(output as any).mergedImageUrl}
+                              gridLayout={(input as any).images || []} // Use input images since output gridLayout might be truncated
+                              dimensions={(output as any).dimensions || { width: 1024, height: 1024 }}
+                              processedImages={(output as any).processedImages || (input as any).images?.length || 0}
+                              format={(output as any).format || "png"}
                             />
                           ) : toolName === 'addMemory' ? (
                             <AddMemoryResults
@@ -1219,7 +1239,7 @@ const PurePreviewMessage = ({
                                 content: (input as AddMemoryInput)?.content,
                               }}
                             />
-                          ) : ['createTaskPlan', 'updateTask', 'completeTask', 'getTaskStatus', 'addTask'].includes(toolName) ? (
+                          ) : ['createTaskPlan', 'updateTask', 'completeTask', 'getTaskStatus'].includes(toolName) ? (
                             <TaskCard 
                               type={(output as any)?.type || 'task-status'}
                               tasks={(output as any)?.tasks}
@@ -1364,6 +1384,19 @@ const PurePreviewMessage = ({
                             <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full"></div>
                           </div>
                         </div>
+                      ) : toolName === 'createImage' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-indigo-50 border-indigo-200">
+                          <div className="text-indigo-600 mt-1">✨</div>
+                          <div className="text-left">
+                            <div className="font-medium">Creating Image</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.description?.substring(0, 50)}...
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-indigo-600 rounded-full"></div>
+                          </div>
+                        </div>
                       ) : toolName === 'addMemory' ? (
                             <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
                               <div className="text-blue-600 mt-1">💾</div>
@@ -1409,6 +1442,30 @@ const PurePreviewMessage = ({
                     isLoading={isLoading}
                   />
                 )}
+
+                {/* Continue button for when LLM exhausts tool calls */}
+                {!isReadonly && message.role === 'assistant' && !isLoading && shouldShowContinueButton(message, 'idle') && setInput && handleSubmit && (
+                  <ContinueButton
+                    onContinue={() => {
+                      // Set the input to "continue" and trigger submission
+                      setInput('continue');
+                      // Trigger form submission after setting the input
+                      setTimeout(() => {
+                        // Try direct handleSubmit first
+                        if (handleSubmit) {
+                          handleSubmit();
+                        } else {
+                          // Fallback: trigger form submission via DOM
+                          const form = document.querySelector('form[data-chat-form]');
+                          if (form) {
+                            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                          }
+                        }
+                      }, 10);
+                    }}
+                    isReadonly={isReadonly}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -1442,6 +1499,8 @@ export const PreviewMessage = memo(
     isReadonly: boolean;
     selectedModelId?: string;
     enableUniversalReasoning?: boolean;
+    setInput?: (input: string) => void;
+    handleSubmit?: (e?: React.FormEvent) => void;
   }, nextProps: {
     chatId: string;
     message: UIMessage;
@@ -1452,6 +1511,8 @@ export const PreviewMessage = memo(
     isReadonly: boolean;
     selectedModelId?: string;
     enableUniversalReasoning?: boolean;
+    setInput?: (input: string) => void;
+    handleSubmit?: (e?: React.FormEvent) => void;
   }) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.message.id !== nextProps.message.id) return false;

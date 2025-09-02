@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useState } from 'react';
 import { toast } from '@/components/common/toast';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 
 import { AuthForm } from '@/components/auth/auth-form';
 import { SubmitButton } from '@/components/common/submit-button';
@@ -14,6 +14,7 @@ import { login, type LoginActionState } from '../actions';
 
 export default function Page(): JSX.Element {
   const router = useRouter();
+  const { update } = useSession();
 
   const [email, setEmail] = useState<string>('');
   const [isSuccessful, setIsSuccessful] = useState<boolean>(false);
@@ -65,7 +66,10 @@ export default function Page(): JSX.Element {
       });
     } else if (state.status === 'success') {
       setIsSuccessful(true);
-      router.refresh();
+      // Force session update and redirect
+      update().then(() => {
+        router.push('/');
+      });
     }
   }, [state.status, mounted, router]);
 

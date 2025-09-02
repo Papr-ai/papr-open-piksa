@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { PageContext } from '@/types/app';
 import { 
   DocumentIcon, 
@@ -10,15 +10,14 @@ import {
   PaperclipIcon,
   LoaderIcon 
 } from '@/components/common/icons';
+import { ImageIcon } from 'lucide-react';
 import { fetcher } from '@/lib/utils';
 import useSWR from 'swr';
 
 interface ContextSelectorProps {
-  isOpen: boolean;
-  onClose: () => void;
-  anchorEl: HTMLElement | null;
   selectedPages: PageContext[];
   onPagesChange: (pages: PageContext[]) => void;
+  onClose: () => void;
   isMobile?: boolean;
   isDocumentUploading?: boolean;
   isPDFUploading?: boolean;
@@ -32,41 +31,27 @@ interface Document {
 }
 
 export function ContextSelector({
-  isOpen,
-  onClose,
-  anchorEl,
   selectedPages,
   onPagesChange,
+  onClose,
   isMobile = false,
   isDocumentUploading = false,
   isPDFUploading = false,
 }: ContextSelectorProps) {
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+
+  const documentInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Fetch user documents
   const { data: documents, isLoading } = useSWR<Document[]>(
-    isOpen ? '/api/documents' : null,
+    '/api/documents',
     fetcher
   );
 
-  // Handle click outside to close menu
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node) && 
-          anchorEl && !anchorEl.contains(event.target as Node)) {
-        onClose();
-      }
-    }
 
-    if (isOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isOpen, onClose, anchorEl]);
 
   // Fetch document content when selected
   const fetchDocumentContent = async (doc: Document) => {
@@ -114,13 +99,13 @@ export function ContextSelector({
   const availablePages = documents?.map(doc => ({
     id: doc.id,
     title: doc.title,
-    type: doc.kind as 'document' | 'pdf' | 'youtube' | 'page',
+    type: doc.kind as 'document' | 'pdf' | 'youtube' | 'page' | 'image',
     kind: doc.kind,
     createdAt: doc.createdAt
   })) || [];
 
-  // Handle file upload
-  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle document upload (PDF, DOC, TXT)
+  const handleDocumentUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
@@ -137,82 +122,145 @@ export function ContextSelector({
 
       if (response.ok) {
         const data = await response.json();
-        // Add the uploaded file as a context
+        const isPDF = files[0].type.includes('pdf');
+        
+        // Add the uploaded document as a context
         const newContext: PageContext = {
           id: data.id || crypto.randomUUID(),
           title: files[0].name,
-          type: files[0].type.includes('pdf') ? 'pdf' : 'document',
+          type: isPDF ? 'pdf' : 'document',
           file: {
             name: files[0].name,
             url: data.url,
             __type: 'File'
           },
-          text: await files[0].text(), // Include the file content
+          text: await files[0].text().catch(() => ''),
         };
         onPagesChange([...selectedPages, newContext]);
       }
     } catch (error) {
-      console.error('Error uploading file:', error);
+      console.error('Error uploading document:', error);
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      if (documentInputRef.current) {
+        documentInputRef.current.value = '';
       }
     }
   };
 
-  if (!isOpen) return null;
+  // Handle image upload (JPEG, PNG, WebP, GIF)
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
-  // Calculate position based on anchorEl
-  const getMenuPosition = () => {
-    if (!anchorEl) return { top: 0, left: 0 };
+    console.log('[CONTEXT SELECTOR] Starting image upload:', files[0].name);
+    setIsUploading(true);
     
-    const rect = anchorEl.getBoundingClientRect();
-    return {
-      bottom: `${window.innerHeight - rect.top + window.scrollY}px`,
-      left: `${rect.left + window.scrollX}px`,
-    };
-  };
+    try {
+      const formData = new FormData();
+      formData.append('file', files[0]);
 
-  const menuPosition = getMenuPosition();
+      const response = await fetch('/api/files/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log('[CONTEXT SELECTOR] Image upload successful:', data);
+        
+        // Add the uploaded image as a context
+        const newContext: PageContext = {
+          id: data.id || crypto.randomUUID(),
+          title: files[0].name,
+          type: 'image',
+          file: {
+            name: files[0].name,
+            url: data.url,
+            __type: 'File'
+          },
+          text: '', // Images don't have text content
+        };
+        
+        console.log('[CONTEXT SELECTOR] Adding new context:', newContext);
+        console.log('[CONTEXT SELECTOR] Current selectedPages:', selectedPages.length);
+        
+        const updatedContexts = [...selectedPages, newContext];
+        console.log('[CONTEXT SELECTOR] Updated contexts:', updatedContexts.length);
+        
+        onPagesChange(updatedContexts);
+      } else {
+        console.error('[CONTEXT SELECTOR] Image upload failed:', response.status, response.statusText);
+      }
+    } catch (error) {
+      console.error('[CONTEXT SELECTOR] Error uploading image:', error);
+    } finally {
+      setIsUploading(false);
+      if (imageInputRef.current) {
+        imageInputRef.current.value = '';
+      }
+    }
+  };
 
   return (
     <>
+      {/* Document upload input */}
       <input
         type="file"
-        ref={fileInputRef}
-        onChange={handleFileUpload}
+        ref={documentInputRef}
+        onChange={handleDocumentUpload}
         className="hidden"
         accept=".pdf,.doc,.docx,.txt"
-        id="file-upload"
+        id="document-upload"
+      />
+      
+      {/* Image upload input */}
+      <input
+        type="file"
+        ref={imageInputRef}
+        onChange={handleImageUpload}
+        className="hidden"
+        accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+        id="image-upload"
       />
       
       <div 
         ref={menuRef}
-        className="absolute z-50 bg-background border border-border rounded-md shadow-md overflow-auto"
-        style={{
-          position: 'fixed',
-          bottom: menuPosition.bottom,
-          left: menuPosition.left,
-          maxHeight: isMobile ? '90vh' : '350px',
-          width: isMobile ? '90vw' : '300px',
-          marginBottom: '4px',
-        }}
+        className="max-h-80 overflow-auto"
       >
         <div className="p-0">
+          {/* Document Upload Option */}
           <label 
-            htmlFor="file-upload"
+            htmlFor="document-upload"
             className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent cursor-pointer border-b border-border"
           >
-            {isUploading || isDocumentUploading ? (
+            {isUploading ? (
               <>
                 <LoaderIcon className="animate-spin" size={16} />
                 <span>Uploading...</span>
               </>
             ) : (
               <>
-                <PaperclipIcon size={16} className="text-muted-foreground" />
+                <DocumentIcon size={16} className="text-muted-foreground" />
                 <span>Upload Document/PDF</span>
+              </>
+            )}
+          </label>
+
+          {/* Image Upload Option */}
+          <label 
+            htmlFor="image-upload"
+            className="flex items-center gap-2 px-4 py-2 text-sm hover:bg-accent cursor-pointer border-b border-border"
+          >
+            {isUploading ? (
+              <>
+                <LoaderIcon className="animate-spin" size={16} />
+                <span>Uploading...</span>
+              </>
+            ) : (
+              <>
+                <ImageIcon size={16} className="text-muted-foreground" />
+                <span>Upload Image</span>
               </>
             )}
           </label>
@@ -236,6 +284,7 @@ export function ContextSelector({
                   {page.type === 'youtube' && <YouTubeIcon size={16} className="text-muted-foreground" />}
                   {page.type === 'pdf' && <PDFIcon size={16} className="text-muted-foreground" />}
                   {page.type === 'document' && <DocumentIcon size={16} className="text-muted-foreground" />}
+                  {page.type === 'image' && <ImageIcon size={16} className="text-muted-foreground" />}
                   {(!page.type || page.type === 'page') && <PageIcon size={16} className="text-muted-foreground" />}
                   <span className="truncate">{page.title}</span>
                 </div>
@@ -268,6 +317,7 @@ export function ContextSelector({
                   {page.type === 'youtube' && <YouTubeIcon size={16} className="text-muted-foreground" />}
                   {page.type === 'pdf' && <PDFIcon size={16} className="text-muted-foreground" />}
                   {page.type === 'document' && <DocumentIcon size={16} className="text-muted-foreground" />}
+                  {page.type === 'image' && <ImageIcon size={16} className="text-muted-foreground" />}
                   {(!page.type || page.type === 'page') && <PageIcon size={16} className="text-muted-foreground" />}
                   <span className="truncate">{page.title}</span>
                 </div>

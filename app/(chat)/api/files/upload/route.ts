@@ -11,9 +11,21 @@ const FileSchema = z.object({
     .refine((file) => file.size <= 5 * 1024 * 1024, {
       message: 'File size should be less than 5MB',
     })
-    // Update the file type based on the kind of files you want to accept
-    .refine((file) => ['image/jpeg', 'image/png'].includes(file.type), {
-      message: 'File type should be JPEG or PNG',
+    // Accept both image and document formats
+    .refine((file) => [
+      // Image formats
+      'image/jpeg', 
+      'image/jpg', 
+      'image/png', 
+      'image/webp', 
+      'image/gif',
+      // Document formats
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain'
+    ].includes(file.type), {
+      message: 'File type should be an image (JPEG, PNG, WebP, GIF) or document (PDF, DOC, DOCX, TXT)',
     }),
 });
 
@@ -47,12 +59,23 @@ export async function POST(request: Request) {
     }
 
     // Get filename from formData since Blob doesn't have name property
-    const filename = (formData.get('file') as File).name;
+    const originalFilename = (formData.get('file') as File).name;
     const fileBuffer = await file.arrayBuffer();
 
+    // Create unique filename to avoid collisions
+    const timestamp = Date.now();
+    const randomId = Math.random().toString(36).substring(2, 15);
+    const fileExtension = originalFilename.split('.').pop() || 'txt';
+    
+    // Organize files by type
+    const isImage = file.type.startsWith('image/');
+    const folder = isImage ? 'images/chat' : 'documents/chat';
+    const filename = `${folder}/${session.user?.id}-${timestamp}-${randomId}.${fileExtension}`;
+
     try {
-      const data = await put(`${filename}`, fileBuffer, {
+      const data = await put(filename, fileBuffer, {
         access: 'public',
+        contentType: file.type,
       });
 
       return NextResponse.json(data);

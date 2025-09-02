@@ -27,13 +27,20 @@ export function estimateConversationTokens(messages: UIMessage[]): number {
 }
 
 // Model-specific context limits (tokens per request)
+// Using conservative limits for better performance and cost efficiency
 export const MODEL_RATE_LIMITS: Record<string, number> = {
   'openai/gpt-oss-120b': 8000,
   'openai/gpt-oss-20b': 8000,
   'deepseek-r1-distill-llama-70b': 30000,
   'llama-3.3-70b-versatile': 30000,
-  'gpt-5': 180000,  // Updated to handle larger contexts
-  'gpt-5-mini': 180000,  // Updated to handle larger contexts
+  'gpt-5': 50000,  // Conservative limit ~15-20 recent messages
+  'gpt-5-mini': 50000,  // Conservative limit ~15-20 recent messages
+  'claude-3.5-sonnet': 50000,  // Conservative limit ~15-20 recent messages
+  'claude-3.7-sonnet': 50000,  // Conservative limit ~15-20 recent messages
+  'claude-4-opus': 50000,  // Conservative limit ~15-20 recent messages
+  'gemini-2.5-flash': 50000,  // Conservative limit ~15-20 recent messages
+  'gemini-2.5-pro': 50000,  // Conservative limit ~15-20 recent messages
+  'gemini-2.5-flash-lite': 50000,  // Conservative limit ~15-20 recent messages
   // Add more models as needed
 };
 

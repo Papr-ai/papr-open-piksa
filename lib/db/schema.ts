@@ -264,6 +264,7 @@ export const usage = pgTable('Usage', {
   memoriesAdded: integer('memoriesAdded').notNull().default(0),
   memoriesSearched: integer('memoriesSearched').notNull().default(0),
   voiceChats: integer('voiceChats').notNull().default(0), // Voice chat sessions per month
+  videosGenerated: integer('videosGenerated').notNull().default(0), // Video generation per month
   createdAt: timestamp('createdAt').notNull().defaultNow(),
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (table) => ({

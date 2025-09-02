@@ -17,6 +17,7 @@ export type DataStreamDelta = {
     | 'image-delta'
     | 'image-generated'
     | 'image-edited'
+    | 'images-merged'
     | 'title'
     | 'id'
     | 'suggestion'
@@ -506,6 +507,17 @@ Please reply with **Approve** to proceed with creation, or **Stop** to cancel.`,
           // Update thinking state with success message
           if (imageEditedData.content) {
             setThinkingState('✅ Image edited successfully', 'tool-result-success');
+          }
+          break;
+
+        case 'images-merged':
+          // Handle image merging events
+          const imagesMergedData = dataPart.data as any;
+          console.log('[DATA STREAM] Images merged:', imagesMergedData);
+          
+          // Update thinking state with success message
+          if (imagesMergedData.content) {
+            setThinkingState('✅ Images merged successfully', 'tool-result-success');
           }
           break;
 

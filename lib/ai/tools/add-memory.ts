@@ -22,10 +22,17 @@ interface AddMemoryProps {
 const addMemorySchema = z.object({
   content: z.string().describe('The content of the memory to add, should be specific and detailed enough for future retrieval'),
   category: MemoryCategory.describe('The category of memory: preferences (user preferences, style, etc), goals (long-term objectives), tasks (to-dos, reminders), or knowledge (technical facts, configurations)'),
-  type: z.enum(['text', 'code_snippet', 'document']).default('text').describe('The type of memory content'),
+  type: z.enum(['text', 'code_snippet', 'document']).default('text').describe('The type of memory content - use "document" for images and rich content'),
   emoji_tags: z.array(z.string()).optional().describe('List of emoji tags that represent this memory (e.g. ["👤", "⚙️", "🔧"] for preferences). Choose 2-4 relevant emojis that visually represent this memory.'),
   topics: z.array(z.string()).optional().describe('List of topics related to this memory (e.g. ["preferences", "ui settings", "personalization"] for preferences). These topics help with search and categorization.'),
   hierarchical_structure: z.string().optional().describe('A path-like string representing where this memory fits in a hierarchical structure (e.g. "preferences/ui/theme" or "knowledge/programming/javascript"). This helps organize memories.'),
+  
+  // Image-specific fields
+  image_url: z.string().optional().describe('URL of the image if this is an image memory'),
+  image_description: z.string().optional().describe('Detailed description of what the image shows'),
+  
+  // Flexible custom metadata for different content types
+  custom_fields: z.record(z.string(), z.any()).optional().describe('Additional custom metadata fields specific to the content type. For images, this could include: character_name, character_traits, prop_type, scene_location, artistic_style, book_title, chapter_number, etc.')
 });
 
 type AddMemoryInput = z.infer<typeof addMemorySchema>;
@@ -52,7 +59,10 @@ export const addMemory = ({ session }: AddMemoryProps): Tool<AddMemoryInput, Add
         type = 'text', 
         emoji_tags: providedEmojiTags,
         topics: providedTopics,
-        hierarchical_structure: providedHierarchy
+        hierarchical_structure: providedHierarchy,
+        image_url,
+        image_description,
+        custom_fields
       } = input;
       
       console.log('[Memory Tool] Adding memory with category:', category);
@@ -102,10 +112,32 @@ export const addMemory = ({ session }: AddMemoryProps): Tool<AddMemoryInput, Add
         const topics = providedTopics || getDefaultTopics(category);
         const hierarchical_structure = providedHierarchy || category;
 
+        // Helper function to serialize values for Papr Memory API
+        const serializeCustomFields = (fields: Record<string, any>): Record<string, any> => {
+          if (!fields) return {};
+          
+          const serialized: Record<string, any> = {};
+          for (const [key, value] of Object.entries(fields)) {
+            if (Array.isArray(value)) {
+              // Convert arrays to JSON strings to ensure API compatibility
+              serialized[key] = JSON.stringify(value);
+              console.log(`[Memory Tool] Serialized array field ${key}: ${value} -> ${serialized[key]}`);
+            } else if (typeof value === 'object' && value !== null) {
+              // Convert objects to JSON strings
+              serialized[key] = JSON.stringify(value);
+              console.log(`[Memory Tool] Serialized object field ${key}: ${JSON.stringify(value).substring(0, 100)}...`);
+            } else {
+              // Keep primitive values as-is (string, number, boolean)
+              serialized[key] = value;
+            }
+          }
+          return serialized;
+        };
+
         // Create metadata with proper structure following SDK field names
         const metadata: MemoryMetadata = {
           // Standard fields from the SDK
-          sourceType: 'PaprChat',
+          sourceType: image_url ? 'PaprChat_Image' : 'PaprChat',
           sourceUrl: `/chat/${session.user.id}`, // Link to user's chat
           user_id: paprUserId,
           external_user_id: session.user.id,
@@ -114,11 +146,19 @@ export const addMemory = ({ session }: AddMemoryProps): Tool<AddMemoryInput, Add
           hierarchical_structures: hierarchical_structure,
           createdAt: new Date().toISOString(),
           
-          // Custom fields in customMetadata
+          // Custom fields in customMetadata - FLATTEN custom_fields to top level for searchability
           customMetadata: {
+            // Core metadata
             category: category,
             app_user_id: session.user.id,
-            tool: 'addMemory'
+            tool: 'addMemory',
+            content_type: type,
+            // Image-specific fields (top-level for filtering)
+            ...(image_url && { image_url }),
+            ...(image_description && { image_description }),
+            // Serialize and flatten custom_fields to top-level for searchability
+            // This allows filtering on character_name, book_title, prop_type, etc.
+            ...(custom_fields ? serializeCustomFields(custom_fields) : {})
           }
         };
 

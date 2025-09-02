@@ -11,6 +11,7 @@ export interface SubscriptionPlan {
     memoriesAdded: number;
     memoriesSearched: number;
     voiceChats: number; // Monthly limit for voice chat sessions, -1 for unlimited
+    videosGenerated: number; // Monthly limit for video generation, -1 for unlimited
   };
   stripePriceId: string;
   isPopular?: boolean;

@@ -87,10 +87,10 @@ export function ProcessedMessage({ content, isAssistantMessage = false }: Proces
     return detectRepositoryApproval(content);
   }, [content]);
 
-  // Check for task tracker data
-  const taskData = useMemo(() => {
-    return detectTaskTrackerData(content);
-  }, [content]);
+  // Task cards are handled by tool invocations in message.tsx
+  // const taskData = useMemo(() => {
+  //   return detectTaskTrackerData(content);
+  // }, [content]);
 
   // Check for memory data
   const memoryData = useMemo(() => {
@@ -106,10 +106,10 @@ export function ProcessedMessage({ content, isAssistantMessage = false }: Proces
     return processThinkBlocks(content);
   }, [content]);
 
-  // If task tracker data is detected, show task card
-  if (taskData) {
-    return <TaskCard {...taskData} />;
-  }
+  // Task cards are handled by tool invocations
+  // if (taskData) {
+  //   return <TaskCard {...taskData} />;
+  // }
 
   // If memory data is detected, show memory card
   if (memoryData) {

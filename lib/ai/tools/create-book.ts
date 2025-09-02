@@ -19,7 +19,7 @@ const createBookSchema = z.object({
   chapterTitle: z.string().describe('The title of the specific chapter to create or add'),
   chapterNumber: z.number().describe('The chapter number (1, 2, 3, etc.)'),
   description: z.string().optional().describe('Optional description or outline for the chapter'),
-  bookId: z.string().optional().describe('Optional bookId for existing book. Use searchBooks tool first to find existing books and their bookIds. If not provided, a new book will be created.'),
+  bookId: z.string().optional().describe('Optional bookId for existing book. Use searchBooks tool first (without bookTitle parameter) to get all books and let AI choose the right one. If not provided, a new book will be created.'),
   bookContext: z.string().optional().describe('Optional context about the book, characters, plot, and writing style from previous chapters. Use searchMemories tool first to gather relevant context before calling this tool.'),
 });
 
@@ -38,7 +38,7 @@ type CreateBookOutput = {
 export const createBook = ({ session, dataStream }: CreateBookProps) =>
   tool({
     description:
-      'Create or add to a book with chapters. This tool manages the entire book structure and can add new chapters to existing books. Use this instead of createDocument for book content. IMPORTANT WORKFLOW: 1) Use searchBooks tool first to check for existing books and get their bookIds, 2) Use searchMemories tool to gather relevant context about the book, characters, plot, and writing style, 3) Pass the relevant context via the bookContext parameter to maintain consistency across chapters.',
+      'Create or add to a book with chapters. This tool manages the entire book structure and can add new chapters to existing books. Use this instead of createDocument for book content. IMPORTANT WORKFLOW: 1) Use searchBooks tool first (without bookTitle parameter) to get all existing books and let AI choose the right one, 2) Use searchMemories tool to gather relevant context about the book, characters, plot, and writing style, 3) Pass the relevant context via the bookContext parameter to maintain consistency across chapters.',
     inputSchema: createBookSchema,
     execute: async (input: CreateBookInput): Promise<CreateBookOutput> => {
       const { bookTitle, chapterTitle, chapterNumber, description, bookId: existingBookId, bookContext } = input;
@@ -276,10 +276,11 @@ Title: ${chapterTitle}
 Length: ${content.length} characters`;
 
       // Create metadata for better organization and retrieval
+      // Note: storeContentInMemory will handle user_id mapping automatically
       const metadata = {
         sourceType: 'PaprChat_Book',
         sourceUrl: `/chat/book/${bookId}`,
-        user_id: userId,
+        external_user_id: userId, // App user ID for external reference
         'emoji tags': ['📚', '✍️', '📖'],
         topics: ['book writing', 'creative writing', bookTitle.toLowerCase().replace(/\s+/g, '_')],
         hierarchical_structures: `knowledge/books/${bookTitle.toLowerCase().replace(/\s+/g, '_')}/chapter_${chapterNumber}`,
@@ -347,10 +348,11 @@ Genre: Children's book (based on writing style and content patterns)
 Status: Active writing project`;
 
       // Create metadata for book project tracking
+      // Note: storeContentInMemory will handle user_id mapping automatically
       const metadata = {
         sourceType: 'PaprChat_BookProject',
         sourceUrl: `/chat/book/${bookId}`,
-        user_id: userId,
+        external_user_id: userId, // App user ID for external reference
         'emoji tags': ['📚', '🎯', '✍️', '💡'],
         topics: ['book writing', 'creative projects', 'goals', bookTitle.toLowerCase().replace(/\s+/g, '_')],
         hierarchical_structures: `goals/creative_projects/books/${bookTitle.toLowerCase().replace(/\s+/g, '_')}`,

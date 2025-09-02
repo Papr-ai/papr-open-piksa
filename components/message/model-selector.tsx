@@ -129,6 +129,7 @@ export function ModelSelector({
                       </div>
                       <Link href="/subscription">
                         <Button 
+                          type="button"
                           size="sm" 
                           variant="outline" 
                           className="text-xs h-6 px-2"

@@ -8,6 +8,7 @@ export function useContext() {
   const [isContextSelectorOpen, setIsContextSelectorOpen] = useState(false);
 
   const updateContexts = (contexts: PageContext[]) => {
+    console.log('[USE CONTEXT] Updating contexts:', contexts.length, contexts);
     setSelectedContexts(contexts);
   };
 

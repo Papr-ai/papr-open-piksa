@@ -258,3 +258,125 @@
     transform: translateY(-5px);
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
 }
+
+/* Full-page book images */
+.book-fullpage-image {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Full-page image containers - no padding, no margins */
+.prose.flex.items-center.justify-center.absolute.inset-0 {
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+}
+
+.prose.flex.items-center.justify-center .book-image {
+    max-width: 100%;
+    max-height: 100%;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 0;
+    display: block;
+    margin: 0;
+    padding: 0;
+}
+
+/* Specific styling for ProseMirror editor images in full-page context */
+.prose.flex.items-center.justify-center .ProseMirror {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.prose.flex.items-center.justify-center .ProseMirror img {
+    max-width: 100% !important;
+    max-height: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    border-radius: 0 !important;
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+.prose.flex.items-center.justify-center .ProseMirror p {
+    margin: 0 !important;
+    padding: 0 !important;
+    /* display: flex !important; */
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* Remove any default prose styling for full-page images */
+.prose.absolute.inset-0 {
+    all: unset !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    overflow: hidden !important;
+}
+
+/* Image NodeView styling */
+.image-node-view {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+}
+
+/* Full-page image NodeView */
+.image-node-view-fullpage {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+}
+
+/* Full-page context styling */
+.prose.flex.items-center.justify-center .image-node-view {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+}
+
+.prose.flex.items-center.justify-center .image-node-view-fullpage {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+}
+
+/* Ensure NodeView images work properly in ProseMirror */
+.ProseMirror .image-node-view {
+    outline: none;
+    border: none;
+}
+
+.ProseMirror .image-node-view:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Ensure full-page NodeView images fill the entire editor area */
+.prose.absolute.inset-0 .ProseMirror .image-node-view-fullpage {
+    width: 100% !important;
+    height: 100% !important;
+    display: block !important;
+}

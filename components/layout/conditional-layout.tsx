@@ -1,6 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { AppSidebar } from '@/components/sidebar/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { HeaderActions } from '@/components/layout/header-actions';
@@ -16,6 +17,19 @@ interface ConditionalLayoutProps {
 
 export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLayoutProps) {
   const pathname = usePathname();
+  const { data: clientSession, status } = useSession();
+  
+  // Use client-side session as the source of truth for user state
+  const currentUser = clientSession?.user || user;
+  
+  // Debug logging to see what's happening with both sessions
+  console.log('ConditionalLayout:', { 
+    hasServerUser: !!user, 
+    hasClientUser: !!clientSession?.user, 
+    sessionStatus: status,
+    pathname, 
+    isCollapsed 
+  });
   
   // Special pages that don't use the sidebar layout
   const isSpecialPage = pathname === '/onboarding' || 
@@ -27,11 +41,22 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
     return <>{children}</>;
   }
 
+  // Don't render sidebar if we're still loading the session
+  if (status === 'loading') {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-xl font-semibold mb-2">Loading...</h1>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <SidebarProvider defaultOpen={!isCollapsed} className="h-full">
-      <AppSidebar user={user} />
+      <AppSidebar user={currentUser} />
       <SidebarInset className="h-full overflow-hidden flex flex-col bg-sidebar">
-        {user ? (
+        {currentUser ? (
           <div className="flex items-center h-12 px-4 py-2 bg-transparent z-10 shrink-0 justify-between">
             <div className="flex items-center">
               <HeaderActions />

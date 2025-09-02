@@ -25,6 +25,8 @@ interface MessagesProps {
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;
   voiceState?: VoiceChatState;
+  setInput?: (input: string) => void;
+  handleSubmit?: (e?: React.FormEvent) => void;
 }
 
 function PureMessages({
@@ -40,6 +42,8 @@ function PureMessages({
   selectedModelId,
   enableUniversalReasoning,
   voiceState,
+  setInput,
+  handleSubmit,
 }: MessagesProps) {
   // Mobile detection hook
   const isMobile = useIsMobile();
@@ -223,6 +227,8 @@ function PureMessages({
                   isReadonly={isReadonly}
                   selectedModelId={selectedModelId}
                   enableUniversalReasoning={enableUniversalReasoning}
+                  setInput={setInput}
+                  handleSubmit={handleSubmit}
                 />
               </div>
             );
@@ -240,6 +246,8 @@ function PureMessages({
                 isReadonly={isReadonly}
                 selectedModelId={selectedModelId}
                 enableUniversalReasoning={enableUniversalReasoning}
+                setInput={setInput}
+                handleSubmit={handleSubmit}
               />
             </div>
           );

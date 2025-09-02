@@ -28,9 +28,9 @@ export const myProvider = isTestEnvironment
   : customProvider({
       languageModels: {
         // Old model mappings - keep for backward compatibility
-        'chat-model': groq('llama3-70b-8192'),
+        'chat-model': groq('llama-3.3-70b-versatile'),
         'chat-model-reasoning': openai('o4-mini'),
-        'title-model': groq('llama3-70b-8192'),
+        'title-model': groq('llama-3.3-70b-versatile'),
         'artifact-model': anthropic('claude-3-5-sonnet-20240620'),
         
         // OpenAI Models

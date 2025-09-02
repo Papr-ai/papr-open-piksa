@@ -37,7 +37,7 @@ export type UseStreamChatReturn = {
 export interface PageContext {
   id: string;
   title: string;
-  type?: 'page' | 'document' | 'youtube' | 'pdf';
+  type?: 'page' | 'document' | 'youtube' | 'pdf' | 'image';
   file?: {
     name: string;
     url: string;

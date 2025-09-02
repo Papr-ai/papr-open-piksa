@@ -23,6 +23,7 @@ import { useBreadcrumb } from '@/components/layout/breadcrumb-context';
 import { useLocalStorage } from 'usehooks-ts';
 import { UsageWarning } from '@/components/subscription/usage-warning';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { useContext } from '@/hooks/use-context';
 
 // Define types for the artifacts
 interface CodeArtifact {
@@ -145,6 +146,15 @@ export function Chat({
   // Access artifact state and setter with chat-specific ID
   const { artifact, setArtifact } = useArtifact(id);
 
+  // Use the custom context hook
+  const { selectedContexts } = useContext();
+  
+  // Create a ref for selectedContexts to avoid closure issues
+  const selectedContextsRef = useRef(selectedContexts);
+  useEffect(() => {
+    selectedContextsRef.current = selectedContexts;
+  }, [selectedContexts]);
+
   // Use effect to mark when client-side rendering is active
   useEffect(() => {
     setIsClient(true);
@@ -184,7 +194,7 @@ export function Chat({
         return {
           'X-Memory-Enabled': currentMemoryState ? 'true' : 'false',
           'X-Web-Search-Enabled': currentWebSearchState ? 'true' : 'false',
-          'X-Context': '',
+          'X-Context': selectedContextsRef.current.length > 0 ? JSON.stringify(selectedContextsRef.current) : '',
           'X-Interaction-Mode': 'chat',
         };
       },
@@ -222,15 +232,6 @@ export function Chat({
 
   // Handle input state separately in AI SDK 5.0
   const [input, setInput] = useState('');
-  
-  // Create handleSubmit function
-  const handleSubmit = useCallback((e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (input.trim()) {
-      sendMessage({ role: 'user', parts: [{ type: 'text', text: input }] });
-      setInput('');
-    }
-  }, [input, sendMessage]);
 
   // Create append function for compatibility
   const append = useCallback(async (message: any) => {
@@ -266,6 +267,95 @@ export function Chat({
 
   const [attachments, setAttachments] = useState<Array<FileUIPart>>([]);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
+
+  // Create handleSubmit function
+  const handleSubmit = useCallback((e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (input.trim() || attachments.length > 0 || selectedContexts.length > 0) {
+      // Create message parts array
+      const parts: any[] = [];
+      
+      console.log('[CHAT SUBMIT] Creating message with:', {
+        inputLength: input.length,
+        attachmentsCount: attachments.length,
+        selectedContextsCount: selectedContexts.length,
+        attachments: attachments
+      });
+      
+      // Add text part if there's input
+      if (input.trim()) {
+        let messageText = input;
+        
+        // Add context document information to text
+        const contextDocs = selectedContexts.filter(context => context.type === 'document');
+        if (contextDocs.length > 0) {
+          messageText += '\n\n**Context Documents:**\n';
+          contextDocs.forEach((doc, index) => {
+            messageText += `${index + 1}. ${doc.title}\n`;
+          });
+        }
+        
+        // Add context image information to text
+        const contextImages = selectedContexts.filter(context => context.type === 'image' && context.file?.url);
+        if (contextImages.length > 0) {
+          messageText += '\n\n**Context Images:**\n';
+          contextImages.forEach((img, index) => {
+            messageText += `${index + 1}. ${img.title} (${img.file?.url})\n`;
+          });
+        }
+
+        // Add attachment image URLs to text so AI can reference them in tool calls
+        const imageAttachments = attachments.filter(attachment => 
+          attachment.mediaType && attachment.mediaType.startsWith('image/')
+        );
+        if (imageAttachments.length > 0) {
+          messageText += '\n\n**Attached Images:**\n';
+          imageAttachments.forEach((img, index) => {
+            messageText += `${index + 1}. [${img.filename || 'Image'}](${img.url})\n`;
+          });
+        }
+        
+        parts.push({ type: 'text', text: messageText });
+        console.log('[CHAT SUBMIT] Added text part');
+      }
+      
+      // Add regular attachments as file parts (AI SDK v5 format)
+      attachments.forEach((attachment, index) => {
+        console.log('[CHAT SUBMIT] Processing attachment:', index, attachment);
+        const filePart = {
+          type: 'file',
+          mediaType: attachment.mediaType,
+          url: attachment.url,
+        };
+        parts.push(filePart);
+        console.log('[CHAT SUBMIT] Added file part:', filePart);
+      });
+      
+      // Add context images as file parts (AI SDK v5 format)
+      const contextImages = selectedContexts.filter(context => context.type === 'image' && context.file?.url);
+      contextImages.forEach((img, index) => {
+        console.log('[CHAT SUBMIT] Processing context image:', index, img);
+        // Determine mediaType from file extension
+        const filename = img.file!.name;
+        let mediaType = 'image/jpeg';
+        if (filename.toLowerCase().endsWith('.png')) mediaType = 'image/png';
+        else if (filename.toLowerCase().endsWith('.webp')) mediaType = 'image/webp';
+        else if (filename.toLowerCase().endsWith('.gif')) mediaType = 'image/gif';
+        
+        const contextImagePart = {
+          type: 'file',
+          mediaType,
+          url: img.file!.url,
+        };
+        parts.push(contextImagePart);
+        console.log('[CHAT SUBMIT] Added context image part:', contextImagePart);
+      });
+      
+      console.log('[CHAT SUBMIT] Final parts:', parts);
+      sendMessage({ role: 'user', parts });
+      setInput('');
+    }
+  }, [input, sendMessage, selectedContexts, attachments]);
 
   // Track message sending to apply reasoning steps
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -312,6 +402,8 @@ export function Chat({
             selectedModelId={selectedChatModel}
             enableUniversalReasoning={true}
             voiceState={voiceState}
+            setInput={setInput}
+            handleSubmit={handleSubmit}
           />
         </div>
 
@@ -397,29 +489,32 @@ export function Chat({
           <UsageWarning />
         </div>
 
-        <form 
-          className={`flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}
-          onSubmit={onSubmit}
-        >
-          {!isReadonly && (
-            <MultimodalInput
-              chatId={id}
-              input={input}
-              setInput={setInput}
-              handleSubmit={handleSubmit}
-              status={status}
-              stop={stop}
-              attachments={attachments}
-              setAttachments={setAttachments}
-              messages={messages}
-              setMessages={setMessages}
-              append={append}
-              selectedModelId={selectedChatModel}
-              selectedVisibilityType={selectedVisibilityType}
-              onVoiceStateChange={handleVoiceStateChange}
-            />
-          )}
-        </form>
+        {!isArtifactVisible && (
+          <form 
+            className={`flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}
+            onSubmit={onSubmit}
+            data-chat-form
+          >
+            {!isReadonly && (
+              <MultimodalInput
+                chatId={id}
+                input={input}
+                setInput={setInput}
+                handleSubmit={handleSubmit}
+                status={status}
+                stop={stop}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                messages={messages}
+                setMessages={setMessages}
+                append={append}
+                selectedModelId={selectedChatModel}
+                selectedVisibilityType={selectedVisibilityType}
+                onVoiceStateChange={handleVoiceStateChange}
+              />
+            )}
+          </form>
+        )}
       </div>
 
       <Artifact

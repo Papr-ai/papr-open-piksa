@@ -80,6 +80,9 @@ function formatDate(dateString: string) {
 }
 
 export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, message }: TaskCardProps) {
+  // Show compact version for individual task updates/completions
+  const isCompact = type === 'task-updated' || type === 'task-completed';
+  
   const getTitle = () => {
     switch (type) {
       case 'task-plan-created':
@@ -107,20 +110,105 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
     return message || '';
   };
 
+  // Modern SVG icons matching Papr logo style
+  const getModernIcon = (status: 'completed' | 'updated' | 'up-next') => {
+    const gradientId = `gradient-${status}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    switch (status) {
+      case 'completed':
+        return (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <defs>
+              <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#10B981" />
+                <stop offset="100%" stopColor="#059669" />
+              </linearGradient>
+            </defs>
+            <circle cx="8" cy="8" r="7" fill={`url(#${gradientId})`} stroke="white" strokeWidth="1"/>
+            <path d="M5 8l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
+      case 'updated':
+        return (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <defs>
+              <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#0060E0" />
+                <stop offset="60%" stopColor="#00ACFA" />
+                <stop offset="100%" stopColor="#0BCDFF" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="3" width="12" height="10" rx="2" fill={`url(#${gradientId})`}/>
+            <path d="M4 6h8M4 8h6M4 10h4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+          </svg>
+        );
+      case 'up-next':
+        return (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <defs>
+              <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#0060E0" />
+                <stop offset="60%" stopColor="#00ACFA" />
+                <stop offset="100%" stopColor="#0BCDFF" />
+              </linearGradient>
+            </defs>
+            <circle cx="8" cy="8" r="7" fill={`url(#${gradientId})`} stroke="white" strokeWidth="1"/>
+            <path d="M6 5l4 3-4 3V5z" fill="white"/>
+          </svg>
+        );
+      default:
+        return null;
+    }
+  };
+
+  // Render compact version for updates and completions
+  if (isCompact) {
+    // Use the type prop to determine the correct display
+    const isUpNext = nextTask && task && task.id === nextTask.id && task.status === 'pending';
+    const statusType = type === 'task-completed' ? 'completed' : isUpNext ? 'up-next' : 'updated';
+    const statusText = type === 'task-completed' ? 'completed' : type === 'task-updated' ? 'updated' : 'up next';
+    
+    // Get the task title - could be from task object or message
+    const taskTitle = task?.title || message || 'Task';
+    
+    return (
+      <div className={`flex items-center gap-3 py-2 px-3 border rounded-lg text-sm transition-colors ${
+        isUpNext 
+          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700' 
+          : type === 'task-completed'
+          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-700'
+          : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+      }`}>
+        {getModernIcon(statusType)}
+        <span className="font-medium dark:text-gray-100">
+          Task {statusText}:
+        </span>
+        <span className="text-gray-700 dark:text-gray-300 flex-1 truncate">
+          {taskTitle}
+        </span>
+        {progress && (
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 whitespace-nowrap">
+            {progress.completed}/{progress.total}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <Card className="my-4 border-l-4 border-l-blue-500">
+    <Card className="my-4 border-l-4 border-l-blue-500 dark:border-l-blue-400 dark:bg-gray-900">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
+        <CardTitle className="flex items-center gap-2 text-lg dark:text-gray-100">
           {getTitle()}
         </CardTitle>
-        <div className="text-sm text-muted-foreground">
+        <div className="text-sm text-muted-foreground dark:text-gray-400">
           {getProgressMessage()}
         </div>
         {progress && (
           <div className="mt-2">
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
               <div
-                className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                className="bg-blue-500 dark:bg-blue-400 h-2 rounded-full transition-all duration-300"
                 style={{ width: `${progress.percentage}%` }}
               />
             </div>
@@ -129,58 +217,36 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
       </CardHeader>
       
       <CardContent className="space-y-4">
-        {/* Single task display for task-updated and task-completed */}
-        {(type === 'task-updated' || type === 'task-completed') && task && (
-          <div className="border rounded-lg p-3 bg-gray-50">
-            <div className="flex items-start gap-3">
-              {getStatusIcon(task.status)}
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium">{task.title}</span>
-                  <Badge className={`text-xs ${getStatusBadgeColor(task.status)}`}>
-                    {task.status.replace('_', ' ')}
-                  </Badge>
-                </div>
-                {task.description && (
-                  <p className="text-sm text-gray-600 mb-2">{task.description}</p>
-                )}
-                <div className="flex items-center gap-4 text-xs text-gray-500">
-                  <span className="flex items-center gap-1">
-                    <ClockIcon className="w-3 h-3" />
-                    {task.estimatedDuration || 'No estimate'}
-                  </span>
-                  <span>Created {formatDate(task.createdAt)}</span>
-                  {task.completedAt && (
-                    <span>Completed {formatDate(task.completedAt)}</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+
 
         {/* Task list display for task-plan-created and task-status */}
         {(type === 'task-plan-created' || type === 'task-status') && tasks && tasks.length > 0 && (
           <div className="space-y-2">
-            {tasks.slice(0, 5).map((t, index) => (
+            {tasks.slice(0, 5).map((t, index) => {
+              const isUpNext = nextTask && t.id === nextTask.id && t.status === 'pending';
+              return (
               <div
                 key={t.id}
                 className={`flex items-start gap-3 p-3 rounded-lg border ${
-                  t.status === 'in_progress' ? 'border-blue-200 bg-blue-50' : 'border-gray-200 bg-gray-50'
+                  isUpNext 
+                    ? 'border-blue-300 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20' 
+                    : t.status === 'in_progress' 
+                    ? 'border-blue-200 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/10' 
+                    : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800'
                 }`}
               >
                 {getStatusIcon(t.status)}
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-sm">{t.title}</span>
+                    <span className="font-medium text-sm dark:text-gray-100">{t.title}</span>
                     <Badge className={`text-xs ${getStatusBadgeColor(t.status)}`}>
                       {t.status.replace('_', ' ')}
                     </Badge>
                   </div>
                   {t.description && (
-                    <p className="text-xs text-gray-600 line-clamp-2">{t.description}</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">{t.description}</p>
                   )}
-                  <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
+                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {t.estimatedDuration && (
                       <span className="flex items-center gap-1">
                         <ClockIcon className="w-3 h-3" />
@@ -193,7 +259,8 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
             
             {tasks.length > 5 && (
               <div className="text-sm text-gray-500 text-center py-2">
@@ -203,41 +270,14 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
           </div>
         )}
 
-        {/* Next task display */}
-        {nextTask && (
-          <div className="border-t pt-3">
-            <div className="text-sm font-medium text-gray-700 mb-2">Next Task:</div>
-            <div className="flex items-start gap-3 p-3 rounded-lg border-2 border-blue-200 bg-blue-50">
-              {getStatusIcon(nextTask.status)}
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-sm">{nextTask.title}</span>
-                  <Badge className="text-xs bg-blue-100 text-blue-800">
-                    Up Next
-                  </Badge>
-                </div>
-                {nextTask.description && (
-                  <p className="text-xs text-gray-600">{nextTask.description}</p>
-                )}
-                <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                  {nextTask.estimatedDuration && (
-                    <span className="flex items-center gap-1">
-                      <ClockIcon className="w-3 h-3" />
-                      {nextTask.estimatedDuration}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Next task is now highlighted directly in the task list above */}
 
         {/* Success message for all completed */}
         {allCompleted && (
-          <div className="border-t pt-3">
-            <div className="text-center p-4 bg-green-50 rounded-lg border border-green-200">
-              <div className="text-green-800 font-medium">🎉 All Tasks Completed!</div>
-              <div className="text-sm text-green-600 mt-1">
+          <div className="border-t pt-3 dark:border-gray-700">
+            <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+              <div className="text-green-800 dark:text-green-400 font-medium">🎉 All Tasks Completed!</div>
+              <div className="text-sm text-green-600 dark:text-green-500 mt-1">
                 Great job completing all the tasks in your plan!
               </div>
             </div>
@@ -247,12 +287,11 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
     </Card>
   );
 }
-
 // Helper function to detect task tracker data in content
 export function detectTaskTrackerData(content: string): TaskCardProps | null {
   try {
-    // First, try to detect if there are multiple JSON objects
-    const jsonObjectRegex = /\{[\s\S]*?\}/g;
+    // Look for JSON objects that contain task data - match more precisely
+    const jsonObjectRegex = /\{[\s\S]*?"type":\s*"task-[^"]*"[\s\S]*?\}/g;
     const jsonMatches = content.match(jsonObjectRegex);
     
     if (jsonMatches && jsonMatches.length > 0) {

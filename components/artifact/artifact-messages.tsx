@@ -36,6 +36,8 @@ interface ArtifactMessagesProps {
   isReadonly: boolean;
   artifactStatus: UIArtifact['status'];
   selectedModelId?: string;
+  setInput?: (input: string) => void;
+  handleSubmit?: (e?: React.FormEvent) => void;
 }
 
 function PureArtifactMessages({
@@ -47,6 +49,8 @@ function PureArtifactMessages({
   reload,
   isReadonly,
   selectedModelId,
+  setInput,
+  handleSubmit,
 }: ArtifactMessagesProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
@@ -125,6 +129,8 @@ function PureArtifactMessages({
             reload={reload}
             isReadonly={isReadonly}
               selectedModelId={selectedModelId}
+              setInput={setInput}
+              handleSubmit={handleSubmit}
           />
           );
         })}

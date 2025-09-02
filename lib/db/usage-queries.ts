@@ -30,7 +30,7 @@ export async function getUserUsage(userId: string, month?: string): Promise<Usag
 
 export async function incrementUsage(
   userId: string,
-  type: 'basicInteractions' | 'premiumInteractions' | 'memoriesAdded' | 'memoriesSearched' | 'voiceChats',
+  type: 'basicInteractions' | 'premiumInteractions' | 'memoriesAdded' | 'memoriesSearched' | 'voiceChats' | 'videosGenerated',
   amount: number = 1
 ): Promise<Usage> {
   const month = getCurrentMonth();
@@ -130,6 +130,7 @@ export async function checkUsageThresholds(userId: string): Promise<{
   memoriesAdded: { current: number; limit: number; percentage: number };
   memoriesSearched: { current: number; limit: number; percentage: number };
   voiceChats: { current: number; limit: number; percentage: number };
+  videosGenerated: { current: number; limit: number; percentage: number };
   plan: string;
   shouldNotify: boolean;
 }> {
@@ -158,6 +159,7 @@ export async function checkUsageThresholds(userId: string): Promise<{
     memoriesAdded: actualMemoryCount, // Use actual count from Papr Memory API
     memoriesSearched: userUsage?.memoriesSearched || 0,
     voiceChats: userUsage?.voiceChats || 0,
+    videosGenerated: userUsage?.videosGenerated || 0,
   };
   
   const limits = plan?.features || {
@@ -166,6 +168,7 @@ export async function checkUsageThresholds(userId: string): Promise<{
     memoriesAdded: 100, // Total memories stored (cumulative)
     memoriesSearched: 20,
     voiceChats: 5, // Default free plan voice chat limit
+    videosGenerated: 2, // Default free plan video generation limit
   };
   
   const calculatePercentage = (current: number, limit: number) => {
@@ -193,6 +196,10 @@ export async function checkUsageThresholds(userId: string): Promise<{
     currentUsage.voiceChats,
     limits.voiceChats
   );
+  const videosGeneratedPercentage = calculatePercentage(
+    currentUsage.videosGenerated,
+    limits.videosGenerated
+  );
   
   // Notify if any usage is above 80% or 100%
   const shouldNotify = [
@@ -200,7 +207,8 @@ export async function checkUsageThresholds(userId: string): Promise<{
     premiumInteractionsPercentage,
     memoriesAddedPercentage,
     memoriesSearchedPercentage,
-    voiceChatsPercentage
+    voiceChatsPercentage,
+    videosGeneratedPercentage
   ].some(percentage => percentage >= 80);
   
   return {
@@ -228,6 +236,11 @@ export async function checkUsageThresholds(userId: string): Promise<{
       current: currentUsage.voiceChats,
       limit: limits.voiceChats,
       percentage: voiceChatsPercentage,
+    },
+    videosGenerated: {
+      current: currentUsage.videosGenerated,
+      limit: limits.videosGenerated,
+      percentage: videosGeneratedPercentage,
     },
     plan: userSubscription?.subscriptionPlan || 'free',
     shouldNotify,

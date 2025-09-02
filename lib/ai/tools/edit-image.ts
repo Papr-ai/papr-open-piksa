@@ -38,26 +38,51 @@ interface GeminiResponsePart {
   };
 }
 
-// Helper function to convert URL to base64
-async function urlToBase64(url: string): Promise<string> {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+// Helper function to convert URL to base64 with retry logic
+async function urlToBase64(url: string, retries = 3): Promise<string> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`[Edit Image] Attempt ${attempt}/${retries}: Converting URL to base64: ${url}`);
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+      
+      const response = await fetch(url, { 
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'PaprChat/1.0'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const base64 = buffer.toString('base64');
+      
+      // Determine mime type from response headers or URL extension
+      const contentType = response.headers.get('content-type') || 'image/png';
+      
+      console.log(`[Edit Image] Successfully converted URL to base64 on attempt ${attempt}`);
+      return `data:${contentType};base64,${base64}`;
+      
+    } catch (error) {
+      console.error(`[Edit Image] Attempt ${attempt}/${retries} failed:`, error);
+      
+      if (attempt === retries) {
+        throw new Error(`Failed to convert image URL to base64 after ${retries} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+      
+      // Wait before retrying (exponential backoff)
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
     }
-    
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const base64 = buffer.toString('base64');
-    
-    // Determine mime type from response headers or URL extension
-    const contentType = response.headers.get('content-type') || 'image/png';
-    
-    return `data:${contentType};base64,${base64}`;
-  } catch (error) {
-    console.error('Error converting URL to base64:', error);
-    throw new Error(`Failed to convert image URL to base64: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
+  
+  throw new Error('Unexpected error in urlToBase64');
 }
 
 // Function to edit image using Gemini 2.5 Flash Image Preview API
@@ -184,6 +209,10 @@ export const editImage = ({ session, dataStream }: EditImageProps) =>
         // Convert URL to base64 if needed
         let imageBase64: string;
         if (imageUrl.startsWith('data:')) {
+          // Validate that it's a complete base64 data URL
+          if (imageUrl === 'data:image' || !imageUrl.includes(';base64,')) {
+            throw new Error('Invalid or incomplete base64 data URL. Expected format: data:image/[type];base64,[data]');
+          }
           // Already base64 data URL
           imageBase64 = imageUrl;
         } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {

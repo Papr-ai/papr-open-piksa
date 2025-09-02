@@ -41,11 +41,16 @@ export default async function RootLayout({
 }) {
   const [session, cookieStore] = await Promise.all([auth(), cookies()]);
   
+  // Debug logging to see what's happening with the session
+  console.log('Root layout session:', { hasUser: !!session?.user, sessionId: session?.user?.id });
+  
   // Force sidebar to be collapsed if user is not authenticated
   // The auth pages will handle their own layout appropriately
   const shouldCollapseSidebar = !session?.user;
   
   const isCollapsed = shouldCollapseSidebar || cookieStore.get('sidebar:state')?.value !== 'true';
+  
+  console.log('Sidebar state:', { shouldCollapseSidebar, isCollapsed, sidebarCookie: cookieStore.get('sidebar:state')?.value });
 
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>

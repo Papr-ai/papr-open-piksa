@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { XIcon } from '@/components/common/icons';
 import { ContextSelector } from './context-selector';
 import { Plus as PlusIcon } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface ContextChipProps {
   context: PageContext;
@@ -36,16 +41,6 @@ export function AddContextButton({
   onContextsChange,
 }: AddContextButtonProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
-
-  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setAnchorEl(event.currentTarget);
-    setIsOpen(!isOpen);
-  };
-
-  const handleClose = () => {
-    setIsOpen(false);
-  };
 
   const handleRemoveContext = (contextToRemove: PageContext) => {
     onContextsChange(
@@ -55,15 +50,31 @@ export function AddContextButton({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-8 px-3 text-sm border border-dashed border-muted-foreground/30 rounded-full text-muted-foreground"
-        onClick={handleClick}
-      >
-        <PlusIcon className="mr-1 h-3.5 w-3.5" />
-        Add context
-      </Button>
+      <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 px-3 text-sm border border-dashed border-muted-foreground/30 rounded-full text-muted-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground"
+          >
+            <PlusIcon className="mr-1 h-3.5 w-3.5" />
+            Add context
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent 
+          align="start" 
+          side="top"
+          className="w-80 p-0"
+          sideOffset={8}
+        >
+          <ContextSelector
+            selectedPages={selectedContexts}
+            onPagesChange={onContextsChange}
+            onClose={() => setIsOpen(false)}
+          />
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {selectedContexts.map((context) => (
         <ContextChip
@@ -72,14 +83,6 @@ export function AddContextButton({
           onRemove={handleRemoveContext}
         />
       ))}
-
-      <ContextSelector
-        isOpen={isOpen}
-        onClose={handleClose}
-        anchorEl={anchorEl}
-        selectedPages={selectedContexts}
-        onPagesChange={onContextsChange}
-      />
     </div>
   );
 } 

@@ -1,5 +1,5 @@
 import { textblockTypeInputRule } from 'prosemirror-inputrules';
-import { Schema } from 'prosemirror-model';
+import { Schema, type NodeSpec, type DOMOutputSpec } from 'prosemirror-model';
 import { schema } from 'prosemirror-schema-basic';
 import { addListNodes } from 'prosemirror-schema-list';
 import type { Transaction } from 'prosemirror-state';
@@ -8,8 +8,56 @@ import type { MutableRefObject } from 'react';
 
 import { buildContentFromDocument } from './functions';
 
+// Add image node to the schema with video support
+const imageNode: NodeSpec = {
+  attrs: {
+    src: {},
+    alt: { default: null },
+    title: { default: null },
+    width: { default: null },
+    height: { default: null },
+    videoUrl: { default: null }, // For generated videos
+    storyContext: { default: null }, // For video generation context
+  },
+  group: 'inline',
+  inline: true,
+  draggable: true,
+  parseDOM: [
+    {
+      tag: 'img[src]',
+      getAttrs(dom: HTMLElement) {
+        return {
+          src: dom.getAttribute('src'),
+          alt: dom.getAttribute('alt'),
+          title: dom.getAttribute('title'),
+          width: dom.getAttribute('width'),
+          height: dom.getAttribute('height'),
+          videoUrl: dom.getAttribute('data-video-url'),
+          storyContext: dom.getAttribute('data-story-context'),
+        };
+      },
+    },
+  ],
+  toDOM(node: any): DOMOutputSpec {
+    const attrs: any = {
+      src: node.attrs.src,
+      alt: node.attrs.alt,
+      title: node.attrs.title,
+    };
+    
+    if (node.attrs.width) attrs.width = node.attrs.width;
+    if (node.attrs.height) attrs.height = node.attrs.height;
+    if (node.attrs.videoUrl) attrs['data-video-url'] = node.attrs.videoUrl;
+    if (node.attrs.storyContext) attrs['data-story-context'] = node.attrs.storyContext;
+    
+    return ['img', attrs];
+  },
+};
+
+const nodesWithImage = schema.spec.nodes.append({ image: imageNode });
+
 export const documentSchema = new Schema({
-  nodes: addListNodes(schema.spec.nodes, 'paragraph block*', 'block'),
+  nodes: addListNodes(nodesWithImage, 'paragraph block*', 'block'),
   marks: schema.spec.marks,
 });
 

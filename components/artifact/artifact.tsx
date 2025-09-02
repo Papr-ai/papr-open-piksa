@@ -29,6 +29,7 @@ import { bookArtifact } from '@/artifacts/book/client';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from '@/components/message/visibility-selector';
+import { UsageWarning } from '@/components/subscription/usage-warning';
 
 export interface ArtifactContentProps {
   content: any;
@@ -398,13 +399,42 @@ function PureArtifact({
               body: JSON.stringify({
                 bookId: artifact.documentId,
                 content: updatedContent,
-                currentChapter: metadata?.currentChapter || 1, // Get current chapter from metadata
+                currentChapter: metadata?.currentChapter || 1,
               }),
             });
 
             if (!response.ok) {
               const errorText = await response.text();
               console.error('[ARTIFACT] Failed to save book:', errorText);
+              
+              // If book doesn't exist (404), create it first
+              if (response.status === 404) {
+                console.log('[ARTIFACT] Book not found, creating new book record...');
+                try {
+                  const createResponse = await fetch('/api/books', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      bookId: artifact.documentId,
+                      bookTitle: metadata?.bookTitle || 'Untitled Book',
+                      chapterTitle: metadata?.chapters?.[metadata?.currentChapter - 1]?.title || 'Chapter 1',
+                      chapterNumber: metadata?.currentChapter || 1,
+                      content: updatedContent,
+                    }),
+                  });
+                  
+                  if (createResponse.ok) {
+                    console.log('[ARTIFACT] Book created successfully');
+                  } else {
+                    const createErrorText = await createResponse.text();
+                    console.error('[ARTIFACT] Failed to create book:', createErrorText);
+                  }
+                } catch (createError) {
+                  console.error('[ARTIFACT] Error creating book:', createError);
+                }
+              }
             } else {
               console.log('[ARTIFACT] Book saved successfully to database');
             }
@@ -676,9 +706,16 @@ function PureArtifact({
                   isReadonly={isReadonly}
                   artifactStatus={artifact.status}
                   selectedModelId={selectedModelId}
+                  setInput={setInput}
+                  handleSubmit={handleSubmit}
                 />
 
-                <form className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
+                {/* Usage Warning positioned right above the input */}
+                <div className="w-[95%] mx-auto px-4">
+                  <UsageWarning />
+                </div>
+
+                <div className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
                   <MultimodalInput
                     chatId={chatId}
                     input={input}
@@ -695,7 +732,7 @@ function PureArtifact({
                     selectedModelId={selectedModelId}
                     selectedVisibilityType={selectedVisibilityType}
                   />
-                </form>
+                </div>
               </div>
             </motion.div>
           )}

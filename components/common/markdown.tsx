@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import React, { memo } from 'react';
+import React, { memo, useRef, useEffect } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { CodeBlock } from '../editor/code-block';
@@ -89,6 +89,61 @@ const components: Partial<Components> = {
       <h6 className="text-sm font-semibold mt-6 mb-2" {...props}>
         {children}
       </h6>
+    );
+  },
+  img: ({ node, src, alt, ...props }) => {
+    // Handle empty, null, or invalid src attributes to prevent browser errors
+    if (!src || src.trim() === '') {
+      return (
+        <div className="bg-gray-100 border border-gray-300 rounded p-4 text-center text-gray-500">
+          <span>Image not available</span>
+          {alt && <div className="text-sm mt-1">{alt}</div>}
+        </div>
+      );
+    }
+    
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={alt || ''}
+        className="max-w-full h-auto rounded book-image"
+        {...props}
+        onLoad={(e) => {
+          // Check if this image is in a full-page context after it loads
+          const target = e.target as HTMLImageElement;
+          const parent = target.closest('.prose');
+          const isFullPage = parent?.classList.contains('flex') && 
+                            parent?.classList.contains('items-center') && 
+                            parent?.classList.contains('justify-center');
+          
+          if (isFullPage) {
+            // Apply true full-page styling - cover entire page
+            target.style.maxWidth = '100%';
+            target.style.maxHeight = '100%';
+            target.style.width = '100%';
+            target.style.height = '100%';
+            target.style.objectFit = 'cover';
+            target.style.borderRadius = '0';
+            target.style.margin = '0';
+            target.style.padding = '0';
+            target.style.display = 'block';
+            target.classList.add('book-fullpage-image');
+          }
+        }}
+        onError={(e) => {
+          // Handle broken image URLs
+          const target = e.target as HTMLImageElement;
+          target.style.display = 'none';
+          const placeholder = document.createElement('div');
+          placeholder.className = 'bg-gray-100 border border-gray-300 rounded p-4 text-center text-gray-500';
+          placeholder.innerHTML = `
+            <span>Image failed to load</span>
+            ${alt ? `<div class="text-sm mt-1">${alt}</div>` : ''}
+          `;
+          target.parentNode?.insertBefore(placeholder, target);
+        }}
+      />
     );
   },
 };

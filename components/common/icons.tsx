@@ -1552,3 +1552,29 @@ export const FileTextIcon = ({ size = 16 }: { size?: number }) => {
     </svg>
   );
 };
+
+export const VideoIcon = ({ size = 16 }: { size?: number }) => {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ color: 'currentcolor' }}
+    >
+      <path
+        d="M14.7295 2H9.26953V6H14.7295V2Z"
+        fill="currentColor"
+      />
+      <path
+        d="M16.7295 6V2H19.7295C20.8341 2 21.7295 2.89543 21.7295 4V20C21.7295 21.1046 20.8341 22 19.7295 22H4.72949C3.62492 22 2.72949 21.1046 2.72949 20V4C2.72949 2.89543 3.62492 2 4.72949 2H7.26953V6H16.7295Z"
+        fill="currentColor"
+      />
+      <path
+        d="M10.7295 9L15.7295 12L10.7295 15V9Z"
+        fill="white"
+      />
+    </svg>
+  );
+};

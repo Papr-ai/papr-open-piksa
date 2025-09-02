@@ -23,6 +23,8 @@ import { getSuggestions } from '../actions';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { migrateImagesInContent, hasImagesToMigrate } from '@/lib/editor/image-migration';
+import { BookContextProvider } from '@/components/book/book-context';
 // Removed TextSelectionImageGenerator import
 
 // Helper function to get book chapters from database using bookId or bookTitle
@@ -65,6 +67,7 @@ interface BookArtifactMetadata {
   }>;
   currentChapter: number;
   bookTitle: string;
+  bookId?: string;
   author: string;
   genre: string;
   totalWords: number;
@@ -201,39 +204,110 @@ function BookPage({
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Function to split content into individual pages for book view based on estimated height
+  // Function to split content into individual pages, treating images as full-page elements
+  // Helper function to extract clean text from markdown content
+  const extractCleanText = (markdownContent: string): string => {
+    if (!markdownContent) return '';
+    
+    // Remove HTML comments (videoUrl, storyContext)
+    let cleanContent = markdownContent
+      .replace(/<!--\s*videoUrl:\s*[^>]+\s*-->/g, '')
+      .replace(/<!--\s*storyContext:\s*[^>]+\s*-->/g, '');
+    
+    // Remove markdown image syntax but keep alt text
+    cleanContent = cleanContent.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+    
+    // Remove other markdown formatting
+    cleanContent = cleanContent
+      .replace(/#{1,6}\s+/g, '') // Remove headers
+      .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold
+      .replace(/\*([^*]+)\*/g, '$1') // Remove italic
+      .replace(/`([^`]+)`/g, '$1') // Remove inline code
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links but keep text
+      .trim();
+    
+    return cleanContent;
+  };
+
   const splitContentIntoPages = (content: string, linesPerPage: number = 25) => {
     if (!content) return [];
     
-    // Split by paragraphs first to maintain better formatting
-    const paragraphs = content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
     const pages: string[] = [];
-    let currentPage = '';
-    let currentLineCount = 0;
     
-    for (const paragraph of paragraphs) {
-      // Estimate lines in this paragraph (assuming ~80 chars per line)
-      const estimatedLines = Math.max(1, Math.ceil(paragraph.length / 80)) + 1; // +1 for paragraph spacing
-      
-      // If adding this paragraph would exceed the line limit, start a new page
-      if (currentPage && currentLineCount + estimatedLines > linesPerPage) {
-        pages.push(currentPage.trim());
-        currentPage = paragraph;
-        currentLineCount = estimatedLines;
-      } else {
-        // Add paragraph to current page
-        if (currentPage) {
-          currentPage += '\n\n' + paragraph;
-        } else {
-          currentPage = paragraph;
-        }
-        currentLineCount += estimatedLines;
+    // First, split content by images to identify image boundaries
+    // Updated regex to capture images with optional HTML comments (videoUrl, storyContext)
+    const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)(\s*<!--\s*videoUrl:\s*([^>]+)\s*-->)?(\s*<!--\s*storyContext:\s*([^>]+)\s*-->)?/g;
+    const parts: Array<{ type: 'text' | 'image', content: string, alt?: string, src?: string }> = [];
+    
+    let lastIndex = 0;
+    let match;
+    
+    // Parse content and separate text from images
+    while ((match = imageRegex.exec(content)) !== null) {
+      // Add text content before the image (if any)
+      const textBefore = content.slice(lastIndex, match.index).trim();
+      if (textBefore) {
+        parts.push({ type: 'text', content: textBefore });
       }
+      
+      // Add the image as a separate part (including any HTML comments)
+      parts.push({
+        type: 'image',
+        content: match[0], // Full markdown image syntax with HTML comments
+        alt: match[1],
+        src: match[2]
+      });
+      
+      lastIndex = match.index + match[0].length;
     }
     
-    // Add the last page if it has content
-    if (currentPage.trim()) {
-      pages.push(currentPage.trim());
+    // Add remaining text after the last image (if any)
+    const remainingText = content.slice(lastIndex).trim();
+    if (remainingText) {
+      parts.push({ type: 'text', content: remainingText });
+    }
+    
+    // If no images found, fall back to text-only pagination
+    if (parts.length === 0) {
+      parts.push({ type: 'text', content: content });
+    }
+    
+    // Now process each part
+    for (const part of parts) {
+      if (part.type === 'image') {
+        // Images get their own full page
+        pages.push(part.content);
+      } else {
+        // Split text content into pages based on line count
+        const paragraphs = part.content.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+        let currentPage = '';
+        let currentLineCount = 0;
+        
+        for (const paragraph of paragraphs) {
+          // Estimate lines in this paragraph (assuming ~80 chars per line)
+          const estimatedLines = Math.max(1, Math.ceil(paragraph.length / 80)) + 1; // +1 for paragraph spacing
+          
+          // If adding this paragraph would exceed the line limit, start a new page
+          if (currentPage && currentLineCount + estimatedLines > linesPerPage) {
+            pages.push(currentPage.trim());
+            currentPage = paragraph;
+            currentLineCount = estimatedLines;
+          } else {
+            // Add paragraph to current page
+            if (currentPage) {
+              currentPage += '\n\n' + paragraph;
+            } else {
+              currentPage = paragraph;
+            }
+            currentLineCount += estimatedLines;
+          }
+        }
+        
+        // Add the last page if it has content
+        if (currentPage.trim()) {
+          pages.push(currentPage.trim());
+        }
+      }
     }
     
     return pages.length > 0 ? pages : [''];
@@ -243,6 +317,13 @@ function BookPage({
   const minWidthForTwoColumn = 1024; // Minimum width to show two columns
   const shouldForceSingleColumn = windowWidth < minWidthForTwoColumn;
   const effectiveViewMode = shouldForceSingleColumn ? 'single' : viewMode;
+
+  // Helper function to check if a page contains only an image
+  const isImageOnlyPage = (pageContent: string) => {
+    const trimmedContent = pageContent.trim();
+    const imageRegex = /^!\[([^\]]*)\]\(([^)]+)\)$/;
+    return imageRegex.test(trimmedContent);
+  };
 
   // Get pages for two-column view
   const pages = effectiveViewMode === 'two-column' ? splitContentIntoPages(content) : [content];
@@ -359,8 +440,8 @@ function BookPage({
   
   const pageLayout = getPageLayout(currentPageIndex);
   
-  // Debounced save function for content updates
-  const handleSaveContent = useCallback((updatedContent: string, debounce: boolean) => {
+  // Debounced save function for content updates with image migration
+  const handleSaveContent = useCallback(async (updatedContent: string, debounce: boolean) => {
     
     // Clear any existing timeout
     if (debouncedSaveTimeout) {
@@ -368,38 +449,62 @@ function BookPage({
       setDebouncedSaveTimeout(null);
     }
 
+    const saveWithMigration = async () => {
+      let contentToSave = updatedContent;
+      
+      // Check if content has images that need migration
+      if (hasImagesToMigrate(updatedContent)) {
+        console.log('[BookPage] Migrating images in content...');
+        try {
+          contentToSave = await migrateImagesInContent(updatedContent);
+          console.log('[BookPage] Image migration completed');
+        } catch (error) {
+          console.error('[BookPage] Image migration failed:', error);
+          // Continue with original content if migration fails
+        }
+      }
+      
+      if (onSaveContent) {
+        onSaveContent(contentToSave, false);
+      }
+    };
+
     if (debounce) {
       // Save with 1000ms debounce
-      const timeout = setTimeout(() => {
-        if (onSaveContent) {
-          onSaveContent(updatedContent, false);
-        }
-      }, 1000);
-      
+      const timeout = setTimeout(saveWithMigration, 1000);
       setDebouncedSaveTimeout(timeout);
     } else {
       // Save immediately
-      if (onSaveContent) {
-        onSaveContent(updatedContent, false);
-      }
+      await saveWithMigration();
     }
   }, [debouncedSaveTimeout, onSaveContent]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      
+      // Only handle clicks if the dropdown is actually open
+      if (!showChapterDropdown) return;
+      
+      // Don't interfere with other components' click handlers
+      // Only close if clicking outside the dropdown AND not on context menu elements
+      if (dropdownRef.current && 
+          !dropdownRef.current.contains(target) &&
+          !(target as Element).closest('[data-context-menu]') &&
+          !(target as Element).closest('[data-context-selector]')) {
         setShowChapterDropdown(false);
       }
-      
-      // Removed text edit dialog handling
     }
 
-    document.addEventListener('mousedown', handleClickOutside);
+    if (showChapterDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [showChapterDropdown]);
 
   // Handle hover with proper delays
   const handleMouseEnter = () => {
@@ -594,7 +699,7 @@ function BookPage({
             )}
 
             {/* Editor */}
-            <div className="prose prose-lg max-w-none font-serif leading-relaxed text-gray-900 dark:text-gray-100 prose-headings:text-gray-900 dark:prose-headings:text-gray-100">
+            <div className="prose prose-lg max-w-none font-serif leading-relaxed text-gray-900 dark:text-gray-100 prose-headings:text-gray-900 dark:prose-headings:text-gray-100" style={{ minHeight: '500px' }}>
               <Editor
                 content={content || ''}
                 suggestions={suggestions}
@@ -656,28 +761,82 @@ function BookPage({
                         <div className="relative h-full overflow-hidden flex flex-col">
                           {pageLayout.leftPageIndex >= 0 ? (
                             <>
-                              <div className="prose prose-sm max-w-none font-serif leading-relaxed text-gray-800 overflow-hidden text-justify" style={{ height: 'calc(100% - 40px)', maxHeight: 'calc(100% - 40px)' }}>
-                                <Editor
-                                  content={pages[pageLayout.leftPageIndex] || ''}
-                                  suggestions={[]}
-                                  isCurrentVersion={isCurrentVersion}
-                                  currentVersionIndex={0}
-                                  status={(status as 'streaming' | 'idle') || 'idle'}
-                                                                  onSaveContent={(updatedContent, debounce) => {
-                                  console.log('[BOOK] Left page save triggered:', { 
-                                    debounce, 
-                                    pageIndex: pageLayout.leftPageIndex, 
-                                    contentLength: updatedContent.length 
-                                  });
-                                  const updatedPages = [...pages];
-                                  updatedPages[pageLayout.leftPageIndex] = updatedContent;
-                                  const combinedContent = updatedPages.join('\n\n');
-                                  console.log('[BOOK] Combined content length:', combinedContent.length);
-                                  handleSaveContent(combinedContent, debounce);
-                                }}
-                                />
+                              <div className={`prose prose-sm max-w-none font-serif leading-relaxed text-gray-800 overflow-hidden ${
+                                isImageOnlyPage(pages[pageLayout.leftPageIndex] || '') 
+                                  ? 'flex items-center justify-center p-0 m-0 absolute inset-0' 
+                                  : 'text-justify'
+                              }`} style={{ 
+                                height: isImageOnlyPage(pages[pageLayout.leftPageIndex] || '') 
+                                  ? '100%' 
+                                  : 'calc(100% - 40px)', 
+                                minHeight: isImageOnlyPage(pages[pageLayout.leftPageIndex] || '') 
+                                  ? '100%' 
+                                  : '400px',
+                                maxHeight: isImageOnlyPage(pages[pageLayout.leftPageIndex] || '') 
+                                  ? '100%' 
+                                  : 'calc(100% - 40px)',
+                                width: isImageOnlyPage(pages[pageLayout.leftPageIndex] || '') 
+                                  ? '100%' 
+                                  : 'auto'
+                              }}>
+                                <BookContextProvider 
+                                  isFullPageImage={isImageOnlyPage(pages[pageLayout.leftPageIndex] || '')}
+                                  bookId={metadata?.bookId}
+                                  bookTitle={metadata?.bookTitle}
+                                  storyContext={(() => {
+                                    // Include prior pages for better story context
+                                    const currentIndex = pageLayout.leftPageIndex;
+                                    const contextPages = [];
+                                    
+                                    // Include previous 2-3 pages for context
+                                    for (let i = Math.max(0, currentIndex - 2); i <= currentIndex; i++) {
+                                      if (pages[i] && pages[i].trim()) {
+                                        const cleanText = extractCleanText(pages[i]);
+                                        if (cleanText) {
+                                          contextPages.push(cleanText);
+                                        }
+                                      }
+                                    }
+                                    
+                                    return contextPages.join('\n\n');
+                                  })()}
+                                >
+                                  <Editor
+                                    content={pages[pageLayout.leftPageIndex] || ''}
+                                    suggestions={[]}
+                                    isCurrentVersion={isCurrentVersion}
+                                    currentVersionIndex={0}
+                                    status={(status as 'streaming' | 'idle') || 'idle'}
+                                    storyContext={(() => {
+                                      // Include prior pages for better story context
+                                      const currentIndex = pageLayout.leftPageIndex;
+                                      const contextPages = [];
+                                      for (let i = Math.max(0, currentIndex - 2); i <= currentIndex; i++) {
+                                        if (pages[i] && pages[i].trim()) {
+                                          const cleanText = extractCleanText(pages[i]);
+                                          if (cleanText) {
+                                            contextPages.push(cleanText);
+                                          }
+                                        }
+                                      }
+                                      return contextPages.join('\n\n');
+                                    })()}
+                                    onSaveContent={(updatedContent, debounce) => {
+                                    console.log('[BOOK] Left page save triggered:', { 
+                                      debounce, 
+                                      pageIndex: pageLayout.leftPageIndex, 
+                                      contentLength: updatedContent.length 
+                                    });
+                                    const updatedPages = [...pages];
+                                    updatedPages[pageLayout.leftPageIndex] = updatedContent;
+                                    const combinedContent = updatedPages.join('\n\n');
+                                    console.log('[BOOK] Combined content length:', combinedContent.length);
+                                    handleSaveContent(combinedContent, debounce);
+                                  }}
+                                  />
+                                </BookContextProvider>
                               </div>
-                              {pageLayout.leftPageNumber && (
+                              {pageLayout.leftPageNumber && !isImageOnlyPage(pages[pageLayout.leftPageIndex] || '') && (
                                 <div className="flex-shrink-0 text-center text-xs text-gray-500 mt-4 font-serif">
                                   {pageLayout.leftPageNumber}
                                 </div>
@@ -739,21 +898,75 @@ function BookPage({
                             </div>
                           )}
                           
-                          <div className="prose prose-sm max-w-none font-serif leading-relaxed text-gray-800 overflow-hidden text-justify" style={{ height: pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) ? 'calc(100% - 140px)' : 'calc(100% - 40px)', maxHeight: pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) ? 'calc(100% - 140px)' : 'calc(100% - 40px)' }}>
+                          <div className={`prose prose-sm max-w-none font-serif leading-relaxed text-gray-800 overflow-hidden ${
+                            pageLayout.rightPageIndex >= 0 && isImageOnlyPage(pages[pageLayout.rightPageIndex] || '') 
+                              ? 'flex items-center justify-center p-0 m-0 absolute inset-0' 
+                              : 'text-justify'
+                          }`} style={{ 
+                            height: pageLayout.rightPageIndex >= 0 && isImageOnlyPage(pages[pageLayout.rightPageIndex] || '') 
+                              ? '100%' 
+                              : (pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) ? 'calc(100% - 140px)' : 'calc(100% - 40px)'), 
+                            minHeight: pageLayout.rightPageIndex >= 0 && isImageOnlyPage(pages[pageLayout.rightPageIndex] || '') 
+                              ? '100%' 
+                              : '400px',
+                            maxHeight: pageLayout.rightPageIndex >= 0 && isImageOnlyPage(pages[pageLayout.rightPageIndex] || '') 
+                              ? '100%' 
+                              : (pageLayout.rightPageIndex === 0 && (chapterNumber || chapterTitle) ? 'calc(100% - 140px)' : 'calc(100% - 40px)'),
+                            width: pageLayout.rightPageIndex >= 0 && isImageOnlyPage(pages[pageLayout.rightPageIndex] || '') 
+                              ? '100%' 
+                              : 'auto'
+                          }}>
                             {pageLayout.rightPageIndex >= 0 ? (
-                              <Editor
-                                content={pages[pageLayout.rightPageIndex]}
-                                suggestions={[]}
-                                isCurrentVersion={isCurrentVersion}
-                                currentVersionIndex={0}
-                                status={(status as 'streaming' | 'idle') || 'idle'}
-                                onSaveContent={(updatedContent, debounce) => {
-                                  const updatedPages = [...pages];
-                                  updatedPages[pageLayout.rightPageIndex] = updatedContent;
-                                  const combinedContent = updatedPages.join('\n\n');
-                                  handleSaveContent(combinedContent, debounce);
-                                }}
-                              />
+                              <BookContextProvider 
+                                isFullPageImage={isImageOnlyPage(pages[pageLayout.rightPageIndex] || '')}
+                                bookId={metadata?.bookId}
+                                bookTitle={metadata?.bookTitle}
+                                storyContext={(() => {
+                                  // Include prior pages for better story context
+                                  const currentIndex = pageLayout.rightPageIndex;
+                                  const contextPages = [];
+                                  
+                                  // Include previous 2-3 pages for context
+                                  for (let i = Math.max(0, currentIndex - 2); i <= currentIndex; i++) {
+                                    if (pages[i] && pages[i].trim()) {
+                                      const cleanText = extractCleanText(pages[i]);
+                                      if (cleanText) {
+                                        contextPages.push(cleanText);
+                                      }
+                                    }
+                                  }
+                                  
+                                  return contextPages.join('\n\n');
+                                })()}
+                              >
+                                <Editor
+                                  content={pages[pageLayout.rightPageIndex]}
+                                  suggestions={[]}
+                                  isCurrentVersion={isCurrentVersion}
+                                  currentVersionIndex={0}
+                                  status={(status as 'streaming' | 'idle') || 'idle'}
+                                  storyContext={(() => {
+                                    // Include prior pages for better story context
+                                    const currentIndex = pageLayout.rightPageIndex;
+                                    const contextPages = [];
+                                    for (let i = Math.max(0, currentIndex - 2); i <= currentIndex; i++) {
+                                      if (pages[i] && pages[i].trim()) {
+                                        const cleanText = extractCleanText(pages[i]);
+                                        if (cleanText) {
+                                          contextPages.push(cleanText);
+                                        }
+                                      }
+                                    }
+                                    return contextPages.join('\n\n');
+                                  })()}
+                                  onSaveContent={(updatedContent, debounce) => {
+                                    const updatedPages = [...pages];
+                                    updatedPages[pageLayout.rightPageIndex] = updatedContent;
+                                    const combinedContent = updatedPages.join('\n\n');
+                                    handleSaveContent(combinedContent, debounce);
+                                  }}
+                                />
+                              </BookContextProvider>
                             ) : (
                               <div className="flex items-center justify-center h-full text-gray-400">
                                 <div className="text-center">
@@ -776,7 +989,7 @@ function BookPage({
                             )}
                           </div>
                           
-                          {pageLayout.rightPageNumber && (
+                          {pageLayout.rightPageNumber && !(pageLayout.rightPageIndex >= 0 && isImageOnlyPage(pages[pageLayout.rightPageIndex] || '')) && (
                             <div className="flex-shrink-0 text-center text-xs text-gray-500 mt-4 font-serif">
                               {pageLayout.rightPageNumber}
                             </div>
@@ -1023,6 +1236,7 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
           setMetadata((prev) => ({
             ...prev,
             bookTitle: extractedBookTitle,
+            bookId: bookId || undefined,
             chapters: chapters,
             totalWords: totalWords,
             currentChapter: targetChapterIndex,
@@ -1032,6 +1246,7 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
           setMetadata((prev) => ({
             ...prev,
             bookTitle: extractedBookTitle,
+            bookId: bookId || undefined,
           }));
         }
       };
@@ -1099,34 +1314,47 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
 
     // Don't render JSON content directly - only show formatted chapter content
     const getDisplayContent = () => {
+      let displayContent = '';
+      
       // If we have chapter data from database, use it (highest priority)
       if (currentChapterData?.content) {
-        return currentChapterData.content;
-      }
-      
-      // If content looks like JSON from createBook tool, extract the actual content
-      try {
-        const parsedContent = JSON.parse(content || '');
-        if (parsedContent.content && typeof parsedContent.content === 'string') {
-          return parsedContent.content;
+        displayContent = currentChapterData.content;
+      } else {
+        // If content looks like JSON from createBook tool, extract the actual content
+        try {
+          const parsedContent = JSON.parse(content || '');
+          if (parsedContent.content && typeof parsedContent.content === 'string') {
+            displayContent = parsedContent.content;
+          }
+        } catch {
+          // Not JSON, continue to fallback logic
         }
-      } catch {
-        // Not JSON, continue to fallback logic
+        
+        if (!displayContent) {
+          // Fallback to original content, but avoid displaying raw JSON
+          const fallbackContent = content || '';
+          
+          // Check if content is JSON - if so, don't display it directly
+          try {
+            JSON.parse(fallbackContent);
+            // If it's valid JSON but we couldn't extract meaningful content, 
+            // return empty string to show loading/skeleton state
+            return '';
+          } catch {
+            // Not JSON, safe to display as-is
+            displayContent = fallbackContent;
+          }
+        }
       }
       
-      // Fallback to original content, but avoid displaying raw JSON
-      const fallbackContent = content || '';
-      
-      // Check if content is JSON - if so, don't display it directly
-      try {
-        JSON.parse(fallbackContent);
-        // If it's valid JSON but we couldn't extract meaningful content, 
-        // return empty string to show loading/skeleton state
-        return '';
-      } catch {
-        // Not JSON, safe to display as-is
-        return fallbackContent;
+      // Check if content has images that need migration and show a notice
+      if (displayContent && hasImagesToMigrate(displayContent)) {
+        // Add a notice about image migration at the top
+        const migrationNotice = `> 🔄 **Image Migration Available**: This chapter contains images that can be optimized for better performance. The images will be automatically migrated when you edit this chapter.\n\n`;
+        return migrationNotice + displayContent;
       }
+      
+      return displayContent;
     };
 
     return (

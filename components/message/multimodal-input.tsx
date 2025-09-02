@@ -110,7 +110,59 @@ function PureMultimodalInput({
     error: null as string | null,
   });
 
-
+  // Convert context images to attachments so they show previews and get sent to AI
+  useEffect(() => {
+    const contextImages = selectedContexts.filter(context => 
+      context.type === 'image' && context.file?.url
+    );
+    
+    if (contextImages.length === 0) {
+      // No context images, just keep regular attachments
+      const nonContextAttachments = attachments.filter(attachment => 
+        !selectedContexts.some(context => context.file?.url === attachment.url)
+      );
+      if (nonContextAttachments.length !== attachments.length) {
+        setAttachments(nonContextAttachments);
+      }
+      return;
+    }
+    
+    const contextAttachments: Array<FileUIPart> = contextImages.map(context => {
+      // Determine mediaType from file extension or default to image/jpeg
+      const filename = context.file!.name;
+      let mediaType = 'image/jpeg';
+      if (filename.toLowerCase().endsWith('.png')) mediaType = 'image/png';
+      else if (filename.toLowerCase().endsWith('.webp')) mediaType = 'image/webp';
+      else if (filename.toLowerCase().endsWith('.gif')) mediaType = 'image/gif';
+      
+      return {
+        type: 'file' as const,
+        url: context.file!.url,
+        filename: filename,
+        mediaType,
+      };
+    });
+    
+    // Get non-context attachments (regular file uploads)
+    const nonContextAttachments = attachments.filter(attachment => 
+      !contextImages.some(context => context.file?.url === attachment.url)
+    );
+    
+    // Merge both types of attachments
+    const allAttachments = [...nonContextAttachments, ...contextAttachments];
+    
+    // Update if we need to add context attachments or remove ones that are no longer in context
+    const needsUpdate = contextAttachments.some(contextAttachment => 
+      !attachments.some(attachment => attachment.url === contextAttachment.url)
+    ) || attachments.some(attachment => 
+      selectedContexts.some(context => context.file?.url === attachment.url) &&
+      !contextAttachments.some(contextAttachment => contextAttachment.url === attachment.url)
+    );
+    
+    if (needsUpdate) {
+      setAttachments(allAttachments);
+    }
+  }, [selectedContexts, attachments, setAttachments]);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -202,12 +254,14 @@ function PureMultimodalInput({
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
     // Prepare custom headers with memory, web search and context info
+    console.log('[MULTIMODAL INPUT] Preparing headers with contexts:', selectedContexts.length, selectedContexts);
     const customHeaders: Record<string, string> = {
       'X-Memory-Enabled': isMemoryEnabled ? 'true' : 'false',
       'X-Web-Search-Enabled': isWebSearchEnabled ? 'true' : 'false',
       'X-Context': selectedContexts.length > 0 ? JSON.stringify(selectedContexts) : '',
       'X-Interaction-Mode': interactionMode,
     };
+    console.log('[MULTIMODAL INPUT] Headers prepared:', customHeaders);
 
     // Submit the message with our custom headers
     handleSubmit();
@@ -400,8 +454,10 @@ function PureMultimodalInput({
         ref={fileInputRef}
         className="hidden"
         type="file"
+        accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
         onChange={handleFileChange}
         tabIndex={-1}
+        multiple
       />
     </div>
   );
@@ -418,30 +474,7 @@ export const MultimodalInput = memo(
   },
 );
 
-function PureAttachmentsButton({
-  fileInputRef,
-  status,
-}: {
-  fileInputRef: React.MutableRefObject<HTMLInputElement | null>;
-  status: UseChatHelpers<UIMessage>['status'];
-}) {
-  return (
-    <Button
-      data-testid="attachments-button"
-      className="rounded-md rounded-bl-lg p-[7px] h-fit dark:border-zinc-700 hover:dark:bg-zinc-900 hover:bg-zinc-200"
-      onClick={(event) => {
-        event.preventDefault();
-        fileInputRef.current?.click();
-      }}
-      disabled={status !== 'ready'}
-      variant="ghost"
-    >
-      <PaperclipIcon size={14} />
-    </Button>
-  );
-}
 
-const AttachmentsButton = memo(PureAttachmentsButton);
 
 function PureStopButton({
   stop,
@@ -452,6 +485,7 @@ function PureStopButton({
 }) {
   return (
     <Button
+      type="button"
       data-testid="stop-button"
       className="rounded-full p-1.5 h-8 w-8 bg-red-500 hover:bg-red-600 text-white"
       onClick={(event) => {
@@ -478,6 +512,7 @@ function PureSendButton({
 }) {
   return (
     <Button
+      type="button"
       data-testid="send-button"
       className="rounded-full p-1.5 h-8 w-8 bg-blue-500 hover:bg-blue-600 text-white cursor-pointer z-10"
       onClick={(event) => {
@@ -501,6 +536,7 @@ const SendButton = memo(PureSendButton, (prevProps, nextProps) => {
 function PureStopVoiceButton({ onStop }: { onStop: () => void }) {
   return (
     <Button
+      type="button"
       data-testid="stop-voice-button"
       className="rounded-full p-1.5 h-8 w-8 bg-red-500 hover:bg-red-600 text-white cursor-pointer z-10"
       onClick={(event) => {

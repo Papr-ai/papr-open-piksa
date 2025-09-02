@@ -11,7 +11,8 @@ import type {
   MemorySearchParams,
   AddMemoryResponse,
   SearchResponse,
-  MemoryMetadata
+  MemoryMetadata,
+  MemoryUpdateResponse
 } from '@papr/memory/resources/memory';
 import type { UIMessage } from 'ai';
 import { Papr } from '@papr/memory';
@@ -20,7 +21,7 @@ interface FormattedMemory {
   id: string;
   content?: string;
   createdAt: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -278,7 +279,7 @@ export function createMemoryService(apiKey: string) {
       );
 
       // Use SDK to search with proper parameter placement
-      const response: Papr.SearchResponse = await paprClient.memory.search(searchParams, {
+      const response: SearchResponse = await paprClient.memory.search(searchParams, {
         query: {
           max_memories: 25
         }
@@ -286,34 +287,61 @@ export function createMemoryService(apiKey: string) {
 
       console.log('[Memory DEBUG] Search response received:', JSON.stringify(response, null, 2));
 
-      // Handle different response formats
-      let memories: SearchResponse.Data.Memory[] = [];
-      
-      if (response && response.data) {
-        if (Array.isArray(response.data.memories)) {
-          memories = response.data.memories;
-        }
-      }
+      // Use proper SearchResponse type structure  
+      const memories: SearchResponse.Data.Memory[] = response.data?.memories || [];
 
       // Format memories for display
       const formattedMemories = memories
         .filter(memory => memory.id) // Only keep memories with IDs
-        .map((memory): FormattedMemory => {
-          // Parse metadata if it's a string
-          const metadata = typeof memory.metadata === 'string' 
-            ? JSON.parse(memory.metadata)
-            : memory.metadata || {};
+        .map((memory: SearchResponse.Data.Memory): FormattedMemory => {
+          // Debug: Log the raw memory object structure from SDK
+          console.log('[Memory DEBUG] Raw SDK memory object:', JSON.stringify(memory, null, 2));
+          
+          // Handle metadata using proper SDK types - check both metadata fields
+          let combinedMetadata: Record<string, unknown> = {};
+          
+          // Process the 'metadata' field (can be string or object)
+          if (memory.metadata) {
+            if (typeof memory.metadata === 'string') {
+              try {
+                const parsedMetadata = JSON.parse(memory.metadata);
+                combinedMetadata = { ...combinedMetadata, ...parsedMetadata };
+                console.log('[Memory DEBUG] Parsed metadata from string:', parsedMetadata);
+              } catch (parseError) {
+                console.error('[Memory DEBUG] Failed to parse metadata JSON:', parseError);
+              }
+            } else if (typeof memory.metadata === 'object') {
+              combinedMetadata = { ...combinedMetadata, ...memory.metadata };
+              console.log('[Memory DEBUG] Used metadata object:', memory.metadata);
+            }
+          }
+          
+          // Process the 'customMetadata' field (object or null)
+          if (memory.customMetadata && typeof memory.customMetadata === 'object') {
+            combinedMetadata = { ...combinedMetadata, ...memory.customMetadata };
+            console.log('[Memory DEBUG] Used customMetadata:', memory.customMetadata);
+          }
+          
+          // Debug: Show key SDK fields
+          console.log('[Memory DEBUG] SDK fields for memory', memory.id, ':');
+          console.log('  - metadata:', typeof memory.metadata, memory.metadata ? JSON.stringify(memory.metadata).substring(0, 200) : 'null');
+          console.log('  - customMetadata:', typeof memory.customMetadata, memory.customMetadata ? JSON.stringify(memory.customMetadata).substring(0, 200) : 'null');
+          console.log('  - source_type:', memory.source_type);
+          console.log('  - source_url:', memory.source_url);
+          console.log('  - topics:', memory.topics);
+          console.log('  - tags:', memory.tags);
+          
+          // Debug: Log final combined metadata
+          console.log('[Memory DEBUG] Final combined metadata for memory', memory.id, ':', JSON.stringify(combinedMetadata, null, 2));
 
-          // Use created_at from memory or createdAt from metadata
-          const createdAt = memory.created_at || 
-            (metadata && typeof metadata === 'object' && 'createdAt' in metadata ? metadata.createdAt : null) || 
-            new Date().toISOString();
+          // Ensure createdAt is a string using proper SDK field
+          const createdAt: string = memory.created_at || new Date().toISOString();
           
           return {
             id: memory.id,
             content: memory.content,
             createdAt,
-            metadata
+            metadata: combinedMetadata
           };
         });
 
@@ -351,10 +379,63 @@ export function createMemoryService(apiKey: string) {
     return `The user has the following relevant memories you should consider when responding:\n\n${formattedMemories}\n\nConsider these memories when responding to the user's current request.`;
   };
 
+  /**
+   * Update a memory by ID
+   * @param memoryId - Memory ID to update
+   * @param updates - Fields to update (content, metadata, type)
+   * @returns Success status
+   */
+  const updateMemory = async (
+    memoryId: string,
+    updates: {
+      content?: string;
+      metadata?: MemoryMetadata;
+      type?: MemoryType;
+    }
+  ): Promise<boolean> => {
+    try {
+      console.log('[Memory] Updating memory:', { memoryId, updates });
+      
+      const response = await paprClient.memory.update(memoryId, updates);
+      
+      if (!response || !response.memory_items || response.status !== 'success') {
+        console.error('[Memory] Invalid update response:', response);
+        return false;
+      }
+      
+      console.log(`[Memory] Successfully updated memory ${memoryId}`);
+      return true;
+    } catch (error) {
+      console.error('[Memory] Error updating memory:', error);
+      return false;
+    }
+  };
+
+  /**
+   * Delete a memory by ID
+   * @param memoryId - Memory ID to delete
+   * @returns Success status
+   */
+  const deleteMemory = async (memoryId: string): Promise<boolean> => {
+    try {
+      console.log('[Memory] Deleting memory:', memoryId);
+      
+      const response = await paprClient.memory.delete(memoryId);
+      
+      console.log(`[Memory] Successfully deleted memory ${memoryId}`);
+      return true;
+    } catch (error) {
+      console.error('[Memory] Error deleting memory:', error);
+      return false;
+    }
+  };
+
   return {
     storeMessage,
     storeContent,
     searchMemories,
     formatMemoriesForPrompt,
+    updateMemory,
+    deleteMemory,
   };
 }

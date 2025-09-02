@@ -160,6 +160,13 @@ export const searchMemories = ({ session }: { session: Session }): Tool<SearchMe
         };
         
         console.log('[Memory Tool] Final result:', JSON.stringify(result, null, 2));
+        
+        // Debug: Log what metadata is actually being returned to LLM
+        console.log('[Memory Tool] Metadata being returned to LLM:');
+        memories.forEach((memory, index) => {
+          console.log(`[Memory Tool] Memory ${index + 1} metadata:`, JSON.stringify(memory.metadata, null, 2));
+        });
+        
         return result;
       } catch (error) {
         const errorDuration = Date.now() - startTime;

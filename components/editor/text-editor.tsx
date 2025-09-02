@@ -22,6 +22,8 @@ import {
   suggestionsPlugin,
   suggestionsPluginKey,
 } from '@/lib/editor/suggestions';
+import { imageHandlerPlugin } from '@/lib/editor/image-handler';
+import { createImageNodeView } from '@/lib/editor/image-nodeview';
 
 type EditorProps = {
   content: string;
@@ -30,6 +32,7 @@ type EditorProps = {
   isCurrentVersion: boolean;
   currentVersionIndex: number;
   suggestions: Array<Suggestion>;
+  storyContext?: string; // Add story context prop
 };
 
 function PureEditor({
@@ -37,6 +40,7 @@ function PureEditor({
   onSaveContent,
   suggestions,
   status,
+  storyContext,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<EditorView | null>(null);
@@ -58,11 +62,15 @@ function PureEditor({
             ],
           }),
           suggestionsPlugin,
+          imageHandlerPlugin,
         ],
       });
 
       editorRef.current = new EditorView(containerRef.current, {
         state,
+        nodeViews: {
+          image: createImageNodeView as any,
+        },
       });
     }
 
@@ -159,7 +167,11 @@ function PureEditor({
   }, [suggestions, content]);
 
   return (
-    <div className="relative prose dark:prose-invert" ref={containerRef} />
+    <div 
+      className="relative w-full h-full prose dark:prose-invert" 
+      ref={containerRef} 
+      data-story-context={storyContext} // Add story context as data attribute
+    />
   );
 }
 
@@ -170,7 +182,8 @@ function areEqual(prevProps: EditorProps, nextProps: EditorProps) {
     prevProps.isCurrentVersion === nextProps.isCurrentVersion &&
     !(prevProps.status === 'streaming' && nextProps.status === 'streaming') &&
     prevProps.content === nextProps.content &&
-    prevProps.onSaveContent === nextProps.onSaveContent
+    prevProps.onSaveContent === nextProps.onSaveContent &&
+    prevProps.storyContext === nextProps.storyContext
   );
 }
 

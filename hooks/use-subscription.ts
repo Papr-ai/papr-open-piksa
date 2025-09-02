@@ -15,7 +15,7 @@ interface SubscriptionStatus {
 }
 
 export function useSubscription(syncWithStripe: boolean = false): SubscriptionStatus {
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const [subscriptionData, setSubscriptionData] = useState<Omit<SubscriptionStatus, 'loading' | 'error'>>({
     subscriptionStatus: 'free',
     subscriptionPlan: 'free',
@@ -54,13 +54,28 @@ export function useSubscription(syncWithStripe: boolean = false): SubscriptionSt
   };
 
   useEffect(() => {
+    // Reset sync attempt when session changes
+    syncAttemptedRef.current = false;
+    
+    if (sessionStatus === 'loading') {
+      // Keep loading while session is loading
+      return;
+    }
+    
     if (!session?.user) {
+      // If we have no session/user, set to free plan and stop loading
+      setSubscriptionData({
+        subscriptionStatus: 'free',
+        subscriptionPlan: 'free',
+        hasActiveSubscription: false,
+      });
       setLoading(false);
       return;
     }
 
+    // Only fetch subscription data when we have a confirmed authenticated session
     fetchSubscriptionStatus(syncWithStripe);
-  }, [session, syncWithStripe]);
+  }, [session, sessionStatus, syncWithStripe]);
 
   return {
     ...subscriptionData,

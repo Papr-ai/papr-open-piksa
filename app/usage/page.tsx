@@ -20,12 +20,24 @@ export default function UsagePage() {
   }
 
   // Show login message if not authenticated
-  if (sessionStatus === 'unauthenticated' || !session?.user) {
+  // Only show unauthenticated state if we're certain the session is not loading
+  if (sessionStatus === 'unauthenticated') {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
           <h1 className="text-3xl font-bold mb-4">Usage Overview</h1>
           <p>Please log in to view your usage statistics.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If we have a session but no user data, wait for it to load
+  if (!session?.user && sessionStatus === 'authenticated') {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold mb-4">Loading user data...</h1>
         </div>
       </div>
     );

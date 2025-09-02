@@ -23,8 +23,7 @@ import { createBook } from '@/lib/ai/tools/create-book';
 import { searchBooks } from '@/lib/ai/tools/search-books';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
-import { generateImage } from '@/lib/ai/tools/generate-image';
-import { editImage } from '@/lib/ai/tools/edit-image';
+import { createImage } from '@/lib/ai/tools/create-image';
 import { 
   createListRepositoriesTool,
   createCreateProjectTool,
@@ -216,8 +215,23 @@ export async function POST(request: Request) {
     tools.createBook = createBook({ session, dataStream });
     tools.searchBooks = searchBooks({ session });
     tools.requestSuggestions = requestSuggestions({ session, dataStream });
-    tools.generateImage = generateImage({ session, dataStream });
-    tools.editImage = editImage({ session, dataStream });
+    tools.createImage = createImage({ session });
+    
+    // Enhanced book creation workflow tools
+    const { createEnhancedBookTools } = await import('@/lib/ai/tools/enhanced-book-tools');
+    const enhancedBookTools = createEnhancedBookTools(session, dataStream);
+    tools.createBookPlan = enhancedBookTools.createBookPlan;
+    tools.draftChapter = enhancedBookTools.draftChapter;
+    tools.segmentChapterIntoScenes = enhancedBookTools.segmentChapterIntoScenes;
+    tools.createCharacterPortraits = enhancedBookTools.createCharacterPortraits;
+    tools.createEnvironments = enhancedBookTools.createEnvironments;
+    tools.createSceneManifest = enhancedBookTools.createSceneManifest;
+    tools.renderScene = enhancedBookTools.renderScene;
+    tools.completeBook = enhancedBookTools.completeBook;
+    
+    // Book workflow status tool
+    const { getBookWorkflowStatus } = await import('@/lib/ai/tools/book-workflow-status');
+    tools.getBookWorkflowStatus = getBookWorkflowStatus({ session });
     
     // GitHub tools
     tools.listRepositories = createListRepositoriesTool({ session, dataStream });
@@ -232,7 +246,7 @@ export async function POST(request: Request) {
     tools.clearStagedFiles = createClearStagedFilesTool({ session, dataStream });
     
     // Task tracker tools
-    const taskTrackerTools = createTaskTrackerTools(dataStream);
+    const taskTrackerTools = createTaskTrackerTools(dataStream, session);
     tools.createTaskPlan = taskTrackerTools.createTaskPlan;
     tools.updateTask = taskTrackerTools.updateTask;
     tools.completeTask = taskTrackerTools.completeTask;
@@ -353,10 +367,32 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
     
     console.log(`[SIMPLE CHAT API] Using ${isMemoryEnabled ? 'memory-enabled' : 'standard'} system prompt`);
 
-    // Pre-process messages to remove large binary data BEFORE sending to API
-    const preprocessedMessages = messages.map(msg => {
+    // Function to sanitize tool names to match OpenAI pattern ^[a-zA-Z0-9_-]+$
+    const sanitizeToolName = (name: string): string => {
+      return name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    };
+
+    // Pre-process messages to handle orphaned tool calls and remove large binary data
+    const preprocessedMessages = messages.map((msg, msgIndex) => {
       if (msg.parts) {
         msg.parts = msg.parts.map((part: any) => {
+          // Sanitize tool names for all tool-related parts
+          if (part.type === 'tool-call' && part.toolName) {
+            const sanitizedName = sanitizeToolName(part.toolName);
+            if (sanitizedName !== part.toolName) {
+              console.log(`[SIMPLE CHAT API] Sanitizing tool name: "${part.toolName}" -> "${sanitizedName}"`);
+            }
+            part = { ...part, toolName: sanitizedName };
+          }
+          
+          if (part.type === 'tool-result' && part.toolName) {
+            const sanitizedName = sanitizeToolName(part.toolName);
+            if (sanitizedName !== part.toolName) {
+              console.log(`[SIMPLE CHAT API] Sanitizing tool result name: "${part.toolName}" -> "${sanitizedName}"`);
+            }
+            part = { ...part, toolName: sanitizedName };
+          }
+          
           // If this is a tool result with large data, sanitize it
           if (part.type === 'tool-result' && part.output) {
             const outputStr = JSON.stringify(part.output);
@@ -399,9 +435,58 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
     console.log(`[SIMPLE CHAT API] Pre-processed ${messages.length} messages, removed large binary data`);
 
+    // Fix orphaned tool calls by adding dummy tool results
+    const fixedMessages: any[] = [];
+    for (let i = 0; i < preprocessedMessages.length; i++) {
+      const currentMsg = preprocessedMessages[i];
+      fixedMessages.push(currentMsg);
+      
+      // Check if this message has tool calls
+      const toolCalls = currentMsg.parts?.filter((p: any) => p.type === 'tool-call' && p.toolCallId) || [];
+      
+      if (toolCalls.length > 0) {
+        // Check if the next message has corresponding tool results
+        const nextMsg = preprocessedMessages[i + 1];
+        const toolResults = nextMsg?.parts?.filter((p: any) => p.type === 'tool-result' && p.toolCallId) || [];
+        
+        // Find tool calls without corresponding results
+        const orphanedCalls = toolCalls.filter((call: any) => 
+          !toolResults.some((result: any) => result.toolCallId === call.toolCallId)
+        );
+        
+        if (orphanedCalls.length > 0) {
+          console.log(`[SIMPLE CHAT API] Found ${orphanedCalls.length} orphaned tool calls, adding dummy results`);
+          
+          // Create dummy tool results for orphaned calls
+          const dummyResults = orphanedCalls.map((call: any) => ({
+            type: 'dynamic-tool' as const,
+            toolName: call.toolName || 'unknown',
+            toolCallId: call.toolCallId,
+            state: 'output-available' as const,
+            input: {},
+            output: { error: 'Tool call result not found in conversation history' }
+          }));
+          
+          // Add a message with dummy results if next message doesn't exist or is from user
+          if (!nextMsg || nextMsg.role === 'user') {
+            fixedMessages.push({
+              id: `dummy-${Date.now()}-${Math.random()}`,
+              role: 'assistant' as const,
+              parts: dummyResults
+            });
+          } else {
+            // Add dummy results to existing assistant message
+            nextMsg.parts = [...(nextMsg.parts || []), ...dummyResults];
+          }
+        }
+      }
+    }
+
+    console.log(`[SIMPLE CHAT API] Fixed messages: ${fixedMessages.length} (was ${preprocessedMessages.length})`);
+
     // Use rate limit handler with automatic retry
     const result = await handleRateLimitWithRetry(
-      preprocessedMessages,
+      fixedMessages,
       modelToUse,
       async (messagesToUse) => {
         console.log(`[SIMPLE CHAT API] Attempting API call with ${messagesToUse.length} messages`);
@@ -505,8 +590,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
             'createBook',
             'searchBooks',
             'requestSuggestions',
-            'generateImage',
-            'editImage',
+            'createImage',
             'listRepositories',
             'createProject',
             'getRepositoryFiles',
@@ -595,7 +679,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
     return result.toUIMessageStreamResponse<ExtendedUIMessage>({
       originalMessages: messages, // keeps strong typing of metadata on the client
       sendReasoning: true,        // forwards reasoning parts when provider supports them
-      messageMetadata: ({ part }) => {
+      messageMetadata: ({ part }: { part: any }) => {
         // Attach metadata at start/finish (visible on client as message.metadata)
         if (part.type === 'start') {
           return { model: modelToUse, createdAt: Date.now() };
@@ -610,11 +694,11 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           };
         }
       },
-      onFinish: async ({ messages: finalMessages }) => {
+      onFinish: async ({ messages: finalMessages }: { messages: any }) => {
         
         try {
           // Sanitize messages to remove large binary data before saving
-          const sanitizedMessages = finalMessages.map(msg => {
+          const sanitizedMessages = finalMessages.map((msg: any) => {
             if (msg.parts) {
               msg.parts = msg.parts.map((part: any) => {
                 // If this is a tool result with large data, sanitize it
@@ -717,7 +801,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
               role: message.role,
               id: message.id,
               partsCount: message.parts?.length || 0,
-              partsTypes: message.parts?.map(p => (p as any).type) || []
+              partsTypes: message.parts?.map((p: any) => p.type) || []
             });
             
             if (message.role === 'assistant') {

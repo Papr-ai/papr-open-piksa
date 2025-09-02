@@ -52,6 +52,30 @@ export class ToolRegistry {
       }
     });
 
+    // Register the updateMemory tool
+    this.register('updateMemory', {
+      getStartMessage: (args) => `🔄 Updating memory: ${args.memory_id}`,
+      getResultMessage: (result) => {
+        if (result.success && result.updated_fields) {
+          const fields = result.updated_fields.join(', ');
+          return `✅ Updated memory (${fields}) successfully`;
+        }
+        return result.success
+          ? `✅ Updated memory successfully`
+          : `❌ Failed to update memory: ${result.error || 'Unknown error'}`;
+      }
+    });
+
+    // Register the deleteMemory tool
+    this.register('deleteMemory', {
+      getStartMessage: (args) => `🗑️ Deleting memory: ${args.memory_id}${args.reason ? ` (${args.reason})` : ''}`,
+      getResultMessage: (result) => {
+        return result.success
+          ? `✅ Deleted memory successfully`
+          : `❌ Failed to delete memory: ${result.error || 'Unknown error'}`;
+      }
+    });
+
     // Add more default handlers as needed
   }
 } 

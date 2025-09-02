@@ -150,6 +150,34 @@ export async function trackMemorySearch(userId: string): Promise<void> {
   await incrementUsage(userId, 'memoriesSearched', 1);
 }
 
+export async function checkVideoGenerationLimit(userId: string): Promise<UsageCheckResult> {
+  const thresholds = await checkUsageThresholds(userId);
+  const { current, limit, percentage } = thresholds.videosGenerated;
+  
+  // Allow if unlimited (-1) or under limit
+  if (limit === -1 || current < limit) {
+    return {
+      allowed: true,
+      usage: { current, limit, percentage },
+      shouldShowUpgrade: percentage >= 80 && limit !== -1,
+    };
+  }
+  
+  return {
+    allowed: false,
+    reason: limit === 0 
+      ? 'Video generation requires a subscription. Please upgrade your plan to create videos with Gemini Veo.'
+      : `You've reached your monthly limit of ${limit} video generations. Please upgrade your plan to create more videos.`,
+    usage: { current, limit, percentage },
+    shouldShowUpgrade: true,
+  };
+}
+
+export async function trackVideoGeneration(userId: string): Promise<void> {
+  await incrementUsage(userId, 'videosGenerated', 1);
+  console.log('[Usage Middleware] Tracked video generation for user:', userId);
+}
+
 export async function getUsageWarnings(userId: string): Promise<{
   warnings: Array<{
     type: string;
@@ -210,6 +238,16 @@ export async function getUsageWarnings(userId: string): Promise<{
       percentage: thresholds.voiceChats.percentage,
       current: thresholds.voiceChats.current,
       limit: thresholds.voiceChats.limit,
+    });
+  }
+
+  if (thresholds.videosGenerated.percentage >= 80 && thresholds.videosGenerated.limit !== -1) {
+    warnings.push({
+      type: 'videosGenerated',
+      message: `You've used ${thresholds.videosGenerated.percentage.toFixed(0)}% of your monthly video generations`,
+      percentage: thresholds.videosGenerated.percentage,
+      current: thresholds.videosGenerated.current,
+      limit: thresholds.videosGenerated.limit,
     });
   }
   

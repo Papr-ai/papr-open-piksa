@@ -14,6 +14,7 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       memoriesAdded: 100, // Total memories stored (cumulative)
       memoriesSearched: 20,
       voiceChats: 5, // Voice chat sessions per month
+      videosGenerated: 1, // 1 free videos per month
     },
     stripePriceId: '', // No Stripe price for free plan
   },
@@ -29,7 +30,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       premiumInteractions: 200, // Limited premium interactions
       memoriesAdded: 5000, // Total memories stored (cumulative)
       memoriesSearched: 1000,
-      voiceChats: 100, // Voice chat sessions per month
+      voiceChats: 20, // Voice chat sessions per month
+      videosGenerated: 5, // 5 videos per month
     },
     stripePriceId: '', // Price ID resolved on server side
     isPopular: true,
@@ -46,7 +48,8 @@ export const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
       premiumInteractions: 3000, // 3000 premium interactions per month
       memoriesAdded: 100000, // 100K total memories stored (cumulative)
       memoriesSearched: 50000, // 50K memory searches per month
-      voiceChats: -1, // Unlimited voice chat sessions
+      voiceChats: 50, // Unlimited voice chat sessions
+      videosGenerated: 20, // 20 videos per month
     },
     stripePriceId: '', // Price ID resolved on server side
   },
