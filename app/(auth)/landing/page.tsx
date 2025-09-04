@@ -601,7 +601,7 @@ export default function LandingPage() {
                 className={activeCategory === 'children' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
                 onClick={() => setActiveCategory('children')}
               >
-                Children's Books
+                Children&apos;s Books
               </Button>
               <Button 
                 variant={activeCategory === 'fiction' ? "default" : "outline"} 
@@ -691,7 +691,7 @@ export default function LandingPage() {
                 <div>
                   <h3 className="text-xl font-semibold mb-2">AI Illustration Generation</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Create beautiful, consistent illustrations for your books. Perfect for children's books and graphic novels.
+                    Create beautiful, consistent illustrations for your books. Perfect for children&apos;s books and graphic novels.
                   </p>
                 </div>
               </div>

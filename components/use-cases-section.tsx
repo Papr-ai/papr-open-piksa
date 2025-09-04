@@ -83,7 +83,7 @@ export function UseCasesSection() {
             {/* Example use case card 1 - Children's Book */}
             <div className={`flex relative flex-col gap-1 items-start p-4 cursor-pointer min-h-[150px] group/item-btns border rounded-[12px] border-border bg-card transition-all duration-500 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`} style={{ transitionDelay: '100ms' }}>
               <div className="flex-1 w-full min-h-[44px]">
-                <span className="text-ellipsis break-words line-clamp-3 text-sm text-foreground">The Magical Forest Adventure: Complete Children's Book with Illustrations</span>
+                <span className="text-ellipsis break-words line-clamp-3 text-sm text-foreground">The Magical Forest Adventure: Complete Children&apos;s Book with Illustrations</span>
               </div>
               <div className="flex items-center gap-1.5 group-hover/item-btns:hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" width="16" height="16" className="text-muted-foreground">

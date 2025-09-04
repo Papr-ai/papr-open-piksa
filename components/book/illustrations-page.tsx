@@ -196,7 +196,7 @@ export function IllustrationsPage() {
                     <SelectValue placeholder="Select art style" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="children-book">Children's Book</SelectItem>
+                    <SelectItem value="children-book">Children&apos;s Book</SelectItem>
                     <SelectItem value="realistic">Realistic</SelectItem>
                     <SelectItem value="cartoon">Cartoon</SelectItem>
                     <SelectItem value="watercolor">Watercolor</SelectItem>
@@ -241,7 +241,7 @@ export function IllustrationsPage() {
             <Image className="w-16 h-16 text-muted-foreground mb-4" />
             <h3 className="text-xl font-semibold mb-2">No illustrations yet</h3>
             <p className="text-muted-foreground text-center mb-6 max-w-md">
-              Create beautiful AI-generated illustrations for your books. Perfect for children's books, 
+              Create beautiful AI-generated illustrations for your books. Perfect for children&apos;s books, 
               graphic novels, and any story that needs visual enhancement.
             </p>
             <div className="flex gap-3">
@@ -294,7 +294,7 @@ export function IllustrationsPage() {
                           <SelectValue placeholder="Select art style" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="children-book">Children's Book</SelectItem>
+                          <SelectItem value="children-book">Children&apos;s Book</SelectItem>
                           <SelectItem value="realistic">Realistic</SelectItem>
                           <SelectItem value="cartoon">Cartoon</SelectItem>
                           <SelectItem value="watercolor">Watercolor</SelectItem>
@@ -451,7 +451,7 @@ export function IllustrationsPage() {
             <div>
               <h4 className="font-medium mb-2">Style Matching</h4>
               <p className="text-sm text-muted-foreground">
-                Define your book's artistic style early and let AI maintain that style 
+                Define your book&apos;s artistic style early and let AI maintain that style 
                 across all illustrations for a cohesive look.
               </p>
             </div>

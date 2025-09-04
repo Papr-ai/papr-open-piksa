@@ -257,10 +257,10 @@ export function BookCreationWizard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Wand2 className="w-6 h-6" />
-            Let's Create Your Book
+            Let&apos;s Create Your Book
           </CardTitle>
           <CardDescription>
-            Just a few quick details and we'll get you started with AI-powered writing
+            Just a few quick details and we&apos;ll get you started with AI-powered writing
           </CardDescription>
         </CardHeader>
         <CardContent>

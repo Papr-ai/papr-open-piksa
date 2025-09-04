@@ -303,7 +303,7 @@ export function BookCreationDashboard() {
             <div>
               <h4 className="font-medium mb-2">Start with Planning</h4>
               <p className="text-sm text-muted-foreground">
-                Use our story planning tools to outline your plot, develop characters, and establish your book's themes before you start writing.
+                Use our story planning tools to outline your plot, develop characters, and establish your book&apos;s themes before you start writing.
               </p>
             </div>
             <div>
@@ -321,7 +321,7 @@ export function BookCreationDashboard() {
             <div>
               <h4 className="font-medium mb-2">Enhance with Illustrations</h4>
               <p className="text-sm text-muted-foreground">
-                Add beautiful AI-generated illustrations to bring your story to life, especially for children's books.
+                Add beautiful AI-generated illustrations to bring your story to life, especially for children&apos;s books.
               </p>
             </div>
           </div>

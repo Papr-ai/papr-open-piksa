@@ -46,7 +46,7 @@ export async function GET(
         content: version.content,
         title: `${version.chapterTitle || `Chapter ${version.chapterNumber}`} (v${version.version})`,
         kind: 'book',
-        userId: session.user.id,
+        userId: session.user?.id,
         createdAt: version.createdAt || new Date().toISOString(),
         version: version.version,
         isLatest: version.is_latest,

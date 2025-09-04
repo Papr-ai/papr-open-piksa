@@ -3,7 +3,7 @@ import {
   SidebarGroupContent,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { FileIcon, BoxIcon, DocumentIcon, BookOpen, PenTool, Users, Image } from 'lucide-react';
+import { FileIcon, BoxIcon, BookOpen, PenTool, Users, Image } from 'lucide-react';
 import type { User } from 'next-auth';
 import Link from 'next/link';
 

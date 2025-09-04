@@ -53,13 +53,13 @@ export default async function BookPage({ params }: BookPageProps) {
   const selectedModelId = modelIdFromCookie || DEFAULT_CHAT_MODEL;
 
   // Create initial messages to trigger book artifact if no chat exists
-  const initialMessages = chat?.messages || [
+  const initialMessages = [
     {
       id: `book-init-${bookId}`,
       role: 'assistant' as const,
       parts: [
         {
-          type: 'text',
+          type: 'text' as const,
           text: `I'll help you work on "${bookTitle}". Let me open your book for editing.`
         }
       ],

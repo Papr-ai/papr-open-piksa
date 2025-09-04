@@ -476,17 +476,7 @@ function PureArtifact({
           try {
             // Using 1-based indexing throughout - no conversion needed!
             const chapterToSave = metadata?.currentChapter ?? 1;
-            console.log('🔥 [ARTIFACT] CRITICAL DEBUG - SAVE OPERATION STARTING 🔥');
-            console.log('[ARTIFACT] Saving book to database via /api/book/save');
-            console.log('[ARTIFACT] Debug - metadata?.currentChapter:', metadata?.currentChapter);
-            console.log('[ARTIFACT] Debug - chapterToSave:', chapterToSave);
-            console.log('[ARTIFACT] Debug - bookId:', artifact.documentId);
-            console.log('[ARTIFACT] Debug - Expected: Chapter 2 should have currentChapter=1, chapterToSave=2');
-            console.log('[ARTIFACT] Debug - chapters array:', metadata?.chapters?.map(ch => ({ 
-              chapterNumber: ch.chapterNumber, 
-              title: ch.title,
-              id: ch.id 
-            })));
+  
             console.log('[ARTIFACT] Debug - currentChapterData:', metadata?.chapters?.[metadata?.currentChapter ?? 0]);
             const response = await fetch('/api/book/save', {
               method: 'POST',
@@ -536,7 +526,7 @@ function PureArtifact({
               console.log('[ARTIFACT] Book saved successfully to database');
               
               // Update local metadata to reflect the saved content
-              setMetadata?.((prev) => {
+              setMetadata?.((prev: any) => {
                 if (!prev) return prev;
                 
                 // CRITICAL FIX: Convert 1-based currentChapter to 0-based array index
