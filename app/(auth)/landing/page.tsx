@@ -483,7 +483,7 @@ export default function LandingPage() {
       <header className="sticky top-0 z-10 flex rounded-lg justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm">
         <div className="flex items-center">
           <img src="/images/papr-logo.svg" alt="Papr Logo" className="h-6 mr-2" />
-          <span className="text-xl font-bold">Papr Books</span>
+          <span className="text-xl font-bold">Creators.ai</span>
           <nav className="ml-10 hidden md:flex items-center space-x-6">
           <Link href="#" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Overview</Link>
           <Link href="#usecases" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Use cases</Link>
@@ -623,7 +623,7 @@ export default function LandingPage() {
           </div>
           
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
-            Discover how Papr helps authors create amazing books with AI assistance.
+            Discover how Creators.ai helps creators make amazing content with AI assistance.
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1152,7 +1152,7 @@ and story memory - 432 words]`}
             <div>
               <div className="flex items-center mb-4">
                 <img src="/images/papr-logo.svg" alt="Papr Logo" className="h-6 mr-2" />
-              <span className="text-xl font-bold">Papr Books</span>
+              <span className="text-xl font-bold">Creators.ai</span>
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400">© 2025 Papr AI</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Headquartered in San Francisco</p>

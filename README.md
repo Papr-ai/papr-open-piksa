@@ -1,12 +1,12 @@
-# Papr Chat
+# Creators.ai
 
-<a href="https://platform.papr.ai/papr-chat-template">
-  <img alt="An open-source AI chatbot with memory capabilities powered by Papr and built on Next.js 14." src="app/(chat)/opengraph-image.png">
-  <h1 align="center">Papr Chat</h1>
+<a href="https://creators.ai">
+  <img alt="An AI-powered creative platform for content creation built on Next.js 14." src="app/(chat)/opengraph-image.png">
+  <h1 align="center">Creators.ai</h1>
 </a>
 
 <p align="center">
-    Papr Chat is an open-source AI chatbot with powerful memory capabilities, powered by Papr. Built on Next.js 14 and based on Vercel's AI chatbot template, Papr Chat demonstrates how to build context-aware, personalized chatbot applications with long-term memory.
+    Creators.ai is an AI-powered creative platform for content creation. Built on Next.js 14, it helps creators make amazing books, stories, characters, illustrations, and more with AI assistance.
 </p>
 
 <p align="center">

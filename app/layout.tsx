@@ -20,8 +20,8 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://chat.vercel.ai'),
-  title: 'Papr Books - AI-Powered Book Creation Platform',
-  description: 'Create amazing books with AI assistance. From story planning to character development, illustrations, and publishing - your complete book creation companion.',
+  title: 'Creators.ai - AI-Powered Creative Platform',
+  description: 'Create amazing content with AI assistance. From storytelling to character development, illustrations, and creative projects - your complete creative companion.',
 };
 
 export const viewport = {
