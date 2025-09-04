@@ -20,7 +20,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://chat.vercel.ai'),
-  title: 'Creators.ai - AI-Powered Creative Platform',
+  title: 'Piksa.ai - AI-Powered Creative Platform',
   description: 'Create amazing content with AI assistance. From storytelling to character development, illustrations, and creative projects - your complete creative companion.',
 };
 

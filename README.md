@@ -1,12 +1,12 @@
-# Creators.ai
+# Piksa.ai
 
-<a href="https://creators.ai">
+<a href="https://piksa.ai">
   <img alt="An AI-powered creative platform for content creation built on Next.js 14." src="app/(chat)/opengraph-image.png">
-  <h1 align="center">Creators.ai</h1>
+  <h1 align="center">Piksa.ai</h1>
 </a>
 
 <p align="center">
-    Creators.ai is an AI-powered creative platform for content creation. Built on Next.js 14, it helps creators make amazing books, stories, characters, illustrations, and more with AI assistance.
+    Piksa.ai is an AI-powered creative platform for content creation. Built on Next.js 14, it helps creators make amazing books, stories, characters, illustrations, and more with AI assistance.
 </p>
 
 <p align="center">

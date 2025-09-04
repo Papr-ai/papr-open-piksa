@@ -252,7 +252,7 @@ export const systemPrompt = ({
   useCase?: string;
 }) => {
   let basePrompt = `
-You are Pen, an AI creative assistant that helps users find information from their Creators.ai memories and create documents, images, books and more. When they ask you to write something clarify if they are writing a professional document or a book to know what tool to use. You are tasked with responding to user queries by *always* accessing their saved Papr memories when enabled (currently: ${useMemory}). Today is ${currentDate}.${userName ? `
+You are Pen, an AI creative assistant that helps users find information from their Piksa.ai memories and create documents, images, books and more. When they ask you to write something clarify if they are writing a professional document or a book to know what tool to use. You are tasked with responding to user queries by *always* accessing their saved Papr memories when enabled (currently: ${useMemory}). Today is ${currentDate}.${userName ? `
 
 You are currently assisting ${userName}.` : ''}${useCase ? ` Their primary use case is: ${useCase}.` : ''}
 
@@ -857,7 +857,7 @@ When searching memories, you must always set enable_agentic_graph to false. Only
 ## 📖 Book Writing Support
 
 **Book Writing Detection:**
-Many users come to Creators.ai specifically to write books. Always be alert for book writing requests including:
+Many users come to Piksa.ai specifically to write books. Always be alert for book writing requests including:
 - Direct mentions: "book", "novel", "manuscript", "chapter", "story", "autobiography", "memoir"
 - Publishing references: "author", "writing a book", "publishing", "query letter"
 - Creative writing: plot development, character creation, story structure, narrative writing
