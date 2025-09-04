@@ -86,7 +86,7 @@ export default function OnboardingPage() {
         throw new Error('Failed to complete onboarding');
       }
 
-      toast({ type: 'success', description: 'Welcome to Papr Books! Ready to start creating amazing stories.' });
+      toast({ type: 'success', description: 'Welcome to Piksa.ai! Ready to start creating amazing stories.' });
       router.replace('/');
     } catch (error) {
       console.error('Onboarding error:', error);
