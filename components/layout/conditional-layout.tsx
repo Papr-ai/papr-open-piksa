@@ -22,6 +22,9 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
   // Use client-side session as the source of truth for user state
   const currentUser = clientSession?.user || user;
   
+  // Detect chat pages that need full-height layout (specific book chat pages, not all /books/ pages)
+  const isChatPage = pathname?.startsWith('/chat/') || (pathname?.startsWith('/books/') && pathname?.match(/^\/books\/[^\/]+$/));
+  
   // Debug logging to see what's happening with both sessions
   // console.log('ConditionalLayout:', { 
   //   hasServerUser: !!user, 
@@ -80,11 +83,19 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
           <div className="flex items-center h-2 px-4 py-2 bg-transparent z-10 shrink-0 justify-between">
           </div>
         )}
-        <div className="flex-1 overflow-hidden p-3 pt-0">
-          <main className="flex-1 overflow-hidden rounded-lg bg-background h-full shadow-sm">
+        {isChatPage ? (
+          // Chat pages need full-height layout without nested scrolling
+          <div className="flex-1 min-h-0">
             {children}
-          </main>
-        </div>
+          </div>
+        ) : (
+          // Regular pages use the standard scrollable layout
+          <div className="flex-1 overflow-auto p-3 pt-0">
+            <main className="flex-1 overflow-auto rounded-lg bg-background min-h-full shadow-sm">
+              {children}
+            </main>
+          </div>
+        )}
       </SidebarInset>
     </SidebarProvider>
   );

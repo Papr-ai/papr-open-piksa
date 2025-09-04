@@ -22,6 +22,7 @@ export async function POST(request: Request) {
       userId: session.user!.id,
       contentLength: content.length
     });
+    console.log('[BOOK SAVE API] Debug - Will query for chapterNumber =', currentChapter);
 
     // Use a transaction to properly handle versioning
     const result = await db.transaction(async (tx) => {

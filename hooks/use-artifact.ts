@@ -2,7 +2,7 @@
 
 import useSWR from 'swr';
 import type { UIArtifact } from '@/components/artifact/artifact';
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo, useEffect, useRef } from 'react';
 
 export const initialArtifactData: UIArtifact = {
   documentId: 'init',
@@ -105,15 +105,32 @@ export function useArtifact(chatId?: string) {
     );
 
   // Ensure artifact metadata is stored in localStorage for persistent access
+  // Add throttling to prevent excessive saves
+  const lastSaveRef = useRef<{ time: number; data: string }>({ time: 0, data: '' });
+  
   useEffect(() => {
     if (artifact.documentId && localArtifactMetadata) {
-      // Store metadata in localStorage for persistent access between messages
       const metadataKey = `artifact-metadata-${chatId || 'global'}-${artifact.documentId}`;
-      try {
-        localStorage.setItem(metadataKey, JSON.stringify(localArtifactMetadata));
-        console.log(`[useArtifact] Saved artifact metadata to localStorage for chat ${chatId || 'global'}`);
-      } catch (error) {
-        console.error('[useArtifact] Error saving artifact metadata to localStorage:', error);
+      const currentData = JSON.stringify(localArtifactMetadata);
+      const now = Date.now();
+      
+      // Only save if data changed and it's been at least 100ms since last save
+      if (currentData !== lastSaveRef.current.data && 
+          now - lastSaveRef.current.time > 100) {
+        try {
+          localStorage.setItem(metadataKey, currentData);
+          lastSaveRef.current = { time: now, data: currentData };
+          
+          // Reduce logging frequency - only log every 10th save or first save
+          const saveCount = (window as any).__artifactSaveCount || 0;
+          (window as any).__artifactSaveCount = saveCount + 1;
+          
+          if (saveCount % 10 === 0) {
+            console.log(`[useArtifact] Saved artifact metadata to localStorage for chat ${chatId || 'global'} (save #${saveCount + 1})`);
+          }
+        } catch (error) {
+          console.error('[useArtifact] Error saving artifact metadata to localStorage:', error);
+        }
       }
     }
   }, [artifact.documentId, localArtifactMetadata, chatId]);

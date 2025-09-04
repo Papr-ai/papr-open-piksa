@@ -34,7 +34,7 @@ export type ArtifactToolbarItem = {
   onClick: (context: ArtifactToolbarContext) => void;
 };
 
-interface ArtifactContent<M = any> {
+export interface ArtifactContent<M = any> {
   title: string;
   content: string | null;
   mode: 'edit' | 'diff';
@@ -49,6 +49,8 @@ interface ArtifactContent<M = any> {
   metadata: M;
   setMetadata: Dispatch<SetStateAction<M>>;
   language?: string;
+  handleVersionChange?: (type: 'next' | 'prev' | 'toggle' | 'latest') => void;
+  totalVersions?: number;
 }
 
 interface InitializeParameters<M = any> {

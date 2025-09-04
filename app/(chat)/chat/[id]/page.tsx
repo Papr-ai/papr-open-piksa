@@ -21,8 +21,50 @@ export default async function Page({ params, searchParams }: PageProps) {
   const { documentId } = resolvedSearchParams;
   const chat = await getChatById({ id });
 
+  // If chat doesn't exist, we'll create it when the first message is sent
+  // This allows for new chats to be created by navigating to /chat/[new-uuid]
   if (!chat) {
-    notFound();
+    // For new chats, we'll use default values
+    const defaultChat = {
+      id,
+      title: 'New Chat',
+      visibility: 'private' as const,
+      userId: null, // Will be set when first message is sent
+    };
+    
+    const session = await auth();
+    
+    if (!session?.user?.email) {
+      redirect('/login');
+    }
+
+    const [dbUser] = await getUser(session.user.email);
+    
+    if (!dbUser) {
+      redirect('/login');
+    }
+
+    // Check if onboarding is completed
+    if (!dbUser.onboardingCompleted) {
+      redirect('/onboarding');
+    }
+
+    // Render chat with empty messages for new chat
+    const selectedModel = DEFAULT_CHAT_MODEL;
+    
+    return (
+      <>
+        <ChatBreadcrumb title="New Chat" chatId={id} />
+        <Chat
+          id={id}
+          initialMessages={[]}
+          selectedChatModel={selectedModel}
+          selectedVisibilityType="private"
+          isReadonly={false}
+          documentId={undefined}
+        />
+      </>
+    );
   }
 
   const session = await auth();

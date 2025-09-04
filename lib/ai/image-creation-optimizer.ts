@@ -2,6 +2,8 @@ import { generateImage } from '@/lib/ai/tools/generate-image';
 import { editImage } from '@/lib/ai/tools/edit-image';
 import { mergeImages } from '@/lib/ai/tools/merge-images';
 import type { CreateImageInput } from '@/lib/ai/tools/create-image';
+import { createMemoryService } from '@/lib/ai/memory/service';
+import { ensurePaprUser } from '@/lib/ai/memory/middleware';
 
 interface ImageCreationContext extends CreateImageInput {
   userId?: string;
@@ -19,7 +21,7 @@ export async function optimizeImageCreation(
   context: ImageCreationContext,
   userId: string
 ): Promise<OptimizedImageResult> {
-  console.log('[ImageCreationOptimizer] Starting simple deterministic approach with context:', {
+  console.log('[ImageCreationOptimizer] Starting intelligent approach with memory search:', {
     description: context.description?.substring(0, 100),
     seedImages: context.seedImages?.length || 0,
     aspectRatio: context.aspectRatio
@@ -29,7 +31,7 @@ export async function optimizeImageCreation(
   const mockDataStream = { write: (data: any) => console.log('[Tool]:', data) };
 
   // Filter out invalid seed images before processing
-  const validSeedImages = (context.seedImages || []).filter(imageUrl => {
+  let validSeedImages = (context.seedImages || []).filter(imageUrl => {
     if (!imageUrl || typeof imageUrl !== 'string') {
       console.warn('[ImageCreationOptimizer] Filtering out invalid seed image:', imageUrl);
       return false;
@@ -41,7 +43,47 @@ export async function optimizeImageCreation(
     return true;
   });
 
-  console.log(`[ImageCreationOptimizer] Valid seed images: ${validSeedImages.length}`);
+  // ENHANCED: Search memory for relevant seed images if none provided or few provided
+  if (validSeedImages.length === 0) {
+    console.log('[ImageCreationOptimizer] No seed images provided, searching memory for relevant assets...');
+    
+    try {
+      const apiKey = process.env.PAPR_MEMORY_API_KEY;
+      if (apiKey && userId) {
+        const paprUserId = await ensurePaprUser(userId, apiKey);
+        if (paprUserId) {
+          const memoryService = createMemoryService(apiKey);
+          
+          // Search for relevant images based on description
+          const memories = await memoryService.searchMemories(paprUserId, context.description, 10);
+          
+          // Extract image URLs from memory results
+          const memoryImages = memories
+            .filter(memory => memory.content?.includes('http') || memory.content?.includes('data:image'))
+            .map(memory => {
+              // Extract image URLs from memory content
+              const imageMatches = memory.content?.match(/(https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp))/gi) || [];
+              const dataUrlMatches = memory.content?.match(/(data:image\/[^;]+;base64,[A-Za-z0-9+/=]+)/gi) || [];
+              return [...imageMatches, ...dataUrlMatches];
+            })
+            .flat()
+            .filter(Boolean)
+            .slice(0, 4); // Limit to 4 images max
+            
+          if (memoryImages.length > 0) {
+            console.log(`[ImageCreationOptimizer] Found ${memoryImages.length} relevant images in memory`);
+            validSeedImages = [...validSeedImages, ...memoryImages];
+          } else {
+            console.log('[ImageCreationOptimizer] No relevant images found in memory');
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('[ImageCreationOptimizer] Memory search failed, proceeding without:', error);
+    }
+  }
+
+  console.log(`[ImageCreationOptimizer] Final seed images count: ${validSeedImages.length}`);
 
   try {
     if (validSeedImages.length > 1) {

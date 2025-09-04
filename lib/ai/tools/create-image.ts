@@ -32,35 +32,39 @@ export type CreateImageOutput = z.infer<typeof createImageOutput>;
 
 export const createImage = ({ session }: { session: Session }) =>
   tool({
-    description: `Create images with intelligent continuity management. This tool automatically:
+    description: `ENHANCED: Create images with automatic memory search and continuity management.
+
+    🚨 **CRITICAL WORKFLOW CHANGE**:
+    The AI assistant should ALWAYS use searchMemories BEFORE calling this tool to find existing assets and ask user approval!
     
     🎨 **Smart Image Creation**:
-    - Analyzes your request and searches for relevant seed images
+    - Automatically searches memory for relevant seed images when none provided
     - Uses merge+edit for multiple seeds, edit for single seed, generate for new scenes
     - Ensures visual consistency across scenes and characters
     
-    🧠 **Continuity Intelligence**:
-    - Searches memory for matching characters, rooms, objects
+    🧠 **Enhanced Memory Integration**:
+    - Backend automatically searches memory when no seed images provided
+    - Extracts image URLs from relevant memories
     - Maintains consistent character appearances and environments
     - Uses prior scene context for smooth visual transitions
     
     📝 **Usage Examples**:
-    - "Create Sarah in the library" → Searches for Sarah's portrait + library images
-    - "Show the next scene in the same room" → Uses room + character consistency
-    - "Generate a new magical forest" → Creates fresh scene when no seeds exist
+    - "Create Sarah in the library" → Memory search finds Sarah's portrait + library images automatically
+    - "Show the next scene in the same room" → Uses room + character consistency from memory
+    - "Generate a new magical forest" → Creates fresh scene when no relevant memories exist
     
     ⚠️ **IMPORTANT - Seed Images**:
+    - Tool now searches memory automatically if no seedImages provided
     - Use URLs from hyperlinked images in the conversation when available
     - Only provide seedImages if you have COMPLETE HTTP URLs (https://...) or COMPLETE base64 data URLs (data:image/jpeg;base64,...)
     - DO NOT use partial data URLs like "data:image" - these will cause errors
-    - If you don't have complete image URLs, leave seedImages empty - the tool will search memory automatically
-    - The tool's memory search is more reliable than providing partial/invalid URLs
+    - Leave seedImages empty to trigger automatic memory search
     
     ✨ **Best Practices**:
-    - Provide detailed descriptions for better results
+    - Provide detailed descriptions for better memory search and results
     - Include scene context for story continuity
-    - Mention specific characters/locations for consistency searches
-    - Leave seedImages empty unless you have complete, valid URLs`,
+    - Mention specific characters/locations for better memory matching
+    - Leave seedImages empty unless you have complete, valid URLs - memory search is more reliable`,
     inputSchema: createImageInput,
     execute: async (input) => {
       try {

@@ -742,8 +742,35 @@ const PurePreviewMessage = ({
     }
   }, [message]);
 
-  // Auto-open book artifact when createBook tool completes successfully
+  // Auto-open book artifact when createBook tool completes successfully OR when experimental_artifacts are present
   useEffect(() => {
+    // Handle experimental_artifacts (for initial book loading)
+    if (message.role === 'assistant' && (message as any).experimental_artifacts) {
+      const artifacts = (message as any).experimental_artifacts;
+      const bookArtifacts = artifacts.filter((artifact: any) => artifact.kind === 'book');
+      
+      if (bookArtifacts.length > 0) {
+        const bookArtifact = bookArtifacts[0];
+        console.log('[Message] Auto-opening book artifact from experimental_artifacts:', bookArtifact);
+        
+        setArtifact({
+          title: `📖 ${bookArtifact.title}`,
+          documentId: generateUUID(),
+          kind: 'book',
+          content: bookArtifact.content,
+          isVisible: true,
+          status: 'idle',
+          boundingBox: {
+            top: 100,
+            left: 100,
+            width: 1000,
+            height: 700
+          },
+        });
+      }
+    }
+    
+    // Handle tool-based book creation (existing logic)
     if (message.role === 'assistant' && message.parts) {
       // Look for completed createBook tool calls
       const createBookResults = message.parts.filter((part: any) => 
@@ -924,7 +951,7 @@ const PurePreviewMessage = ({
       }
     }
     return events;
-  }, [] as ReasoningEvent[]);
+  }, [] as ReasoningEvent[]) || [];
 
   // Check if we're using a model with reasoning support
   const isReasoningEnabled = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;

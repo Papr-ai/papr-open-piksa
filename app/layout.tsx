@@ -20,8 +20,8 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://chat.vercel.ai'),
-  title: 'Papr Memory Chatbot Template',
-  description: 'Next.js chatbot template using the AI SDK with Papr Memory.',
+  title: 'Papr Books - AI-Powered Book Creation Platform',
+  description: 'Create amazing books with AI assistance. From story planning to character development, illustrations, and publishing - your complete book creation companion.',
 };
 
 export const viewport = {

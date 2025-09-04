@@ -123,7 +123,7 @@ Write the actual story content for this chapter.`;
       
       if (session?.user?.id) {
         try {
-          console.log(`[createBook] Saving chapter ${chapterNumber} of "${bookTitle}"`);
+          console.log(`🔥 [createBook] SAVING CHAPTER ${chapterNumber} of "${bookTitle}" 🔥`);
           
           // Use provided bookId or find/create one
           let bookId: string;
@@ -147,6 +147,7 @@ Write the actual story content for this chapter.`;
           }
 
           // Check if this specific chapter already exists (latest version)
+          console.log(`🔥 [createBook] CHECKING FOR EXISTING CHAPTER ${chapterNumber} 🔥`);
           const existingChapter = await db.execute(
             sql`SELECT * FROM "Books" 
                 WHERE "bookId" = ${bookId}
@@ -156,6 +157,7 @@ Write the actual story content for this chapter.`;
                 ORDER BY "createdAt" DESC
                 LIMIT 1`
           );
+          console.log(`[createBook] Found ${existingChapter.length} existing chapters for chapter ${chapterNumber}`);
 
           if (existingChapter.length > 0) {
             // Create new version of existing chapter

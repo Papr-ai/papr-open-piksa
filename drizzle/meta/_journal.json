@@ -50,6 +50,20 @@
       "when": 1756532074139,
       "tag": "0006_greedy_lilandra",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1756839844376,
+      "tag": "0007_right_strong_guy",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1756841038954,
+      "tag": "0008_lean_orphan",
+      "breakpoints": true
     }
   ]
 }

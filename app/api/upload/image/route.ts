@@ -27,10 +27,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File size must be less than 5MB' }, { status: 400 });
     }
 
-    // Create unique filename
+    // Create unique filename for book content
     const timestamp = Date.now();
     const fileExtension = file.name.split('.').pop() || 'jpg';
-    const filename = `avatars/${session.user.id}-${timestamp}.${fileExtension}`;
+    const filename = `book-content/${session.user.id}/${timestamp}.${fileExtension}`;
 
     // Upload to Vercel Blob
     const blob = await put(filename, file, {

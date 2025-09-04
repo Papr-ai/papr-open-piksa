@@ -1,4 +1,5 @@
 import { Artifact } from '@/components/artifact/create-artifact';
+import type { ArtifactContent } from '@/components/artifact/create-artifact';
 import { DiffView } from '@/components/editor/diffview';
 import { DocumentSkeleton } from '@/components/document/document-skeleton';
 import { Editor } from '@/components/editor/text-editor';
@@ -33,7 +34,8 @@ async function getBookChapters(bookIdentifier: string, isBookId: boolean = false
     const param = isBookId ? `bookId=${encodeURIComponent(bookIdentifier)}` : `bookTitle=${encodeURIComponent(bookIdentifier)}`;
     const response = await fetch(`/api/books?${param}`, { signal });
     if (response.ok) {
-      const chapters = await response.json();
+      const data = await response.json();
+      const chapters = Array.isArray(data) ? data : (data.books || []);
       return chapters
         .sort((a: any, b: any) => a.chapterNumber - b.chapterNumber)
         .map((chapter: any) => ({
@@ -173,6 +175,10 @@ interface BookPageProps {
   status?: string;
   suggestions?: Array<Suggestion>;
   metadata?: BookArtifactMetadata;
+  currentVersionIndex?: number;
+  totalVersions?: number;
+  onVersionRestore?: () => void;
+  onVersionLatest?: () => void;
 }
 
 function BookPage({
@@ -190,6 +196,10 @@ function BookPage({
   status,
   suggestions = [],
   metadata,
+  currentVersionIndex,
+  totalVersions,
+  onVersionRestore,
+  onVersionLatest,
 }: BookPageProps) {
   const [showChapterDropdown, setShowChapterDropdown] = useState(false);
   // Removed selectedText state
@@ -698,13 +708,14 @@ function BookPage({
               </div>
             )}
 
+
             {/* Editor */}
             <div className="prose prose-lg max-w-none font-serif leading-relaxed text-gray-900 dark:text-gray-100 prose-headings:text-gray-900 dark:prose-headings:text-gray-100" style={{ minHeight: '500px' }}>
               <Editor
-                content={content || ''}
+                content={isCurrentVersion ? (chapters[Math.max(0, (metadata?.currentChapter ?? 1) - 1)]?.content || content || '') : (content || '')}
                 suggestions={suggestions}
                 isCurrentVersion={isCurrentVersion}
-                currentVersionIndex={0}
+                currentVersionIndex={currentVersionIndex || 0}
                 status={(status as 'streaming' | 'idle') || 'idle'}
                 onSaveContent={handleSaveContent}
               />
@@ -822,15 +833,25 @@ function BookPage({
                                       return contextPages.join('\n\n');
                                     })()}
                                     onSaveContent={(updatedContent, debounce) => {
-                                    console.log('[BOOK] Left page save triggered:', { 
+                                    console.log('🔥 [TWO-COLUMN] LEFT PAGE SAVE TRIGGERED 🔥', { 
                                       debounce, 
                                       pageIndex: pageLayout.leftPageIndex, 
-                                      contentLength: updatedContent.length 
+                                      contentLength: updatedContent.length,
+                                      currentChapter: metadata?.currentChapter,
+                                      chapterNumber: chapterNumber,
+                                      viewMode: effectiveViewMode
                                     });
                                     const updatedPages = [...pages];
                                     updatedPages[pageLayout.leftPageIndex] = updatedContent;
                                     const combinedContent = updatedPages.join('\n\n');
-                                    console.log('[BOOK] Combined content length:', combinedContent.length);
+                                    console.log('[TWO-COLUMN] Combined content length:', combinedContent.length);
+                                    console.log('[TWO-COLUMN] This will save to metadata.currentChapter:', metadata?.currentChapter);
+                                    console.log('🔧 [TWO-COLUMN LEFT] CHAPTER CONSISTENCY CHECK', {
+                                      actualCurrentChapter: currentChapter,
+                                      metadataCurrentChapter: metadata?.currentChapter,
+                                      isConsistent: (metadata?.currentChapter ?? 1) === currentChapter
+                                    });
+                                    
                                     handleSaveContent(combinedContent, debounce);
                                   }}
                                   />
@@ -960,9 +981,24 @@ function BookPage({
                                     return contextPages.join('\n\n');
                                   })()}
                                   onSaveContent={(updatedContent, debounce) => {
+                                    console.log('🔥 [TWO-COLUMN] RIGHT PAGE SAVE TRIGGERED 🔥', { 
+                                      debounce, 
+                                      pageIndex: pageLayout.rightPageIndex, 
+                                      contentLength: updatedContent.length,
+                                      currentChapter: metadata?.currentChapter,
+                                      chapterNumber: chapterNumber,
+                                      viewMode: effectiveViewMode
+                                    });
                                     const updatedPages = [...pages];
                                     updatedPages[pageLayout.rightPageIndex] = updatedContent;
                                     const combinedContent = updatedPages.join('\n\n');
+                                    console.log('[TWO-COLUMN] This will save to metadata.currentChapter:', metadata?.currentChapter);
+                                    console.log('🔧 [TWO-COLUMN RIGHT] CHAPTER CONSISTENCY CHECK', {
+                                      actualCurrentChapter: currentChapter,
+                                      metadataCurrentChapter: metadata?.currentChapter,
+                                      isConsistent: (metadata?.currentChapter ?? 1) === currentChapter
+                                    });
+                                    
                                     handleSaveContent(combinedContent, debounce);
                                   }}
                                 />
@@ -1018,6 +1054,50 @@ function BookPage({
         )}
       </div>
 
+      {/* Version Control Banner - Bottom Position */}
+      {effectiveViewMode === 'single' && !isCurrentVersion && totalVersions && totalVersions > 1 && (
+        <div className="bg-amber-50 dark:bg-amber-950/30 border-t border-amber-200 dark:border-amber-800 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center justify-center w-8 h-8 bg-amber-100 dark:bg-amber-900 rounded-full">
+                  <ClockRewind size={16} />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                    Viewing Previous Version
+                  </p>
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Version {totalVersions - (currentVersionIndex || 0)} of {totalVersions} 
+                    {currentVersionIndex === 0 ? ' (Latest)' : ' (Older)'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {currentVersionIndex !== 0 && onVersionRestore && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={onVersionRestore}
+                    className="text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900"
+                  >
+                    Restore This Version
+                  </Button>
+                )}
+                {onVersionLatest && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={onVersionLatest}
+                    className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200"
+                  >
+                    Back to Latest
+                  </Button>
+                )}
+              </div>
+            </div>
+        </div>
+      )}
+
       {/* Bottom Status Bar - Single Column Only */}
       {effectiveViewMode === 'single' && (
         <div className="flex justify-between items-center px-6 py-3 border-t border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900/50">
@@ -1062,16 +1142,17 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
   initialize: async ({ documentId, setMetadata }) => {
     const suggestions = await getSuggestions({ documentId });
 
-    // Initialize with basic book structure - chapters will be loaded from content
-    setMetadata({
-      suggestions,
-      chapters: [],
-      currentChapter: 0,
-      bookTitle: 'Untitled Book',
-      author: '',
-      genre: '',
-      totalWords: 0,
-    });
+          // Initialize with basic book structure - chapters will be loaded from content
+      // USING 1-BASED INDEXING to match database
+      setMetadata({
+        suggestions,
+        chapters: [],
+        currentChapter: 1, // Start with Chapter 1 (1-based)
+        bookTitle: 'Untitled Book',
+        author: '',
+        genre: '',
+        totalWords: 0,
+      });
   },
   onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
     if (streamPart.type === 'suggestion') {
@@ -1129,10 +1210,13 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
             .filter((word: string) => word.length > 0).length;
           
           const updatedChapters = [...metadata.chapters];
-          updatedChapters[metadata.currentChapter] = {
-            ...updatedChapters[metadata.currentChapter],
-            wordCount,
-          };
+          const idx = Math.max(0, (metadata.currentChapter ?? 1) - 1); // convert 1-based -> 0-based
+          if (updatedChapters[idx]) {
+            updatedChapters[idx] = {
+              ...updatedChapters[idx],
+              wordCount,
+            };
+          }
 
           return {
             ...metadata,
@@ -1156,7 +1240,9 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
     isLoading,
     metadata,
     setMetadata,
-  }) => {
+    handleVersionChange,
+    totalVersions,
+  }: ArtifactContent<BookArtifactMetadata>) => {
     // Extract book title from content and load chapters from database
     useEffect(() => {
       const abortController = new AbortController();
@@ -1215,39 +1301,34 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
         if (chapters.length > 0) {
           const totalWords = chapters.reduce((sum: number, chapter: any) => sum + chapter.wordCount, 0);
           
-          // Navigate to the target chapter if specified, otherwise go to the newest chapter
-          let targetChapterIndex = 0;
+          // Navigate to the target chapter if specified, otherwise go to the first chapter
+          // USING 1-BASED INDEXING to match database
+          let targetChapterNumber1Based = 1;
           if (targetChapterNumber) {
-            // Find the chapter with the specified chapter number
-            const chapterIndex = chapters.findIndex((ch: any) => ch.chapterNumber === targetChapterNumber);
-            if (chapterIndex >= 0) {
-              targetChapterIndex = chapterIndex;
-              console.log(`[BookArtifact] Navigating to chapter ${targetChapterNumber} (index ${targetChapterIndex})`);
-            } else {
-              console.log(`[BookArtifact] Chapter ${targetChapterNumber} not found, defaulting to newest`);
-              targetChapterIndex = chapters.length - 1;
-            }
+            // Use the target chapter number directly (1-based)
+            targetChapterNumber1Based = targetChapterNumber;
+            console.log(`[BookArtifact] Navigating to chapter ${targetChapterNumber} (1-based)`);
           } else {
-            // Default to the newest chapter
-            targetChapterIndex = chapters.length - 1;
-            console.log(`[BookArtifact] No target chapter specified, navigating to newest chapter (index ${targetChapterIndex})`);
+            // Default to the first chapter (Chapter 1)
+            targetChapterNumber1Based = 1;
+            console.log(`[BookArtifact] No target chapter specified, navigating to Chapter 1`);
           }
           
-          setMetadata((prev) => ({
+          setMetadata((prev: BookArtifactMetadata | undefined) => ({
             ...prev,
             bookTitle: extractedBookTitle,
             bookId: bookId || undefined,
             chapters: chapters,
             totalWords: totalWords,
-            currentChapter: targetChapterIndex,
-          }));
+            currentChapter: targetChapterNumber1Based, // Now using 1-based indexing
+          } as BookArtifactMetadata));
         } else {
           // If no chapters found, set the book title from content
-          setMetadata((prev) => ({
+          setMetadata((prev: BookArtifactMetadata | undefined) => ({
             ...prev,
             bookTitle: extractedBookTitle,
             bookId: bookId || undefined,
-          }));
+          } as BookArtifactMetadata));
         }
       };
       
@@ -1274,7 +1355,7 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
         
         console.log('[BookArtifact] 🏁 Cleanup completed');
       };
-    }, [content, setMetadata]);
+    }, [content]); // Removed setMetadata from dependencies to prevent infinite loop
 
     // Show loading skeleton if loading or if we only have JSON content without chapters loaded
     const hasOnlyJsonContent = (() => {
@@ -1305,12 +1386,57 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
       wordCount: chapter.wordCount || 0,
       chapterNumber: chapter.chapterNumber || index + 1,
     }));
-    const currentChapter = metadata?.currentChapter || 0;
+    // Using 1-based indexing to match database
+    // CRITICAL FIX: Always start with Chapter 1 as the visible chapter unless explicitly set
+    // The key is to ensure metadata.currentChapter always reflects what's actually visible
+    let currentChapter = metadata?.currentChapter || 1;
+    
+    // IMPORTANT: If metadata doesn't have currentChapter, initialize it to 1 (first chapter view)
+    if (!metadata?.currentChapter && setMetadata) {
+      console.log('🔍 [BOOK ARTIFACT] INITIALIZING METADATA CURRENTCHAPTER TO 1 (FIRST CHAPTER)');
+      setMetadata((prev: BookArtifactMetadata | undefined) => ({ 
+        ...prev, 
+        currentChapter: 1 
+      } as BookArtifactMetadata));
+    }
+    
+    console.log('🔍 [BOOK ARTIFACT] CHAPTER STATE TRACKING:', {
+      metadataCurrentChapter: metadata?.currentChapter,
+      displayingCurrentChapter: currentChapter,
+      chaptersAvailable: chapters.length,
+      firstChapterDBNumber: chapters[0]?.chapterNumber || 'none',
+      secondChapterDBNumber: chapters[1]?.chapterNumber || 'none',
+      NOTE: 'currentChapter represents which chapter UI is showing, not which DB record'
+    });
     const bookTitle = metadata?.bookTitle || 'Untitled Book';
     const author = metadata?.author || '';
     const totalWords = metadata?.totalWords || 0;
 
-    const currentChapterData = chapters[currentChapter] || chapters[0];
+    // Convert 1-based currentChapter to 0-based array index with bounds checking
+    const chapterArrayIndex = currentChapter - 1;
+    
+    // Runtime guard for array access
+    if (chapterArrayIndex < 0 || chapterArrayIndex >= chapters.length) {
+      console.warn(`🚨 [BOOK ARTIFACT] Invalid chapter index: ${chapterArrayIndex} (currentChapter: ${currentChapter}, total chapters: ${chapters.length})`);
+    }
+    
+    const currentChapterData = chapters[chapterArrayIndex] || chapters[0];
+    
+    console.log('🚨 [BOOK ARTIFACT] CRITICAL DISPLAY STATE DEBUG 🚨', {
+      currentChapter1Based: currentChapter,
+      chapterArrayIndex: chapterArrayIndex,
+      metadataCurrentChapter: metadata?.currentChapter,
+      currentChapterData: currentChapterData ? {
+        id: currentChapterData.id,
+        title: currentChapterData.title,
+        chapterNumber: currentChapterData.chapterNumber,
+        contentLength: currentChapterData.content?.length || 0,
+        contentPreview: currentChapterData.content?.substring(0, 50) || 'empty'
+      } : 'none',
+      totalChapters: chapters.length,
+      bookTitle,
+      MISMATCH_DETECTED: currentChapter !== (metadata?.currentChapter || 1) ? '❌ METADATA MISMATCH!' : '✅ metadata matches'
+    });
 
     // Don't render JSON content directly - only show formatted chapter content
     const getDisplayContent = () => {
@@ -1361,37 +1487,106 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
       <BookPage
         content={getDisplayContent()}
         chapterTitle={currentChapterData?.title || ''}
-        chapterNumber={currentChapter + 1}
+        chapterNumber={currentChapter} // Already 1-based, no conversion needed
         totalChapters={chapters.length}
         chapters={chapters}
-        currentChapter={currentChapter}
+        currentChapter={currentChapter} // RIGHT: 1-based, matching metadata.currentChapter
         onPrevious={() => {
-          if (currentChapter > 0) {
-            setMetadata?.((prev) => ({
+          if (currentChapter > 1) { // Chapter 1 is the minimum (1-based)
+            setMetadata?.((prev: BookArtifactMetadata | undefined) => ({
               ...prev,
-              currentChapter: currentChapter - 1,
-            }));
+              currentChapter: currentChapter - 1, // Decrement 1-based chapter
+            } as BookArtifactMetadata));
           }
         }}
         onNext={() => {
-          if (currentChapter < chapters.length - 1) {
-            setMetadata?.((prev) => ({
+          if (currentChapter < chapters.length) { // Can go up to chapters.length (1-based)
+            setMetadata?.((prev: BookArtifactMetadata | undefined) => ({
               ...prev,
-              currentChapter: currentChapter + 1,
-            }));
+              currentChapter: currentChapter + 1, // Increment 1-based chapter
+            } as BookArtifactMetadata));
           }
         }}
         onChapterSelect={(chapterIndex) => {
-          setMetadata?.((prev) => ({
-            ...prev,
-            currentChapter: chapterIndex,
-          }));
+          // Convert 0-based chapterIndex to 1-based chapter number
+          const chapterNumber1Based = chapterIndex + 1;
+          
+          console.log('🔥 [BOOK ARTIFACT] CHAPTER SELECTION (1-BASED) 🔥', {
+            selectedIndex0Based: chapterIndex,
+            selectedChapterNumber1Based: chapterNumber1Based,
+            previousChapter1Based: metadata?.currentChapter,
+            totalChapters: chapters.length,
+            selectedChapter: chapters[chapterIndex],
+            selectedChapterTitle: chapters[chapterIndex]?.title
+          });
+          
+          // CRITICAL: Update metadata with 1-based chapter number
+          setMetadata?.((prev: BookArtifactMetadata | undefined) => {
+            const newMetadata = {
+              ...prev,
+              currentChapter: chapterNumber1Based, // Store 1-based chapter number
+            };
+            console.log('🔥 [BOOK ARTIFACT] METADATA UPDATED (1-BASED) 🔥', {
+              oldCurrentChapter1Based: prev?.currentChapter,
+              newCurrentChapter1Based: chapterNumber1Based,
+              chapterNumberSelected: chapters[chapterIndex]?.chapterNumber
+            });
+            return newMetadata as BookArtifactMetadata;
+          });
         }}
-        onSaveContent={onSaveContent}
+        onSaveContent={(content, debounce) => {
+          console.log('🔥 [BOOK ARTIFACT] CHAPTER-AWARE SAVE (1-BASED) 🔥', {
+            currentChapter1Based: currentChapter,
+            metadataCurrentChapter1Based: metadata?.currentChapter,
+            chapterMismatch: (metadata?.currentChapter ?? 1) !== currentChapter,
+            contentPreview: content.substring(0, 100),
+            willSaveToChapter: currentChapter
+          });
+          
+          // CRITICAL FIX: Ensure metadata matches actual chapter before save
+          if (setMetadata && (metadata?.currentChapter ?? 1) !== currentChapter) {
+            console.log('🔧 [BOOK ARTIFACT] FIXING METADATA MISMATCH (1-BASED)', {
+              oldMetadataCurrentChapter: metadata?.currentChapter,
+              newCurrentChapter: currentChapter,
+              chapterNumberToSave: currentChapter
+            });
+            
+            // Update metadata synchronously before calling save
+            setMetadata((prev: BookArtifactMetadata | undefined) => ({ ...prev, currentChapter } as BookArtifactMetadata));
+            
+            // Give React a moment to update the metadata, then save
+            setTimeout(() => {
+              console.log('🔧 [BOOK ARTIFACT] CALLING SAVE AFTER METADATA FIX');
+              onSaveContent(content, debounce);
+            }, 50);
+          } else {
+            console.log('✅ [BOOK ARTIFACT] METADATA MATCHES (1-BASED), SAVING DIRECTLY');
+            onSaveContent(content, debounce);
+          }
+        }}
         isCurrentVersion={isCurrentVersion}
         status={status}
         suggestions={metadata?.suggestions || []}
         metadata={metadata}
+        currentVersionIndex={currentVersionIndex}
+        totalVersions={totalVersions}
+        onVersionRestore={() => {
+          // Restore the currently viewed version by copying its content to a new version
+          const currentContent = getDocumentContentById?.(currentVersionIndex || 0);
+          if (currentContent && onSaveContent) {
+            console.log('[BOOK ARTIFACT] Restoring version', currentVersionIndex, 'as new latest version');
+            onSaveContent(currentContent, false); // Save immediately without debounce
+            // Navigate back to latest after restore
+            setTimeout(() => {
+              handleVersionChange?.('latest');
+            }, 100);
+          }
+        }}
+        onVersionLatest={() => {
+          // Navigate back to the latest version
+          console.log('[BOOK ARTIFACT] Returning to latest version');
+          handleVersionChange?.('latest');
+        }}
       />
     );
   },
@@ -1403,15 +1598,14 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
         // This will be handled by the component's state
       },
     },
+    // Version control for book chapters
     {
       icon: <ClockRewind size={18} />,
       description: 'View changes',
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('toggle');
       },
-      isDisabled: ({ currentVersionIndex }) => {
-        return currentVersionIndex === 0;
-      },
+      isDisabled: () => false, // Enable for books
     },
     {
       icon: <UndoIcon size={18} />,
@@ -1419,9 +1613,7 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('prev');
       },
-      isDisabled: ({ currentVersionIndex }) => {
-        return currentVersionIndex === 0;
-      },
+      isDisabled: () => false, // Enable for books
     },
     {
       icon: <RedoIcon size={18} />,
@@ -1429,9 +1621,7 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('next');
       },
-      isDisabled: ({ isCurrentVersion }) => {
-        return isCurrentVersion;
-      },
+      isDisabled: () => false, // Enable for books
     },
     {
       icon: <SaveIcon size={18} />,

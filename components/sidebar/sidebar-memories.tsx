@@ -3,7 +3,7 @@ import {
   SidebarGroupContent,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { FileIcon, BoxIcon, DocumentIcon } from '@/components/common/icons';
+import { FileIcon, BoxIcon, DocumentIcon, BookOpen, PenTool, Users, Image } from 'lucide-react';
 import type { User } from 'next-auth';
 import Link from 'next/link';
 
@@ -19,32 +19,40 @@ export function SidebarPrimaryNav({ user }: { user: User | undefined }) {
       <SidebarGroupContent>
         <div className="space-y-1">
           <Link
-            href="/memories/collections"
+            href="/books"
             className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
             onClick={() => setOpenMobile(false)}
           >
-            <BoxIcon size={16} />
-            <span>Collections</span>
+            <BookOpen size={16} />
+            <span>My Books</span>
           </Link>
 
           <Link
-            href="/memories/pages"
+            href="/books/new"
             className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
             onClick={() => setOpenMobile(false)}
           >
-            <FileIcon size={16} />
-            <span>Artifacts</span>
+            <PenTool size={16} />
+            <span>Start Writing</span>
           </Link>
 
-          {/*<Link
-            href="/memories/shelf"
+          <Link
+            href="/characters"
             className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
             onClick={() => setOpenMobile(false)}
           >
-            <DocumentIcon size={16} />
-            <span>Library</span>
-          </Link>*/}
+            <Users size={16} />
+            <span>Characters</span>
+          </Link>
 
+          <Link
+            href="/illustrations"
+            className="flex items-center gap-2 p-2 hover:bg-muted/50 rounded-md"
+            onClick={() => setOpenMobile(false)}
+          >
+            <Image size={16} />
+            <span>Illustrations</span>
+          </Link>
 
         </div>
       </SidebarGroupContent>

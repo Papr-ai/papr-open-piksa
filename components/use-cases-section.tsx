@@ -80,18 +80,17 @@ export function UseCasesSection() {
         
         <div className="relative">
           <div className="flex flex-row flex-wrap gap-2 md:gap-4 [&>*]:w-[calc((100%-0.5rem)/2)] [&>*]:sm:w-[calc((100%-1rem)/2)] relative">
-            {/* Example use case card 1 */}
+            {/* Example use case card 1 - Children's Book */}
             <div className={`flex relative flex-col gap-1 items-start p-4 cursor-pointer min-h-[150px] group/item-btns border rounded-[12px] border-border bg-card transition-all duration-500 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`} style={{ transitionDelay: '100ms' }}>
               <div className="flex-1 w-full min-h-[44px]">
-                <span className="text-ellipsis break-words line-clamp-3 text-sm text-foreground">AI Agent Training for Productivity: Objectives, Concepts, and Practices</span>
+                <span className="text-ellipsis break-words line-clamp-3 text-sm text-foreground">The Magical Forest Adventure: Complete Children's Book with Illustrations</span>
               </div>
               <div className="flex items-center gap-1.5 group-hover/item-btns:hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" width="16" height="16" className="text-muted-foreground">
-                  <path d="M6.99976 5.9974V4.26406C6.99976 3.38041 7.7161 2.66406 8.59976 2.66406H15.3998C16.2834 2.66406 16.9998 3.38041 16.9998 4.26406V5.9974" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
-                  <path d="M5.00024 10V8C5.00024 6.89543 5.89567 6 7.00024 6H17.0002C18.1048 6 19.0002 6.89543 19.0002 8V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
-                  <path d="M19 10H5C3.89543 10 3 10.8954 3 12V20C3 21.1046 3.89543 22 5 22H19C20.1046 22 21 21.1046 21 20V12C21 10.8954 20.1046 10 19 10Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-                <div className="text-muted-foreground text-[13px] leading-[18px] truncate">Memory</div>
+                <div className="text-muted-foreground text-[13px] leading-[18px] truncate">Picture Book</div>
               </div>
               <div className="w-full absolute bottom-0 left-0 min-h-[127px] hidden group-hover/item-btns:flex items-end justify-center bg-[linear-gradient(180deg,transparent_0%,hsl(var(--card))_50%)] px-[16px] pb-[16px]">
                 <button className="inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring hover:opacity-90 active:opacity-80 bg-primary text-primary-foreground h-[32px] px-[8px] gap-[4px] text-[13px] leading-[18px] rounded-[100px] w-full">
@@ -105,16 +104,17 @@ export function UseCasesSection() {
               </div>
             </div>
             
-            {/* Example use case card 2 */}
+            {/* Example use case card 2 - Novel */}
             <div className={`flex relative flex-col gap-1 items-start p-4 cursor-pointer min-h-[150px] group/item-btns border rounded-[12px] border-border bg-card transition-all duration-500 ${isVisible ? 'translate-y-0 opacity-100' : 'translate-y-10 opacity-0'}`} style={{ transitionDelay: '200ms' }}>
               <div className="flex-1 w-full min-h-[44px]">
-                <span className="text-ellipsis break-words line-clamp-3 text-sm text-foreground">Document Analysis and Summarization with Memory</span>
+                <span className="text-ellipsis break-words line-clamp-3 text-sm text-foreground">Character-Driven Fantasy Novel: World Building and Plot Development</span>
               </div>
               <div className="flex items-center gap-1.5 group-hover/item-btns:hidden">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" width="16" height="16" className="text-muted-foreground">
-                  <path d="M13.9998 3.85156C13.9996 3.69616 13.7809 3.33333 13.1847 3.33333H2.81494C2.21879 3.33333 2.00011 3.69616 1.99984 3.85156V12.1484L2.01025 12.2148C2.06009 12.3884 2.29281 12.6667 2.81494 12.6667H13.1847C13.7809 12.6667 13.9996 12.3038 13.9998 12.1484V3.85156ZM6.25895 5.04688C6.47058 4.92933 6.72919 4.93591 6.93473 5.0638L10.7446 7.43425C10.94 7.55597 11.0591 7.76979 11.0591 8C11.0591 8.23021 10.94 8.44403 10.7446 8.56576L6.93473 10.9362C6.72919 11.0641 6.47058 11.0707 6.25895 10.9531C6.04733 10.8356 5.91588 10.6125 5.91585 10.3704V5.62956C5.91588 5.38747 6.04733 5.16444 6.25895 5.04688ZM7.24919 9.16992L9.13005 8L7.24919 6.82943V9.16992ZM15.3332 12.1484C15.333 13.3021 14.2245 14 13.1847 14H2.81494C1.80763 14 0.735884 13.3451 0.669759 12.2552L0.666504 12.1484V3.85156C0.666689 2.69785 1.77515 2 2.81494 2H13.1847C14.2245 2 15.333 2.69785 15.3332 3.85156V12.1484Z" fill="currentColor"></path>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" width="16" height="16" className="text-muted-foreground">
+                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <polyline points="14,2 14,8 20,8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
-                <div className="text-muted-foreground text-[13px] leading-[18px] truncate">Document</div>
+                <div className="text-muted-foreground text-[13px] leading-[18px] truncate">Novel</div>
               </div>
               <div className="w-full absolute bottom-0 left-0 min-h-[127px] hidden group-hover/item-btns:flex items-end justify-center bg-[linear-gradient(180deg,transparent_0%,hsl(var(--card))_50%)] px-[16px] pb-[16px]">
                 <button className="inline-flex items-center justify-center whitespace-nowrap font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring hover:opacity-90 active:opacity-80 bg-primary text-primary-foreground h-[32px] px-[8px] gap-[4px] text-[13px] leading-[18px] rounded-[100px] w-full">

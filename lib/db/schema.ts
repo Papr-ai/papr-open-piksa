@@ -139,6 +139,54 @@ export const message = pgTable('Message_v2', {
 
 export type DBMessage = InferSelectModel<typeof message>;
 
+// Book props table for characters, environments, objects, etc.
+// This works with the existing Books table (which stores chapters)
+export const bookProp = pgTable('BookProp', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  bookId: uuid('bookId').notNull(), // References bookId from Books table, not a foreign key since Books has multiple rows per book
+  bookTitle: varchar('bookTitle', { length: 255 }).notNull(), // Denormalized for easy access
+  type: varchar('type', { length: 50 }).notNull(), // 'character', 'environment', 'object', 'illustration', 'prop'
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  metadata: jsonb('metadata').default({}), // Store character details, physical descriptions, etc.
+  memoryId: varchar('memoryId', { length: 255 }), // Reference to Papr Memory ID
+  imageUrl: varchar('imageUrl', { length: 500 }), // Generated character/environment image
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+});
+
+export type BookProp = InferSelectModel<typeof bookProp>;
+
+// Book tasks table for tracking workflow progress
+export const bookTask = pgTable('BookTask', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  bookId: uuid('bookId').notNull(), // References bookId from Books table
+  bookTitle: varchar('bookTitle', { length: 255 }).notNull(), // Denormalized for easy access
+  stepNumber: integer('stepNumber').notNull(), // 1-7 based on WORKFLOW_STEPS
+  stepName: varchar('stepName', { length: 100 }).notNull(), // e.g., 'Story Planning', 'Chapter Drafting'
+  status: varchar('status', { length: 50 }).notNull().default('pending'), // 'pending', 'in_progress', 'completed', 'approved', 'skipped'
+  toolUsed: varchar('toolUsed', { length: 100 }), // e.g., 'createBookPlan', 'draftChapter'
+  completedAt: timestamp('completedAt'),
+  approvedAt: timestamp('approvedAt'),
+  metadata: jsonb('metadata').default({}), // Store step-specific data, results, etc.
+  notes: text('notes'), // User notes or AI-generated summaries
+  isPictureBook: boolean('isPictureBook').default(false), // Determines which steps are applicable
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+  updatedAt: timestamp('updatedAt').notNull().defaultNow(),
+}, (table) => {
+  return {
+    uniqueBookStep: unique().on(table.bookId, table.stepNumber),
+  };
+});
+
+export type BookTask = InferSelectModel<typeof bookTask>;
+
 // DEPRECATED: The following schema is deprecated and will be removed in the future.
 // Read the migration guide at https://github.com/vercel/ai-chatbot/blob/main/docs/04-migrate-to-parts.md
 export const voteDeprecated = pgTable(

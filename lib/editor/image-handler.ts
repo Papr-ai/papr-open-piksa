@@ -10,14 +10,14 @@ async function uploadImageToBlob(file: File): Promise<string | null> {
     const formData = new FormData();
     formData.append('file', file);
 
-    const response = await fetch('/api/files/upload', {
+    const response = await fetch('/api/upload/image', {
       method: 'POST',
       body: formData,
     });
 
     if (response.ok) {
       const data = await response.json();
-      return data.url;
+      return data.imageUrl;
     } else {
       console.error('Failed to upload image:', await response.text());
       return null;

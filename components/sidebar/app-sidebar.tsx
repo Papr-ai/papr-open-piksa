@@ -38,7 +38,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
             >
               <img src="/images/papr-logo.svg" alt="Papr Logo" className="size-6 ml-2" />
               <span className="text-lg font-semibold pr-2 hover:bg-muted rounded-md cursor-pointer">
-                Papr Chat
+                Papr Books
               </span>
             </Link>
             <Tooltip>
@@ -56,7 +56,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                   <PlusIcon />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent align="end">New Chat</TooltipContent>
+              <TooltipContent align="end">New Book</TooltipContent>
             </Tooltip>
           </div>
         </SidebarMenu>

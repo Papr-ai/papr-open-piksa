@@ -45,6 +45,8 @@ export interface ArtifactContentProps {
   metadata?: any;
   setMetadata?: (metadata: any) => void;
   language?: string;
+  handleVersionChange?: (type: 'next' | 'prev' | 'toggle' | 'latest') => void;
+  totalVersions?: number;
 }
 
 export const artifactDefinitions = [
@@ -183,11 +185,15 @@ function PureArtifact({
     };
   }, [artifact.isVisible, artifact.documentId]);
 
-  const shouldFetchDocuments = artifact.documentId !== 'init' && artifact.status !== 'streaming';
+  // For book artifacts, don't try to fetch document versions
+  // Books have their own versioning system in the Books table
+  const shouldFetchDocuments = artifact.documentId !== 'init' && artifact.status !== 'streaming' && artifact.kind !== 'book';
+  
   console.log('[ARTIFACT] Document fetch condition:', {
     documentId: artifact.documentId,
     status: artifact.status,
     shouldFetch: shouldFetchDocuments,
+    artifactKind: artifact.kind,
     fetchUrl: shouldFetchDocuments ? `/api/document?id=${artifact.documentId}` : null
   });
 
@@ -197,6 +203,34 @@ function PureArtifact({
     mutate: mutateDocuments,
   } = useSWR<Array<Document>>(
     shouldFetchDocuments ? `/api/document?id=${artifact.documentId}` : null,
+    fetcher,
+    {
+      // Prevent automatic revalidation when component unmounts
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+      shouldRetryOnError: false,
+    }
+  );
+
+  // For book artifacts, fetch chapter versions
+  const shouldFetchBookVersions = artifact.documentId !== 'init' && artifact.status !== 'streaming' && artifact.kind === 'book';
+  const currentChapter = metadata?.currentChapter || 1;
+  
+  console.log('[ARTIFACT] Book versions fetch condition:', {
+    documentId: artifact.documentId,
+    status: artifact.status,
+    shouldFetch: shouldFetchBookVersions,
+    artifactKind: artifact.kind,
+    currentChapter: currentChapter,
+    fetchUrl: shouldFetchBookVersions ? `/api/books/${artifact.documentId}?versions=true&chapter=${currentChapter}` : null
+  });
+
+  const {
+    data: bookVersions,
+    isLoading: isBookVersionsFetching,
+    mutate: mutateBookVersions,
+  } = useSWR<Array<Document>>(
+    shouldFetchBookVersions ? `/api/books/${artifact.documentId}?versions=true&chapter=${currentChapter}` : null,
     fetcher,
     {
       // Prevent automatic revalidation when component unmounts
@@ -248,12 +282,47 @@ function PureArtifact({
     }
   }, [documents, setArtifact, isDocumentsFetching]);
 
+  // Handle book versions (similar to documents but for book chapters)
+  useEffect(() => {
+    console.log('[ARTIFACT] Book versions effect triggered:', {
+      hasBookVersions: !!bookVersions,
+      bookVersionsLength: bookVersions?.length || 0,
+      isLoading: isBookVersionsFetching,
+      currentChapter: currentChapter,
+      bookVersionsData: bookVersions?.map(v => ({ 
+        id: v.id, 
+        createdAt: v.createdAt, 
+        contentLength: v.content?.length || 0,
+        contentPreview: v.content?.substring(0, 50) + '...'
+      }))
+    });
+    
+    if (bookVersions && bookVersions.length > 0) {
+      const mostRecentVersion = bookVersions.at(0); // Book versions are ordered newest first
+
+      if (mostRecentVersion) {
+        console.log('[ARTIFACT] Setting document from book version:', {
+          versionId: mostRecentVersion.id,
+          contentLength: mostRecentVersion.content?.length || 0,
+          chapter: currentChapter
+        });
+        setDocument(mostRecentVersion);
+        setCurrentVersionIndex(0); // Most recent is at index 0
+        // Note: We don't update artifact content here for books since they manage their own content
+      }
+    }
+  }, [bookVersions, isBookVersionsFetching, currentChapter]);
+
   useEffect(() => {
     // Only mutate documents if artifact is visible and not in the process of closing
     if (artifact.isVisible) {
       mutateDocuments();
+      // Also mutate book versions for book artifacts
+      if (artifact.kind === 'book') {
+        mutateBookVersions();
+      }
     }
-  }, [artifact.status, artifact.isVisible, mutateDocuments]);
+  }, [artifact.status, artifact.isVisible, mutateDocuments, mutateBookVersions, artifact.kind]);
 
   // Separate cleanup effect for SWR (after mutateDocuments is defined)
   useEffect(() => {
@@ -268,6 +337,7 @@ function PureArtifact({
 
   const { mutate } = useSWRConfig();
   const [isContentDirty, setIsContentDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleContentChange = useCallback(
     (updatedContent: string) => {
@@ -368,18 +438,31 @@ function PureArtifact({
 
   const saveContent = useCallback(
     (updatedContent: string, debounce: boolean) => {
-      console.log('[ARTIFACT] saveContent called:', {
+      console.log('🔥 [ARTIFACT] SAVE CONTENT CALLED 🔥', {
         artifactKind: artifact.kind,
         hasDocument: !!document,
         contentChanged: document ? updatedContent !== document.content : 'no document',
         debounce,
         contentLength: updatedContent.length,
-        currentContentLength: document?.content?.length || 0
+        currentContentLength: document?.content?.length || 0,
+        metadataCurrentChapter: metadata?.currentChapter,
+        contentPreview: updatedContent.substring(0, 100),
+        bookTitle: metadata?.bookTitle,
+        totalChapters: metadata?.chapters?.length,
+        currentChapterData: metadata?.chapters?.[metadata?.currentChapter ?? 0],
+        contentContainsChapter1: updatedContent.toLowerCase().includes('chapter 1'),
+        contentContainsChapter2: updatedContent.toLowerCase().includes('chapter 2')
       });
       
       // Special handling for book artifacts - they don't use the Document table
       if (artifact.kind === 'book') {
         console.log('[ARTIFACT] Book artifact detected - using book-specific save');
+        
+        // Prevent multiple simultaneous saves
+        if (isSaving) {
+          console.log('[ARTIFACT] Save already in progress, skipping');
+          return;
+        }
         
         // Update artifact content immediately
         setArtifact((currentArtifact) => ({
@@ -389,8 +472,22 @@ function PureArtifact({
         
         // Save to Books table via API
         const saveToDatabase = async () => {
+          setIsSaving(true);
           try {
+            // Using 1-based indexing throughout - no conversion needed!
+            const chapterToSave = metadata?.currentChapter ?? 1;
+            console.log('🔥 [ARTIFACT] CRITICAL DEBUG - SAVE OPERATION STARTING 🔥');
             console.log('[ARTIFACT] Saving book to database via /api/book/save');
+            console.log('[ARTIFACT] Debug - metadata?.currentChapter:', metadata?.currentChapter);
+            console.log('[ARTIFACT] Debug - chapterToSave:', chapterToSave);
+            console.log('[ARTIFACT] Debug - bookId:', artifact.documentId);
+            console.log('[ARTIFACT] Debug - Expected: Chapter 2 should have currentChapter=1, chapterToSave=2');
+            console.log('[ARTIFACT] Debug - chapters array:', metadata?.chapters?.map(ch => ({ 
+              chapterNumber: ch.chapterNumber, 
+              title: ch.title,
+              id: ch.id 
+            })));
+            console.log('[ARTIFACT] Debug - currentChapterData:', metadata?.chapters?.[metadata?.currentChapter ?? 0]);
             const response = await fetch('/api/book/save', {
               method: 'POST',
               headers: {
@@ -399,7 +496,7 @@ function PureArtifact({
               body: JSON.stringify({
                 bookId: artifact.documentId,
                 content: updatedContent,
-                currentChapter: metadata?.currentChapter || 1,
+                currentChapter: chapterToSave, // Use the debug variable
               }),
             });
 
@@ -437,16 +534,62 @@ function PureArtifact({
               }
             } else {
               console.log('[ARTIFACT] Book saved successfully to database');
+              
+              // Update local metadata to reflect the saved content
+              setMetadata?.((prev) => {
+                if (!prev) return prev;
+                
+                // CRITICAL FIX: Convert 1-based currentChapter to 0-based array index
+                const currentChapterIndex = Math.max(0, (prev.currentChapter ?? 1) - 1);
+                const updatedChapters = [...(prev.chapters || [])];
+                
+                console.log('🔄 [ARTIFACT] UPDATING LOCAL STATE AFTER SAVE', {
+                  currentChapter1Based: prev.currentChapter,
+                  arrayIndex0Based: currentChapterIndex,
+                  totalChapters: updatedChapters.length,
+                  updatingChapter: updatedChapters[currentChapterIndex]?.chapterNumber
+                });
+                
+                // Update the current chapter's content in local state
+                if (updatedChapters[currentChapterIndex]) {
+                  updatedChapters[currentChapterIndex] = {
+                    ...updatedChapters[currentChapterIndex],
+                    content: updatedContent,
+                    wordCount: updatedContent.trim().split(/\s+/).filter(word => word.length > 0).length
+                  };
+                } else {
+                  console.warn('🚨 [ARTIFACT] Invalid chapter index for local state update:', {
+                    currentChapterIndex,
+                    availableChapters: updatedChapters.length
+                  });
+                }
+                
+                return {
+                  ...prev,
+                  chapters: updatedChapters,
+                  totalWords: updatedChapters.reduce((sum, chapter) => sum + (chapter.wordCount || 0), 0)
+                };
+              });
+              
+              // Also update the main artifact content to keep it in sync
+              setArtifact?.((currentArtifact) => ({
+                ...currentArtifact,
+                content: updatedContent,
+              }));
             }
           } catch (error) {
             console.error('[ARTIFACT] Error saving book:', error);
+          } finally {
+            setIsSaving(false);
           }
         };
 
         if (debounce) {
           // Use a simple timeout for debouncing book saves
-          setTimeout(saveToDatabase, 1000);
+          const timeoutId = setTimeout(saveToDatabase, 1000);
+          console.log('[ARTIFACT] Scheduled debounced book save with timeout:', timeoutId);
         } else {
+          console.log('[ARTIFACT] Executing immediate book save');
           saveToDatabase();
         }
         
@@ -471,14 +614,21 @@ function PureArtifact({
   );
 
   function getDocumentContentById(index: number) {
-    if (!documents) return '';
-    if (!documents[index]) return '';
-    return documents[index].content ?? '';
+    // Use book versions for book artifacts, documents for others
+    const versionsToUse = artifact.kind === 'book' ? bookVersions : documents;
+    
+    if (!versionsToUse) return '';
+    if (!versionsToUse[index]) return '';
+    return versionsToUse[index].content ?? '';
   }
 
   const handleVersionChange = (type: 'next' | 'prev' | 'toggle' | 'latest') => {
-    if (!documents) {
-      console.log('[ARTIFACT] No documents available for version control');
+    // Use book versions for book artifacts, documents for others
+    const versionsToUse = artifact.kind === 'book' ? bookVersions : documents;
+    const isLoadingVersions = artifact.kind === 'book' ? isBookVersionsFetching : isDocumentsFetching;
+    
+    if (!versionsToUse) {
+      console.log('[ARTIFACT] No versions available for version control (artifact kind:', artifact.kind, ')');
       return;
     }
 
@@ -486,23 +636,26 @@ function PureArtifact({
       type,
       documentId: artifact.documentId,
       currentIndex: currentVersionIndex,
-      totalVersions: documents.length,
+      totalVersions: versionsToUse.length,
+      artifactKind: artifact.kind,
+      versionsToUse: versionsToUse?.map(v => ({ id: v.id, createdAt: v.createdAt, contentLength: v.content?.length || 0 }))
     });
 
     try {
       if (type === 'latest') {
-        if (documents.length === 0) {
+        if (versionsToUse.length === 0) {
           console.log('[ARTIFACT] No versions available to navigate to');
           return;
         }
 
-        const latestIndex = documents.length - 1;
+        // For books, latest is at index 0 (newest first), for documents it's at the end
+        const latestIndex = artifact.kind === 'book' ? 0 : versionsToUse.length - 1;
         console.log('[ARTIFACT] Setting to latest version:', latestIndex);
         setCurrentVersionIndex(latestIndex);
         setMode('edit');
 
         // Update artifact content with the latest document
-        const latestDoc = documents[latestIndex];
+        const latestDoc = versionsToUse[latestIndex];
         if (latestDoc?.content) {
           console.log('[ARTIFACT] Updating content with latest version', {
             contentLength: latestDoc.content.length,
@@ -528,13 +681,20 @@ function PureArtifact({
       }
 
       if (type === 'prev') {
-        if (currentVersionIndex > 0) {
-          const newIndex = currentVersionIndex - 1;
+        // For books: higher index = older version, for documents: lower index = older version
+        const canGoPrev = artifact.kind === 'book' ? 
+          currentVersionIndex < versionsToUse.length - 1 : 
+          currentVersionIndex > 0;
+        
+        if (canGoPrev) {
+          const newIndex = artifact.kind === 'book' ? 
+            currentVersionIndex + 1 : 
+            currentVersionIndex - 1;
           console.log('[ARTIFACT] Moving to previous version:', newIndex);
           setCurrentVersionIndex(newIndex);
 
           // Update artifact content with the selected document
-          const selectedDoc = documents[newIndex];
+          const selectedDoc = versionsToUse[newIndex];
           if (selectedDoc?.content) {
             console.log('[ARTIFACT] Updated content with previous version', {
               index: newIndex,
@@ -559,13 +719,20 @@ function PureArtifact({
       }
 
       if (type === 'next') {
-        if (currentVersionIndex < documents.length - 1) {
-          const newIndex = currentVersionIndex + 1;
+        // For books: lower index = newer version, for documents: higher index = newer version
+        const canGoNext = artifact.kind === 'book' ? 
+          currentVersionIndex > 0 : 
+          currentVersionIndex < versionsToUse.length - 1;
+        
+        if (canGoNext) {
+          const newIndex = artifact.kind === 'book' ? 
+            currentVersionIndex - 1 : 
+            currentVersionIndex + 1;
           console.log('[ARTIFACT] Moving to next version:', newIndex);
           setCurrentVersionIndex(newIndex);
 
           // Update artifact content with the selected document
-          const selectedDoc = documents[newIndex];
+          const selectedDoc = versionsToUse[newIndex];
           if (selectedDoc?.content) {
             console.log('[ARTIFACT] Updated content with next version', {
               index: newIndex,
@@ -596,15 +763,24 @@ function PureArtifact({
   const [isToolbarVisible, setIsToolbarVisible] = useState(false);
 
   /*
-   * NOTE: if there are no documents, or if
-   * the documents are being fetched, then
+   * NOTE: if there are no versions, or if
+   * the versions are being fetched, then
    * we mark it as the current version.
    */
 
-  const isCurrentVersion =
-    documents && documents.length > 0
-      ? currentVersionIndex === documents.length - 1
-      : true;
+  const isCurrentVersion = (() => {
+    if (artifact.kind === 'book') {
+      // For books: current version is at index 0 (newest first)
+      return bookVersions && bookVersions.length > 0
+        ? currentVersionIndex === 0
+        : true;
+    } else {
+      // For documents: current version is at the end (oldest first)
+      return documents && documents.length > 0
+        ? currentVersionIndex === documents.length - 1
+        : true;
+    }
+  })();
 
   const { width: windowWidth, height: windowHeight } = useWindowSize();
   const isMobile = windowWidth ? windowWidth < 768 : false;
@@ -857,6 +1033,8 @@ function PureArtifact({
                 metadata={metadata}
                 setMetadata={setMetadata}
                 language={artifact.language}
+                handleVersionChange={handleVersionChange}
+                totalVersions={artifact.kind === 'book' ? bookVersions?.length : documents?.length}
               />
 
               <AnimatePresence>

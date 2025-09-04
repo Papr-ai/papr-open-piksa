@@ -24,6 +24,7 @@ import { searchBooks } from '@/lib/ai/tools/search-books';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
 import { createImage } from '@/lib/ai/tools/create-image';
+import { createWritingTools } from '@/lib/ai/tools/create-writing-tools';
 import { 
   createListRepositoriesTool,
   createCreateProjectTool,
@@ -216,6 +217,7 @@ export async function POST(request: Request) {
     tools.searchBooks = searchBooks({ session });
     tools.requestSuggestions = requestSuggestions({ session, dataStream });
     tools.createImage = createImage({ session });
+    tools.createWritingTools = createWritingTools({ session, dataStream });
     
     // Enhanced book creation workflow tools
     const { createEnhancedBookTools } = await import('@/lib/ai/tools/enhanced-book-tools');

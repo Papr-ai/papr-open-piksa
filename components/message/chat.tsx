@@ -25,6 +25,16 @@ import { UsageWarning } from '@/components/subscription/usage-warning';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useContext } from '@/hooks/use-context';
 
+// Simple analytics hook (no-op for now)
+const useAnalytics = () => ({
+  trackChatEvent: (event: string, properties: any) => {
+    console.log('Analytics event:', event, properties);
+  },
+  trackFeatureUsage: (feature: string, properties: any) => {
+    console.log('Analytics feature usage:', feature, properties);
+  }
+});
+
 // Define types for the artifacts
 interface CodeArtifact {
   kind: string;
@@ -130,6 +140,9 @@ export function Chat({
   const { data: session, update: updateSession } = useSession();
   const [showLoginModal, setShowLoginModal] = useState(false);
   
+  // Analytics tracking
+  const { trackChatEvent, trackFeatureUsage } = useAnalytics();
+  
   // Debug session state in development
   useEffect(() => {
     if (process.env.NODE_ENV === 'development' && session?.user?.id) {
@@ -211,7 +224,7 @@ export function Chat({
         })
         .catch(() => {});
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Chat error:', error);
       
       // Check if it's an onboarding error
@@ -232,6 +245,27 @@ export function Chat({
 
   // Handle input state separately in AI SDK 5.0
   const [input, setInput] = useState('');
+
+  // Auto-submit initial prompt from book wizard if available
+  useEffect(() => {
+    const initialPrompt = sessionStorage.getItem(`initial-prompt-${id}`);
+    if (initialPrompt && messages.length === 0) {
+      // Clear the stored prompt
+      sessionStorage.removeItem(`initial-prompt-${id}`);
+      
+      // Set the input and submit the message
+      setInput(initialPrompt);
+      
+      // Submit after a brief delay to ensure the input is set
+      setTimeout(() => {
+        sendMessage({ 
+          role: 'user', 
+          parts: [{ type: 'text', text: initialPrompt }] 
+        });
+        setInput(''); // Clear input after sending
+      }, 100);
+    }
+  }, [id, messages.length, sendMessage, setInput]);
 
   // Create append function for compatibility
   const append = useCallback(async (message: any) => {
@@ -352,10 +386,22 @@ export function Chat({
       });
       
       console.log('[CHAT SUBMIT] Final parts:', parts);
+      
+      // Track chat message event
+      trackChatEvent('Message Sent', {
+        message_length: input.length,
+        has_attachments: attachments.length > 0,
+        attachment_count: attachments.length,
+        has_context: selectedContexts.length > 0,
+        context_count: selectedContexts.length,
+        chat_id: id,
+        model: selectedChatModel,
+      });
+      
       sendMessage({ role: 'user', parts });
       setInput('');
     }
-  }, [input, sendMessage, selectedContexts, attachments]);
+  }, [input, sendMessage, selectedContexts, attachments, trackChatEvent, id, selectedChatModel]);
 
   // Track message sending to apply reasoning steps
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -384,11 +430,9 @@ export function Chat({
     <>
       {isClient && documentId && <DocumentOpener documentId={documentId} />}
       
-
       <div className="flex flex-col h-full w-full">
-
-        
-        <div className="flex-1 overflow-y-auto w-full">
+        {/* Messages area - takes remaining space and scrolls */}
+        <div className="flex-1 overflow-y-auto w-full min-h-0">
           <Messages
             chatId={id}
             status={status}
@@ -407,114 +451,118 @@ export function Chat({
           />
         </div>
 
-        {/* Voice Activity Indicators - Above chat input */}
-        {voiceState.isConnecting && (
-          <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
-            <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-500"></div>
-                <span className="text-sm font-medium text-gray-700">Connecting to voice chat...</span>
+        {/* Fixed bottom section - voice indicators, usage warning, and input */}
+        <div className="flex-shrink-0">
+          {/* Voice Activity Indicators */}
+          {voiceState.isConnecting && (
+            <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
+              <div className="flex items-center justify-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-500"></div>
+                  <span className="text-sm font-medium text-gray-700">Connecting to voice chat...</span>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-        
-        {voiceState.isRecording && !voiceState.isMuted && (
-          <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
-            <div className="flex items-center justify-center p-4 bg-red-50 border border-red-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 715 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                  </svg>
-                  <div className="absolute -inset-1 bg-red-500 rounded-full opacity-20 animate-ping" />
+          )}
+          
+          {voiceState.isRecording && !voiceState.isMuted && (
+            <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
+              <div className="flex items-center justify-center p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <svg className="h-5 w-5 text-red-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 715 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                    </svg>
+                    <div className="absolute -inset-1 bg-red-500 rounded-full opacity-20 animate-ping" />
+                  </div>
+                  <span className="text-sm font-medium text-red-700">AI is listening...</span>
                 </div>
-                <span className="text-sm font-medium text-red-700">AI is listening...</span>
+                
+                {/* Audio waveform animation - hide on very small screens */}
+                {!isMobile && (
+                  <div className="flex items-center gap-1 ml-3">
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-red-400 rounded-full animate-pulse"
+                        style={{
+                          height: '8px',
+                          animationDelay: `${i * 0.1}s`,
+                          animationDuration: '0.6s'
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              
-              {/* Audio waveform animation - hide on very small screens */}
-              {!isMobile && (
-                <div className="flex items-center gap-1 ml-3">
-                  {[...Array(5)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-1 bg-red-400 rounded-full animate-pulse"
-                      style={{
-                        height: '8px',
-                        animationDelay: `${i * 0.1}s`,
-                        animationDuration: '0.6s'
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
-          </div>
-        )}
-        
-        {voiceState.isPlaying && (
-          <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
-            <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <svg className="h-5 w-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.816l-4.375-3.5a1 1 0 01-.383-.816v-2a1 1 0 01.383-.816l4.375-3.5a1 1 0 011.617.816zM15 8a2 2 0 11-4 0 2 2 0 014 0z" clipRule="evenodd" />
-                  </svg>
-                  <div className="absolute -inset-1 bg-blue-500 rounded-full opacity-20 animate-ping" />
+          )}
+          
+          {voiceState.isPlaying && (
+            <div className={`mx-auto px-4 mb-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}>
+              <div className="flex items-center justify-center p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <svg className="h-5 w-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.617.816l-4.375-3.5a1 1 0 01-.383-.816v-2a1 1 0 01.383-.816l4.375-3.5a1 1 0 011.617.816zM15 8a2 2 0 11-4 0 2 2 0 014 0z" clipRule="evenodd" />
+                    </svg>
+                    <div className="absolute -inset-1 bg-blue-500 rounded-full opacity-20 animate-ping" />
+                  </div>
+                  <span className="text-sm font-medium text-blue-700">AI is responding...</span>
                 </div>
-                <span className="text-sm font-medium text-blue-700">AI is responding...</span>
+                
+                {/* Speaking animation - hide on very small screens */}
+                {!isMobile && (
+                  <div className="flex items-center gap-1 ml-3">
+                    {[...Array(4)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-1.5 bg-blue-400 rounded-full"
+                        style={{
+                          height: `${Math.random() * 12 + 6}px`,
+                          animation: `pulse 0.8s ease-in-out ${i * 0.1}s infinite alternate`
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-              
-              {/* Speaking animation - hide on very small screens */}
-              {!isMobile && (
-                <div className="flex items-center gap-1 ml-3">
-                  {[...Array(4)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="w-1.5 bg-blue-400 rounded-full"
-                      style={{
-                        height: `${Math.random() * 12 + 6}px`,
-                        animation: `pulse 0.8s ease-in-out ${i * 0.1}s infinite alternate`
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Usage Warning positioned right above the input */}
-        <div className={`mx-auto ${isMobile ? 'px-4 w-full' : 'px-7 w-[70%]'}`}>
-          <UsageWarning />
+          {/* Usage Warning */}
+          <div className={`mx-auto ${isMobile ? 'px-4 w-full' : 'px-7 w-[70%]'}`}>
+            <UsageWarning />
+          </div>
+
+          {/* Chat Input Form - Fixed at bottom when no artifact */}
+          {!isArtifactVisible && (
+            <form 
+              className={`flex mx-auto px-4 pb-4 md:pb-6 gap-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}
+              onSubmit={onSubmit}
+              data-chat-form
+            >
+              {!isReadonly && (
+                <MultimodalInput
+                  chatId={id}
+                  input={input}
+                  setInput={setInput}
+                  handleSubmit={handleSubmit}
+                  status={status}
+                  stop={stop}
+                  attachments={attachments}
+                  setAttachments={setAttachments}
+                  messages={messages}
+                  setMessages={setMessages}
+                  append={append}
+                  selectedModelId={selectedChatModel}
+                  selectedVisibilityType={selectedVisibilityType}
+                  onVoiceStateChange={handleVoiceStateChange}
+                />
+              )}
+            </form>
+          )}
         </div>
-
-        {!isArtifactVisible && (
-          <form 
-            className={`flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 ${isMobile ? 'w-full' : 'w-[70%]'}`}
-            onSubmit={onSubmit}
-            data-chat-form
-          >
-            {!isReadonly && (
-              <MultimodalInput
-                chatId={id}
-                input={input}
-                setInput={setInput}
-                handleSubmit={handleSubmit}
-                status={status}
-                stop={stop}
-                attachments={attachments}
-                setAttachments={setAttachments}
-                messages={messages}
-                setMessages={setMessages}
-                append={append}
-                selectedModelId={selectedChatModel}
-                selectedVisibilityType={selectedVisibilityType}
-                onVoiceStateChange={handleVoiceStateChange}
-              />
-            )}
-          </form>
-        )}
       </div>
 
       <Artifact

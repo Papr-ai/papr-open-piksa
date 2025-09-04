@@ -30,11 +30,11 @@ const referralSources = [
 ];
 
 const useCases = [
-  'Building an AI app',
-  'Writing a book',
-  'Creating games',
-  'Project management',
-  'Personal assistant',
+  'Writing a children\'s book',
+  'Creating a novel',
+  'Writing a memoir or autobiography',
+  'Educational content creation',
+  'Poetry and creative writing',
   'Other'
 ];
 
@@ -86,7 +86,7 @@ export default function OnboardingPage() {
         throw new Error('Failed to complete onboarding');
       }
 
-      toast({ type: 'success', description: 'Welcome to Papr! Your account is all set up.' });
+      toast({ type: 'success', description: 'Welcome to Papr Books! Ready to start creating amazing stories.' });
       router.replace('/');
     } catch (error) {
       console.error('Onboarding error:', error);

@@ -85,25 +85,18 @@ async function incrementTotalMemories(userId: string, amount: number): Promise<U
       .values({
         userId,
         month,
-        memoriesAdded: 0, // Will be updated below
+        memoriesAdded: amount, // Set to the amount being added this month
       })
       .returning();
-    currentRecord = newRecord[0];
+    return newRecord[0];
   }
   
-  // Get total memories across all time for this user
-  const allRecords = await db
-    .select()
-    .from(usage)
-    .where(eq(usage.userId, userId));
-  
-  const totalMemories = allRecords.reduce((sum, record) => sum + record.memoriesAdded, 0);
-  
-  // Update current month's record to reflect the new total
+  // Simply increment the current month's record by the amount
+  // Don't calculate totals here - that's done in getTotalMemoriesForUser()
   const updatedUsage = await db
     .update(usage)
     .set({
-      memoriesAdded: totalMemories + amount,
+      memoriesAdded: currentRecord.memoriesAdded + amount,
       updatedAt: new Date(),
     })
     .where(and(

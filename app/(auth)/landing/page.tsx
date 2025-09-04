@@ -364,111 +364,111 @@ export default function LandingPage() {
     useCasesRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  // Define use cases by category
+  // Define use cases by book category
   const useCases = {
-    sales: [
+    children: [
       {
-        title: "Dynamic Sales Playbook",
-        description: "Pulls in your top-performing email sequences, pitch scripts and deal notes—combines them into an always-up-to-date guide.",
-        tag: "Sales Enablement"
+        title: "Interactive Picture Book Creator",
+        description: "Creates engaging picture books with consistent characters, beautiful illustrations, and age-appropriate storytelling for young readers.",
+        tag: "Ages 3-8"
       },
       {
-        title: "Pipeline Performance Dashboard",
-        description: "Aggregates past deal metrics, stage-transition times and win rates to show live forecasts and friction points.",
-        tag: "Analytics"
+        title: "Educational Story Builder",
+        description: "Develops educational stories that teach concepts like numbers, letters, colors, and life skills through engaging narratives.",
+        tag: "Learning"
       },
       {
-        title: "Account Insights Report",
-        description: "Merges every conversation thread, support ticket and revenue history for each account into a single PDF or dashboard.",
-        tag: "Account Management"
+        title: "Character Consistency Manager",
+        description: "Maintains character appearance and personality across all pages, ensuring Luna always has her curly auburn hair and green eyes.",
+        tag: "Consistency"
       },
       {
-        title: "Follow-Up Email Generator",
-        description: "Uses your stored outreach histories to recommend and draft the perfect next-step email for each prospect.",
-        tag: "Outreach"
+        title: "Rhyming Story Assistant",
+        description: "Helps create rhythmic, rhyming stories that are fun to read aloud and easy for children to remember and recite.",
+        tag: "Poetry"
       },
       {
-        title: "Win/Loss Analysis Report",
-        description: "Auto-creates retrospectives by re-using past opportunity data, competitor notes and closing rationales.",
-        tag: "Strategy"
+        title: "Illustration Scene Composer",
+        description: "Automatically generates illustrations that match your story scenes, with proper character placement and environmental details.",
+        tag: "Visual"
       },
       {
-        title: "Territory Opportunity Map",
-        description: "Leverages historical regional sales data and customer feedback to highlight high-potential areas on a geo-visual map.",
-        tag: "Planning"
+        title: "Reading Level Optimizer",
+        description: "Adjusts vocabulary and sentence complexity to match your target age group while maintaining story engagement.",
+        tag: "Age-Appropriate"
       }
     ],
-    engineering: [
+    fiction: [
       {
-        title: "Technical Debt Dashboard",
-        description: "Scans your memory for past ADRs, deprecated API calls and backlog items to show live technical debt hotspots.",
-        tag: "Code Quality"
+        title: "Plot Structure Generator",
+        description: "Creates compelling story arcs with proper pacing, conflict development, and satisfying resolutions for novels and short stories.",
+        tag: "Plot Development"
       },
       {
-        title: "Bug Resolution Report",
-        description: "Pulls in all linked bug tickets, logs, and patch notes—creates a timeline of how each issue was diagnosed and fixed.",
-        tag: "Debugging"
+        title: "World Building Assistant",
+        description: "Develops rich, consistent fictional worlds with detailed settings, cultures, magic systems, and historical backgrounds.",
+        tag: "World Building"
       },
       {
-        title: "ADR & Decision Catalog",
-        description: "Compiles every Architecture Decision Record, design note and rationale into a searchable handbook.",
-        tag: "Documentation"
+        title: "Dialogue Enhancement Tool",
+        description: "Improves character conversations to sound natural and distinct, with each character having their own unique voice and speaking style.",
+        tag: "Dialogue"
       },
       {
-        title: "Code Snippet Library",
-        description: "Surfaces your own past snippets, utilities and patterns in-line as you code—no more hunting across repos.",
-        tag: "Productivity"
+        title: "Character Arc Tracker",
+        description: "Maps character development throughout your story, ensuring meaningful growth and transformation from beginning to end.",
+        tag: "Character Growth"
       },
       {
-        title: "Dependency Changelog",
-        description: "Remembers every library upgrade and rollback you've ever made, summarizing \"why\" and \"when\" for audits or planning.",
-        tag: "Maintenance"
+        title: "Genre Convention Guide",
+        description: "Provides genre-specific guidance for romance, fantasy, mystery, sci-fi, and other fiction categories with reader expectations.",
+        tag: "Genre Expertise"
       },
       {
-        title: "Test Coverage Summary",
-        description: "Gathers historical test results, coverage reports and flaky-test notes to highlight where you need more automated checks.",
-        tag: "Testing"
+        title: "Series Continuity Manager",
+        description: "Tracks plot threads, character details, and world elements across multiple books to maintain consistency in series writing.",
+        tag: "Series Planning"
       }
     ],
-    writing: [
+    nonfiction: [
       {
-        title: "PRD & Spec Draft",
-        description: "Taps into your past specs, outlines and comments to auto-generate a first-pass Product Requirements Document.",
-        tag: "Product"
+        title: "Memoir Structure Assistant",
+        description: "Helps organize life stories into compelling narratives with proper chronology, themes, and emotional resonance.",
+        tag: "Memoir"
       },
       {
-        title: "Blog Series Planner",
-        description: "Uses previous posts, research notes and performance metrics to suggest topics, sequence and keywords for your next series.",
-        tag: "Content"
+        title: "Research Integration Tool",
+        description: "Seamlessly incorporates research, citations, and factual information into engaging non-fiction narratives.",
+        tag: "Research"
       },
       {
-        title: "Template Repository",
-        description: "Consolidates all your saved email, report and proposal templates into one searchable library—ready to clone and customize.",
-        tag: "Organization"
+        title: "Biography Writing Guide",
+        description: "Structures biographical content with timeline management, source verification, and narrative flow for compelling life stories.",
+        tag: "Biography"
       },
       {
-        title: "Style & Tone Guide",
-        description: "Pulls from your historical docs to build a living style guide with voice, formatting rules and boilerplate snippets.",
-        tag: "Branding"
+        title: "Self-Help Chapter Organizer",
+        description: "Organizes advice, exercises, and insights into clear, actionable chapters that guide readers toward their goals.",
+        tag: "Self-Help"
       },
       {
-        title: "Case Study Generator",
-        description: "Re-uses interview transcripts, metrics and quotes you've stored to draft polished customer-success stories in minutes.",
-        tag: "Marketing"
+        title: "How-To Guide Creator",
+        description: "Transforms expertise into step-by-step instructional content with clear explanations and practical examples.",
+        tag: "Instructional"
       },
       {
-        title: "Meeting Recap Digest",
-        description: "Summarizes decisions, action items and context from all past calls into a single, shareable document so nothing slips through.",
-        tag: "Collaboration"
+        title: "Academic Writing Assistant",
+        description: "Helps structure complex academic concepts into accessible prose while maintaining scholarly rigor and proper citations.",
+        tag: "Academic"
       }
     ]
   };
 
-  // Featured use cases - 2 from each category
+  // Featured use cases - mix of different book types
   const featuredUseCases = [
-    ...useCases.sales.slice(0, 2),
-    ...useCases.engineering.slice(0, 2),
-    ...useCases.writing.slice(0, 2)
+    ...useCases.children.slice(0, 2),   // 2 children's book examples
+    ...useCases.fiction.slice(0, 2),    // 2 fiction examples  
+    ...useCases.nonfiction.slice(0, 2)  // 2 non-fiction examples
   ];
 
   // Get the current use cases based on active category
@@ -483,14 +483,14 @@ export default function LandingPage() {
       <header className="sticky top-0 z-10 flex rounded-lg justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm">
         <div className="flex items-center">
           <img src="/images/papr-logo.svg" alt="Papr Logo" className="h-6 mr-2" />
-          <span className="text-xl font-bold">Papr</span>
+          <span className="text-xl font-bold">Papr Books</span>
           <nav className="ml-10 hidden md:flex items-center space-x-6">
           <Link href="#" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Overview</Link>
           <Link href="#usecases" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Use cases</Link>
           <Link href="#developers" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Developers</Link>
           <Link href="#benchmark" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Benchmark</Link>
           <Link href="#pricing" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Pricing</Link>
-          <Link href="https://github.com/Papr-ai/papr-chat" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Open Source</Link>
+          <Link href="https://github.com/Papr-ai/papr-open-books" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Open Source</Link>
 
         </nav>
         </div>
@@ -521,7 +521,7 @@ export default function LandingPage() {
       <section className="flex flex-col bg-background items-center justify-center px-4 py-16 md:py-24 relative">
         <div className="max-w-4xl w-full text-center mb-10 mt-10">
           <h1 className="text-4xl font-bold mb-4">Hello, I&apos;m Pen</h1>
-          <p className="text-2xl text-gray-600 dark:text-gray-300 mb-8">I remember stuff. What do you want to create? </p>
+          <p className="text-2xl text-gray-600 dark:text-gray-300 mb-8">Your AI book writing companion. What story do you want to create?</p>
         </div>
         
         <div className="w-full max-w-2xl mx-auto">
@@ -537,7 +537,7 @@ export default function LandingPage() {
               <Textarea
                 ref={textareaRef}
                 tabIndex={0}
-                placeholder="I want to create..."
+                placeholder="I want to write a book about..."
                 className="min-h-[40px] max-h-[120px] resize-none bg-background pr-20 py-2 pb-10 overflow-y-auto border-none focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0"
                 value={input}
                 onChange={handleInput}
@@ -596,34 +596,34 @@ export default function LandingPage() {
                 Featured
               </Button>
               <Button 
-                variant={activeCategory === 'sales' ? "default" : "outline"} 
+                variant={activeCategory === 'children' ? "default" : "outline"} 
                 size="sm" 
-                className={activeCategory === 'sales' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
-                onClick={() => setActiveCategory('sales')}
+                className={activeCategory === 'children' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
+                onClick={() => setActiveCategory('children')}
               >
-                Sales
+                Children's Books
               </Button>
               <Button 
-                variant={activeCategory === 'engineering' ? "default" : "outline"} 
+                variant={activeCategory === 'fiction' ? "default" : "outline"} 
                 size="sm" 
-                className={activeCategory === 'engineering' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
-                onClick={() => setActiveCategory('engineering')}
+                className={activeCategory === 'fiction' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
+                onClick={() => setActiveCategory('fiction')}
               >
-                Engineering
+                Fiction & Novels
               </Button>
               <Button 
-                variant={activeCategory === 'writing' ? "default" : "outline"} 
+                variant={activeCategory === 'nonfiction' ? "default" : "outline"} 
                 size="sm" 
-                className={activeCategory === 'writing' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
-                onClick={() => setActiveCategory('writing')}
+                className={activeCategory === 'nonfiction' ? "bg-black text-white dark:bg-white dark:text-black rounded-full" : "rounded-full"}
+                onClick={() => setActiveCategory('nonfiction')}
               >
-                Writing
+                Non-Fiction
               </Button>
             </div>
           </div>
           
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
-            All use cases are examples curated by the Papr team. 
+            Discover how Papr helps authors create amazing books with AI assistance.
           </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -659,9 +659,9 @@ export default function LandingPage() {
       <section id="developers" className="py-16 bg-white dark:bg-zinc-900">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4">Built for Developers</h2>
+            <h2 className="text-3xl font-bold mb-4">Built for Authors</h2>
             <p className="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-              Integrate powerful memory and retrieval capabilities into your applications with our developer-first APIs.
+              Create amazing books with AI-powered writing assistance, character development, and illustration generation.
             </p>
           </div>
           
@@ -675,9 +675,9 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-2">Lightning-Fast Memory Retrieval</h3>
+                  <h3 className="text-xl font-semibold mb-2">Story Continuity & Memory</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Retrieve relevant information from vast datasets in milliseconds with our predictive memory APIs.
+                    AI remembers your characters, plot points, and story elements to maintain perfect consistency across chapters.
                   </p>
                 </div>
               </div>
@@ -689,9 +689,9 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-2">Easy Integration</h3>
+                  <h3 className="text-xl font-semibold mb-2">AI Illustration Generation</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    RESTful APIs with comprehensive SDKs for Python, JavaScript, and more. Get started in minutes.
+                    Create beautiful, consistent illustrations for your books. Perfect for children's books and graphic novels.
                   </p>
                 </div>
               </div>
@@ -703,9 +703,9 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-2">Top ranked retrieval</h3>
+                  <h3 className="text-xl font-semibold mb-2">Character Development</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    Industry-leading retrieval accuracy ranked number 1 on Stanford benchmarks.
+                    Build rich, multi-dimensional characters with detailed profiles, backstories, and visual consistency.
                   </p>
                 </div>
               </div>
@@ -717,15 +717,15 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-2">Scales with Your Growth</h3>
+                  <h3 className="text-xl font-semibold mb-2">Complete Book Creation</h3>
                   <p className="text-gray-600 dark:text-gray-400">
-                    From prototype to production, handle millions of queries with automatic scaling.
+                    From initial concept to finished book - story planning, writing, illustrations, and publishing preparation.
                   </p>
                 </div>
               </div>
             </div>
             
-            {/* Right side - Code example */}
+            {/* Right side - Book example */}
             <div className="bg-gray-900 rounded-lg p-6 overflow-hidden">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex space-x-2">
@@ -733,39 +733,33 @@ export default function LandingPage() {
                   <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
                   <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                 </div>
-                <span className="text-gray-400 text-sm">memory_search.py</span>
+                <span className="text-gray-400 text-sm">magical-forest-adventure.txt</span>
               </div>
-              <pre className="text-green-400 text-sm overflow-x-auto">
-{`import papr_memory
+              <div className="text-green-400 text-sm overflow-x-auto whitespace-pre-wrap">
+{`Chapter 1: The Discovery
 
-# Initialize the client
-client = papr_memory.Papr(api_key="your_api_key")
+Once upon a time, in a small village at the edge 
+of an enchanted forest, lived a curious little 
+girl named Luna. She had bright green eyes that 
+sparkled with wonder and curly auburn hair that 
+bounced when she walked.
 
-# Add memories with custom metadata
-client.memory.add({
-  "content": "Q4 sales increased 23% YoY",
-  "metadata": {
-    "custom_metadata": {
-      "type": "sales", 
-      "quarter": "Q4",
-      "department": "enterprise",
-      "confidence": 0.95
-    }
-  }
-})
+Every day, Luna would gaze out her bedroom window 
+at the mysterious forest beyond the meadow. The 
+trees seemed to whisper secrets, and sometimes 
+she could swear she saw tiny lights dancing 
+between the branches.
 
-# Search your memories
-results = client.memory.search(
-  query="sales performance last quarter",
-  limit=10
-)
+"Mama," Luna asked one sunny morning, "what's 
+in the forest?"
 
-for result in results:
-  print(f"Score: {result.score}")
-  print(f"Content: {result.content}")
-  print(f"Custom metadata: {result.metadata.custom_metadata}")
-`}
-              </pre>
+Her mother smiled and ruffled her hair. "Stories, 
+my dear. Wonderful, magical stories waiting to 
+be discovered."
+
+[AI Generated with character consistency 
+and story memory - 432 words]`}
+              </div>
             </div>
           </div>
           
@@ -1158,7 +1152,7 @@ for result in results:
             <div>
               <div className="flex items-center mb-4">
                 <img src="/images/papr-logo.svg" alt="Papr Logo" className="h-6 mr-2" />
-                <span className="text-xl font-bold">Papr</span>
+              <span className="text-xl font-bold">Papr Books</span>
               </div>
               <p className="text-sm text-gray-500 dark:text-gray-400">© 2025 Papr AI</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">Headquartered in San Francisco</p>
