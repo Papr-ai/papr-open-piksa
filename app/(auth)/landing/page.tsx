@@ -487,8 +487,6 @@ export default function LandingPage() {
           <nav className="ml-10 hidden md:flex items-center space-x-6">
           <Link href="#" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Overview</Link>
           <Link href="#usecases" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Use cases</Link>
-          <Link href="#developers" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Developers</Link>
-          <Link href="#benchmark" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Benchmark</Link>
           <Link href="#pricing" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Pricing</Link>
           <Link href="https://github.com/Papr-ai/papr-open-books" className="text-sm text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">Open Source</Link>
 
@@ -496,12 +494,6 @@ export default function LandingPage() {
         </div>
 
         <div className="flex items-center space-x-3">
-          <Link 
-            href="https://dashboard.papr.ai" 
-            className="px-4 py-2 rounded-lg bg-blue-500 text-white hover:bg-blue-600 transition-colors"
-          >
-            Developer Login
-          </Link>
           <Link 
             href="/login" 
             className="px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
@@ -1032,7 +1024,7 @@ and story memory - 432 words]`}
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4">Simple, Transparent Pricing</h2>
             <p className="text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-              Choose the plan that fits your needs. Start free and scale as you grow.
+              Choose the plan that fits your creative journey. Start free and scale as your stories grow.
             </p>
           </div>
           
@@ -1042,26 +1034,32 @@ and story memory - 432 words]`}
               <div className="text-center mb-6">
                 <h3 className="text-xl font-bold mb-2">Free</h3>
                 <div className="text-3xl font-bold mb-1">$0</div>
-                <p className="text-gray-500 dark:text-gray-400">Perfect for trying out Papr</p>
+                <p className="text-gray-500 dark:text-gray-400">Perfect for getting started</p>
               </div>
               <ul className="space-y-3 mb-8">
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  100 messages per month
+                  50 basic interactions per month
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Basic memory storage
+                  100 memories storage capacity
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Community support
+                  20 memory searches per month
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Basic AI models only
                 </li>
               </ul>
               <Button className="w-full" variant="outline">Get Started Free</Button>
@@ -1082,25 +1080,31 @@ and story memory - 432 words]`}
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  1,200 messages per month
+                  1,000 basic interactions per month
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Advanced memory features
+                  200 premium interactions per month
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Priority support
+                  5,000 memories storage capacity
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  All AI models
+                  1,000 memory searches per month
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Premium AI models
                 </li>
               </ul>
               <Button className="w-full bg-blue-500 hover:bg-blue-600">Start Starter Trial</Button>
@@ -1130,13 +1134,19 @@ and story memory - 432 words]`}
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  100K memories stored
+                  100,000 memories storage capacity
                 </li>
                 <li className="flex items-center">
                   <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                   </svg>
-                  Priority support
+                  50,000 memory searches per month
+                </li>
+                <li className="flex items-center">
+                  <svg className="w-5 h-5 text-green-500 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                  Premium AI models
                 </li>
               </ul>
               <Button className="w-full" variant="outline">Start Pro Trial</Button>
@@ -1154,48 +1164,24 @@ and story memory - 432 words]`}
                 <img src="/images/papr-logo.svg" alt="Papr Logo" className="h-6 mr-2" />
               <span className="text-xl font-bold">Piksa.ai</span>
               </div>
-              <p className="text-sm text-gray-500 dark:text-gray-400">© 2025 Papr AI</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Headquartered in San Francisco</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">By papr.ai</p>
             </div>
             
             <div>
               <h3 className="font-medium mb-4">Company</h3>
               <ul className="space-y-3">
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">About us</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Careers</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Terms of service</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Privacy policy</Link></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="font-medium mb-4">Resources</h3>
-              <ul className="space-y-3">
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Documentation</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Playbook</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Blog</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Help center</Link></li>
-                <li><Link href="#pricing" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Pricing</Link></li>
+                <li><Link href="https://app.termly.io/policy-viewer/policy.html?policyUUID=7af2ed7d-5bb0-4296-971d-50a6d14cbe62" target="_blank" rel="noopener noreferrer" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Terms of service</Link></li>
+                <li><Link href="https://app.termly.io/policy-viewer/policy.html?policyUUID=8947a26b-ff08-4c19-adf7-0c530a73806a" target="_blank" rel="noopener noreferrer" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Privacy policy</Link></li>
               </ul>
             </div>
             
             <div>
               <h3 className="font-medium mb-4">Developers</h3>
               <ul className="space-y-3">
-                <li><Link href="https://platform.papr.ai" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">API Documentation</Link></li>
-                <li><Link href="https://dashboard.papr.ai" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Developer Dashboard</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">API Status</Link></li>
-                <li><Link href="https://github.com/Papr-ai/papr-pythonSDK" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Python SDK</Link></li>
-                <li><Link href="https://github.com/Papr-ai/papr-TypescriptSDK" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">TypeScript SDK</Link></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h3 className="font-medium mb-4">Community</h3>
-              <ul className="space-y-3">
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Discord</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">LinkedIn</Link></li>
-                <li><Link href="#" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">X</Link></li>
+                <li><Link href="https://platform.papr.ai" target="_blank" rel="noopener noreferrer" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">API Documentation</Link></li>
+                <li><Link href="https://dashboard.papr.ai" target="_blank" rel="noopener noreferrer" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Developer Dashboard</Link></li>
+                <li><Link href="https://github.com/Papr-ai/papr-pythonSDK" target="_blank" rel="noopener noreferrer" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">Python SDK</Link></li>
+                <li><Link href="https://github.com/Papr-ai/papr-TypescriptSDK" target="_blank" rel="noopener noreferrer" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm">TypeScript SDK</Link></li>
               </ul>
             </div>
           </div>
