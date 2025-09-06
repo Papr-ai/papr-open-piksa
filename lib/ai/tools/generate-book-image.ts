@@ -39,7 +39,7 @@ async function generateImageWithGemini(prompt: string): Promise<string> {
   // Use Gemini 2.5 Flash Image (Nano Banana) for actual image generation
   // This is the correct endpoint for Gemini's image generation capabilities
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
     {
       method: 'POST',
       headers: {
