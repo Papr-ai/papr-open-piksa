@@ -4,38 +4,75 @@ import type { DataStreamWriter } from '@/lib/types';
 import { createMemoryService } from '@/lib/ai/memory/service';
 import { ensurePaprUser } from '@/lib/ai/memory/middleware';
 import type { Session } from 'next-auth';
+import { unifiedTaskService, type UnifiedTask, type TaskProgress } from '@/lib/db/unified-task-service';
 
-// Task status types
-export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled';
+// Task status types (extended to match unified system)
+export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled' | 'approved' | 'skipped';
 
-// Task structure
+// Task structure (compatible with UnifiedTask)
 export interface Task {
   id: string;
   title: string;
-  description?: string;
+  description?: string | null;
   status: TaskStatus;
   dependencies?: string[]; // IDs of tasks that must be completed first
-  createdAt: Date;
-  completedAt?: Date;
-  estimatedDuration?: string;
-  actualDuration?: string;
+  createdAt: Date | null;
+  completedAt?: Date | null;
+  estimatedDuration?: string | null;
+  actualDuration?: string | null;
+  taskType?: 'workflow' | 'general';
+  sessionId?: string | null;
+}
+
+// Helper to convert UnifiedTask to Task interface
+function unifiedTaskToTask(unifiedTask: UnifiedTask): Task {
+  return {
+    id: unifiedTask.id,
+    title: unifiedTask.title,
+    description: unifiedTask.description,
+    status: unifiedTask.status as TaskStatus,
+    dependencies: unifiedTask.dependencies,
+    createdAt: unifiedTask.createdAt,
+    completedAt: unifiedTask.completedAt,
+    estimatedDuration: unifiedTask.estimatedDuration,
+    actualDuration: unifiedTask.actualDuration,
+    taskType: unifiedTask.taskType as 'workflow' | 'general',
+    sessionId: unifiedTask.sessionId,
+  };
 }
 
 // Tool input/output types
-type TaskPlanInput = {
-  sessionId: string;
-  tasks: Array<{
-    title: string;
-    description?: string;
-    dependencies?: string[];
-    estimatedDuration?: string;
-  }>;
-};
+export type TaskPlanInput = z.infer<typeof createTaskPlanSchema>;
 
-type TaskPlanOutput = {
+export type TaskPlanOutput = {
   success: boolean;
   error?: string;
-  type?: string;
+  type?: 'task-plan-created';
+  plan?: Task[];
+  nextTask?: Task | null;
+  progress?: { completed: number; total: number; percentage: number };
+};
+
+export type UpdateTaskInput = z.infer<typeof updateTaskSchema>;
+
+export type UpdateTaskOutput = TaskPlanOutput & {
+  task?: Task;
+  tasks?: Task[];
+};
+
+export type CompleteTaskInput = z.infer<typeof completeTaskSchema>;
+
+export type CompleteTaskOutput = TaskPlanOutput & {
+  task?: Task;
+  allCompleted?: boolean;
+};
+
+export type GetTaskStatusInput = z.infer<typeof getTaskStatusSchema>;
+
+export type GetTaskStatusOutput = {
+  success: boolean;
+  error?: string;
+  type?: 'task-status';
   tasks?: Task[];
   nextTask?: Task | null;
   progress?: { completed: number; total: number; percentage: number };
@@ -43,55 +80,12 @@ type TaskPlanOutput = {
   message?: string;
 };
 
-type UpdateTaskInput = {
-  sessionId: string;
-  taskId: string;
-  status: TaskStatus;
-};
+export type AddTaskInput = z.infer<typeof addTaskSchema>;
 
-type UpdateTaskOutput = TaskPlanOutput & {
-  task?: Task;
-  tasks?: Task[];
-};
-
-type CompleteTaskInput = {
-  sessionId: string;
-  taskId: string;
-};
-
-type CompleteTaskOutput = TaskPlanOutput & {
-  task?: Task;
-  allCompleted?: boolean;
-};
-
-type GetTaskStatusInput = {
-  sessionId: string;
-};
-
-type GetTaskStatusOutput = {
-  success: boolean;
-  type: string;
-  tasks: Task[];
-  nextTask: Task | null;
-  progress: { completed: number; total: number; percentage: number };
-  allCompleted: boolean;
-  message: string;
-};
-
-type AddTaskInput = {
-  sessionId: string;
-  tasks: Array<{
-    title: string;
-    description?: string;
-    dependencies?: string[];
-    estimatedDuration?: string;
-  }>;
-};
-
-type AddTaskOutput = {
+export type AddTaskOutput = {
   success: boolean;
   error?: string;
-  type?: string;
+  type?: 'tasks-added';
   message?: string;
   tasks?: Task[];
   newTasks?: Task[];
@@ -103,13 +97,75 @@ type AddTaskOutput = {
 // In-memory task store (in a real app, this would be persistent)
 const taskStore = new Map<string, Task[]>();
 
-// Get tasks for a session
-function getTasks(sessionId: string): Task[] {
-  return taskStore.get(sessionId) || [];
+// Get tasks for a session (unified database + in-memory cache)
+async function getTasks(sessionId: string, userId: string): Promise<Task[]> {
+  // First check in-memory cache for performance
+  const cachedTasks = taskStore.get(sessionId) || [];
+  
+  if (cachedTasks.length > 0) {
+    console.log(`[Task Tracker] Found ${cachedTasks.length} cached tasks for session ${sessionId}`);
+    return cachedTasks;
+  }
+  
+  // Fallback to database
+  try {
+    console.log(`[Task Tracker] Cache miss, fetching from database for session ${sessionId}`);
+    const unifiedTasks = await unifiedTaskService.getGeneralTasks(sessionId, userId);
+    const tasks = unifiedTasks.map(unifiedTaskToTask);
+    
+    // Cache the results for future use
+    if (tasks.length > 0) {
+      taskStore.set(sessionId, tasks);
+      console.log(`[Task Tracker] Cached ${tasks.length} tasks from database for session ${sessionId}`);
+    }
+    
+    return tasks;
+  } catch (error) {
+    console.error(`[Task Tracker] Database fallback failed for session ${sessionId}:`, error);
+    console.log(`[Task Tracker] Available cached sessions:`, Array.from(taskStore.keys()));
+    return [];
+  }
 }
 
-// Save tasks for a session (both in-memory and persistent memory)
-function saveTasks(sessionId: string, tasks: Task[]): void {
+// Synchronous version for backward compatibility (uses cache only)
+function getTasksSync(sessionId: string): Task[] {
+  const tasks = taskStore.get(sessionId) || [];
+  
+  if (tasks.length === 0) {
+    console.log(`[Task Tracker] Warning: No cached tasks found for session ${sessionId}`);
+    console.log(`[Task Tracker] Available sessions:`, Array.from(taskStore.keys()));
+    console.log(`[Task Tracker] Consider using the async getTasks() method for database fallback`);
+  }
+  
+  return tasks;
+}
+
+// Save tasks for a session (both in-memory and database)
+async function saveTasks(sessionId: string, tasks: Task[], userId: string): Promise<void> {
+  console.log(`[Task Tracker] Saving ${tasks.length} tasks for session ${sessionId}`);
+  
+  // Save to in-memory cache for performance
+  taskStore.set(sessionId, tasks);
+  
+  // Persist to database
+  try {
+    const taskInputs = tasks.map(task => ({
+      title: task.title,
+      description: task.description || undefined,
+      dependencies: task.dependencies || [],
+      estimatedDuration: task.estimatedDuration || undefined,
+    }));
+    
+    await unifiedTaskService.createGeneralTasks(sessionId, userId, taskInputs);
+    console.log(`[Task Tracker] Successfully persisted ${tasks.length} tasks to database`);
+  } catch (error) {
+    console.error(`[Task Tracker] Failed to persist tasks to database:`, error);
+  }
+}
+
+// Synchronous version for backward compatibility (cache only)
+function saveTasksSync(sessionId: string, tasks: Task[]): void {
+  console.log(`[Task Tracker] Saving ${tasks.length} tasks to cache for session ${sessionId}`);
   taskStore.set(sessionId, tasks);
 }
 
@@ -151,7 +207,7 @@ async function saveTasksToMemory(
         description: task.description,
         status: task.status,
         dependencies: task.dependencies,
-        createdAt: task.createdAt.toISOString(),
+        createdAt: task.createdAt?.toISOString() || new Date().toISOString(),
         completedAt: task.completedAt?.toISOString(),
         estimatedDuration: task.estimatedDuration,
         actualDuration: task.actualDuration,
@@ -190,30 +246,62 @@ Progress: ${taskData.progress.percentage}% complete`;
       }
     };
 
-    if (existingMemoryId) {
+    // Search for existing task plan memory for this session first
+    let existingTaskMemory = null;
+    if (!existingMemoryId) {
+      try {
+        const existingMemories = await memoryService.searchMemories(
+          paprUserId,
+          `task plan session ${sessionId}`,
+          5
+        );
+        
+        // Look for task plan memory for this specific session
+        existingTaskMemory = existingMemories.find(mem => {
+          const customMeta = mem.metadata?.customMetadata as any;
+          return customMeta?.chat_id === sessionId && customMeta?.content_type === 'task_plan';
+        });
+        
+        if (existingTaskMemory) {
+          console.log(`[Task Memory] Found existing task plan memory for session: ${sessionId}`);
+        }
+      } catch (error) {
+        console.error('[Task Memory] Error searching for existing memories:', error);
+      }
+    }
+
+    const targetMemoryId = existingMemoryId || existingTaskMemory?.id;
+
+    if (targetMemoryId) {
       // Update existing memory
-      const success = await memoryService.updateMemory(existingMemoryId, {
+      const success = await memoryService.updateMemory(targetMemoryId, {
         content,
-        metadata
+        metadata: {
+          customMetadata: metadata.customMetadata
+        }
       });
       
       if (success) {
-        console.log('[Task Memory] Updated task plan in memory:', existingMemoryId);
-        return existingMemoryId;
+        console.log(`[Task Memory] ✅ Updated existing task plan memory: ${targetMemoryId}`);
+        return targetMemoryId;
+      } else {
+        console.error(`[Task Memory] ❌ Failed to update memory: ${targetMemoryId}`);
       }
     } else {
       // Create new memory
       const success = await memoryService.storeContent(
         paprUserId,
         content,
-        'document',
-        metadata
+        'text',
+        metadata.customMetadata || {},
+        session.user.id
       );
 
       if (success) {
-        // Try to get the memory ID from the response (this depends on the memory service implementation)
-        console.log('[Task Memory] Saved task plan to memory');
-        return 'new_memory_created'; // We'd need the actual memory ID from the service
+        console.log('[Task Memory] ✅ Created new task plan memory');
+        return 'new_memory_created';
+      } else {
+        console.error('[Task Memory] ❌ Failed to save task plan to memory');
       }
     }
 
@@ -239,27 +327,23 @@ const taskItemSchema = z.object({
 
 // Tool parameter schemas
 const createTaskPlanSchema = z.object({
-  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
   tasks: z.array(taskItemSchema).describe('Tasks to create for the plan'),
 });
 
 const updateTaskSchema = z.object({
-  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
   taskId: z.string().describe('ID of the task to update'),
-  status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'cancelled']).describe('New status for the task'),
+  status: z.enum(['pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'approved', 'skipped']).describe('New status for the task'),
 });
 
 const completeTaskSchema = z.object({
-  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
   taskId: z.string().describe('ID of the task to complete'),
 });
 
 const getTaskStatusSchema = z.object({
-  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
+  // No parameters needed - will use current chat ID automatically
 });
 
 const addTaskSchema = z.object({
-  sessionId: z.string().describe('Unique session identifier (use chat ID)'),
   tasks: z.array(taskItemSchema).describe('Tasks to add to the plan'),
 });
 
@@ -290,18 +374,69 @@ function getTaskProgress(tasks: Task[]): { completed: number; total: number; per
   return { completed, total, percentage };
 }
 
+// Helper function to determine if all tasks are truly completed
+function areAllTasksCompleted(tasks: Task[]): boolean {
+  // If there are no tasks, they're not "completed" - they're just empty
+  if (tasks.length === 0) {
+    console.log(`[Task Tracker] areAllTasksCompleted: No tasks found, returning false`);
+    return false;
+  }
+  
+  const completed = tasks.filter(t => t.status === 'completed').length;
+  const allComplete = tasks.every(task => task.status === 'completed');
+  
+  console.log(`[Task Tracker] areAllTasksCompleted: ${completed}/${tasks.length} completed, returning ${allComplete}`);
+  
+  // Only return true if there are tasks AND all of them are completed
+  return allComplete;
+}
+
 // Create task plan tool
-export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: Session): Tool<TaskPlanInput, TaskPlanOutput> {
+export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: Session, chatId?: string) {
   return tool({
     description: 'Create a comprehensive task plan at the start of complex requests',
     inputSchema: createTaskPlanSchema,
-    execute: async (input: TaskPlanInput, options: ToolCallOptions): Promise<TaskPlanOutput> => {
-      const { sessionId, tasks } = input;
+    execute: async (input) => {
+      const { tasks } = input;
+      // Always use the provided chatId
+      if (!chatId) {
+        return {
+          success: false,
+          error: 'No chat ID available for task tracking',
+        };
+      }
+      const effectiveSessionId = chatId;
+      
+      if (!session?.user?.id) {
+        return {
+          success: false,
+          error: 'User authentication required',
+        };
+      }
+      
       // Validate required parameters
       if (!tasks || tasks.length === 0) {
         return { 
           success: false,
           error: 'No tasks provided for plan creation' 
+        };
+      }
+      
+      // Check if tasks already exist (with database fallback)
+      const existingTasks = await getTasks(effectiveSessionId, session.user.id);
+      if (existingTasks.length > 0) {
+        console.log(`[createTaskPlan] Tasks already exist for session ${effectiveSessionId}, returning existing plan`);
+        const planProgress = getTaskProgress(existingTasks);
+        const planNextTask = getNextAvailableTask(existingTasks);
+        
+        return {
+          success: true,
+          type: 'task-plan-exists',
+          tasks: existingTasks,
+          nextTask: planNextTask,
+          progress: planProgress,
+          allCompleted: areAllTasksCompleted(existingTasks),
+          message: `Found existing task plan with ${existingTasks.length} tasks`,
         };
       }
       
@@ -313,12 +448,15 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: 
         dependencies: task.dependencies || [],
         createdAt: new Date(),
         estimatedDuration: task.estimatedDuration || '',
+        taskType: 'general',
+        sessionId: effectiveSessionId,
       }));
       
-      saveTasks(sessionId, newTasks);
+      // Save to both cache and database
+      await saveTasks(effectiveSessionId, newTasks, session.user.id);
       
-      // Save to persistent memory
-      await saveTasksToMemory(sessionId, newTasks, session, 'Task Plan');
+      // Save to persistent memory (optional - for searchability)
+      await saveTasksToMemory(effectiveSessionId, newTasks, session, 'Task Plan');
       
       const planNextTask = getNextAvailableTask(newTasks);
       const planProgress = getTaskProgress(newTasks);
@@ -329,7 +467,7 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: 
         tasks: newTasks,
         nextTask: planNextTask,
         progress: planProgress,
-        allCompleted: planProgress.completed === planProgress.total,
+        allCompleted: areAllTasksCompleted(newTasks),
         message: `Created task plan with ${newTasks.length} tasks`,
       };
     },
@@ -337,13 +475,29 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: 
 }
 
 // Update task tool
-export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Session): Tool<UpdateTaskInput, UpdateTaskOutput> {
+export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Session, chatId?: string) {
   return tool({
     description: 'Update the status of a task in the plan',
     inputSchema: updateTaskSchema,
-    execute: async (input: UpdateTaskInput, options: ToolCallOptions): Promise<UpdateTaskOutput> => {
-      const { sessionId, taskId, status } = input;
-      const currentTasks = getTasks(sessionId);
+    execute: async (input) => {
+      const { taskId, status } = input;
+      // Always use the provided chatId
+      if (!chatId) {
+        return {
+          success: false,
+          error: 'No chat ID available for task tracking',
+        };
+      }
+      const effectiveSessionId = chatId;
+      
+      if (!session?.user?.id) {
+        return {
+          success: false,
+          error: 'User authentication required',
+        };
+      }
+      
+      const currentTasks = await getTasks(effectiveSessionId, session.user.id);
       
       // Validate required parameters
       if (!taskId) {
@@ -367,10 +521,10 @@ export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Sess
         updatedTasks[taskIndex].completedAt = new Date();
       }
       
-      saveTasks(sessionId, updatedTasks);
+      await saveTasks(effectiveSessionId, updatedTasks, session.user.id);
       
       // Update persistent memory
-      await saveTasksToMemory(sessionId, updatedTasks, session, 'Task Plan');
+      await saveTasksToMemory(effectiveSessionId, updatedTasks, session, 'Task Plan');
       
       const updateNextTask = getNextAvailableTask(updatedTasks);
       const updateProgress = getTaskProgress(updatedTasks);
@@ -382,7 +536,7 @@ export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Sess
         task: updatedTasks[taskIndex],
         nextTask: updateNextTask,
         progress: updateProgress,
-        allCompleted: updateProgress.completed === updateProgress.total,
+        allCompleted: areAllTasksCompleted(updatedTasks),
         message: `Task updated: ${updatedTasks[taskIndex].title}`,
       };
     },
@@ -390,13 +544,29 @@ export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Sess
 }
 
 // Complete task tool
-export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Session): Tool<CompleteTaskInput, CompleteTaskOutput> {
+export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Session, chatId?: string) {
   return tool({
     description: 'Mark a specific task as completed',
     inputSchema: completeTaskSchema,
-    execute: async (input: CompleteTaskInput, options: ToolCallOptions): Promise<CompleteTaskOutput> => {
-      const { sessionId, taskId } = input;
-      const currentTasks = getTasks(sessionId);
+    execute: async (input) => {
+      const { taskId } = input;
+      // Always use the provided chatId
+      if (!chatId) {
+        return {
+          success: false,
+          error: 'No chat ID available for task tracking',
+        };
+      }
+      const effectiveSessionId = chatId;
+      
+      if (!session?.user?.id) {
+        return {
+          success: false,
+          error: 'User authentication required',
+        };
+      }
+      
+      const currentTasks = await getTasks(effectiveSessionId, session.user.id);
       
       // Validate required parameters
       if (!taskId) {
@@ -418,10 +588,10 @@ export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Se
       completedTasks[completeTaskIndex].status = 'completed';
       completedTasks[completeTaskIndex].completedAt = new Date();
       
-      saveTasks(sessionId, completedTasks);
+      await saveTasks(effectiveSessionId, completedTasks, session.user.id);
       
       // Update persistent memory
-      await saveTasksToMemory(sessionId, completedTasks, session, 'Task Plan');
+      await saveTasksToMemory(effectiveSessionId, completedTasks, session, 'Task Plan');
       
       const completedTask = completedTasks[completeTaskIndex];
       const completeNextTask = getNextAvailableTask(completedTasks);
@@ -434,7 +604,7 @@ export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Se
         task: completedTask,
         nextTask: completeNextTask,
         progress: completeProgress,
-        allCompleted: completeProgress.completed === completeProgress.total,
+        allCompleted: areAllTasksCompleted(completedTasks),
         message: `Completed task: ${completedTask.title}`,
       };
     },
@@ -442,38 +612,74 @@ export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Se
 }
 
 // Get task status tool
-export function createGetTaskStatusTool(dataStream: DataStreamWriter, session: Session): Tool<GetTaskStatusInput, GetTaskStatusOutput> {
+export function createGetTaskStatusTool(dataStream: DataStreamWriter, session: Session, chatId?: string) {
   return tool({
     description: 'Check the progress and status of the current task plan',
     inputSchema: getTaskStatusSchema,
-    execute: async (input: GetTaskStatusInput, options: ToolCallOptions): Promise<GetTaskStatusOutput> => {
-      const { sessionId } = input;
-      const currentTasks = getTasks(sessionId);
+    execute: async (input) => {
+      // Always use the provided chatId - no input parameters needed
+      if (!chatId) {
+        return {
+          success: false,
+          error: 'No chat ID available for task tracking',
+        };
+      }
+      const effectiveSessionId = chatId;
+      
+      if (!session?.user?.id) {
+        return {
+          success: false,
+          error: 'User authentication required',
+        };
+      }
+      
+      console.log(`[getTaskStatus] Called with effectiveSessionId: ${effectiveSessionId}`);
+      const currentTasks = await getTasks(effectiveSessionId, session.user.id);
+      console.log(`[getTaskStatus] Found ${currentTasks.length} tasks for session ${effectiveSessionId}`);
       
       const statusProgress = getTaskProgress(currentTasks);
       const statusNextTask = getNextAvailableTask(currentTasks);
       
-      return {
+      const result = {
         success: true,
         type: 'task-status',
         tasks: currentTasks,
         nextTask: statusNextTask,
         progress: statusProgress,
-        allCompleted: statusProgress.completed === statusProgress.total,
+        allCompleted: areAllTasksCompleted(currentTasks),
         message: `Task Status: ${statusProgress.completed}/${statusProgress.total} completed (${statusProgress.percentage}%)`,
       };
+      
+      console.log('[getTaskStatus] Returning result:', JSON.stringify(result, null, 2));
+      return result;
     },
   });
 }
 
 // Add tasks tool
-export function createAddTaskTool(dataStream: DataStreamWriter, session: Session): Tool<AddTaskInput, AddTaskOutput> {
+export function createAddTaskTool(dataStream: DataStreamWriter, session: Session, chatId?: string) {
   return tool({
     description: 'Add new tasks to an existing plan',
     inputSchema: addTaskSchema,
-    execute: async (input: AddTaskInput, options: ToolCallOptions): Promise<AddTaskOutput> => {
-      const { sessionId, tasks } = input;
-      const currentTasks = getTasks(sessionId);
+    execute: async (input) => {
+      const { tasks } = input;
+      // Always use the provided chatId
+      if (!chatId) {
+        return {
+          success: false,
+          error: 'No chat ID available for task tracking',
+        };
+      }
+      const effectiveSessionId = chatId;
+      
+      if (!session?.user?.id) {
+        return {
+          success: false,
+          error: 'User authentication required',
+        };
+      }
+      
+      const currentTasks = await getTasks(effectiveSessionId, session.user.id);
       
       // Validate required parameters
       if (!tasks || tasks.length === 0) {
@@ -494,10 +700,10 @@ export function createAddTaskTool(dataStream: DataStreamWriter, session: Session
       }));
       
       const allTasks = [...currentTasks, ...additionalTasks];
-      saveTasks(sessionId, allTasks);
+      await saveTasks(effectiveSessionId, allTasks, session.user.id);
       
       // Update persistent memory
-      await saveTasksToMemory(sessionId, allTasks, session, 'Task Plan');
+      await saveTasksToMemory(effectiveSessionId, allTasks, session, 'Task Plan');
       
       const addProgress = getTaskProgress(allTasks);
       
@@ -509,19 +715,19 @@ export function createAddTaskTool(dataStream: DataStreamWriter, session: Session
         newTasks: additionalTasks,
         nextTask: getNextAvailableTask(allTasks),
         progress: addProgress,
-        allCompleted: addProgress.completed === addProgress.total,
+        allCompleted: areAllTasksCompleted(allTasks),
       };
     },
   });
 }
 
 // For backward compatibility, export a combined function
-export function createTaskTrackerTools(dataStream: DataStreamWriter, session: Session) {
+export function createTaskTrackerTools(dataStream: DataStreamWriter, session: Session, chatId?: string) {
   return {
-    createTaskPlan: createCreateTaskPlanTool(dataStream, session),
-    updateTask: createUpdateTaskTool(dataStream, session),
-    completeTask: createCompleteTaskTool(dataStream, session),
-    getTaskStatus: createGetTaskStatusTool(dataStream, session),
-    addTask: createAddTaskTool(dataStream, session),
+    createTaskPlan: createCreateTaskPlanTool(dataStream, session, chatId),
+    updateTask: createUpdateTaskTool(dataStream, session, chatId),
+    completeTask: createCompleteTaskTool(dataStream, session, chatId),
+    getTaskStatus: createGetTaskStatusTool(dataStream, session, chatId),
+    addTask: createAddTaskTool(dataStream, session, chatId),
   };
 } 

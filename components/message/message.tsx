@@ -102,6 +102,8 @@ import { ImageResult } from '@/components/common/image-result';
 import { MergedImagesResult } from '@/components/message/merged-images-result';
 import { ImageEditResult } from '@/components/common/image-edit-result';
 import { CreateImageResult } from './create-image-result';
+import { StructuredBookImageResults } from './structured-book-image-results';
+import { StructuredBookImageStart, StructuredBookImageProgress, StructuredBookImageResult } from './structured-book-image-result';
 
 // Tool input/output types
 type CreateBookInput = {
@@ -693,6 +695,7 @@ const PurePreviewMessage = ({
   enableUniversalReasoning,
   setInput,
   handleSubmit,
+  sendMessage,
 }: {
   chatId: string;
   message: UIMessage;
@@ -705,6 +708,7 @@ const PurePreviewMessage = ({
   enableUniversalReasoning?: boolean;
   setInput?: (input: string) => void;
   handleSubmit?: (e?: React.FormEvent) => void;
+  sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
 }) => {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const { data: session, status: sessionStatus } = useSession();
@@ -831,7 +835,14 @@ const PurePreviewMessage = ({
     }
   }, [message, setArtifact]);
   
-  // Extract reasoning events from message parts
+  // Check if we're using a model with reasoning support (moved up to avoid hoisting issues)
+  const isReasoningEnabled = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;
+  
+  // Extract reasoning events from message parts (kept for debugging but not used for display)
+  console.log('[Message] Raw message parts:', message.parts);
+  console.log('[Message] Selected model supports reasoning:', isReasoningEnabled);
+  console.log('[Message] Message role:', message.role);
+  
   const reasoningEvents = message.parts?.reduce((events, part) => {
     const typedPart = part as MessagePart;
     // Process message parts for reasoning extraction
@@ -841,26 +852,29 @@ const PurePreviewMessage = ({
       console.log('[Message] Found direct reasoning part:', typedPart);
       const reasoningPart = typedPart as ReasoningPart;
       
-      // Handle the actual structure from the logs: { type: "reasoning", text: "...", providerOptions: {...} }
-      const reasoningText = (reasoningPart as any).text || 
-                           (typeof reasoningPart.reasoning === 'string' ? reasoningPart.reasoning : 
-                            (reasoningPart.reasoning as ReasoningContent)?.text || '');
-      
-      events.push({
-        type: 'reasoning',
-        content: {
-          text: reasoningText,
-          timestamp: typeof reasoningPart.reasoning === 'string' ? 
-            new Date().toISOString() : 
-            (reasoningPart.reasoning as ReasoningContent)?.timestamp || new Date().toISOString(),
-          step: typeof reasoningPart.reasoning === 'string' ? 
-            'complete' : 
-            (reasoningPart.reasoning as ReasoningContent)?.step || 'complete',
-        },
-      });
+        // Handle the actual structure from the logs: { type: "reasoning", text: "...", providerOptions: {...} }
+        const reasoningText = (reasoningPart as any).text || 
+                             (typeof reasoningPart.reasoning === 'string' ? reasoningPart.reasoning : 
+                              (reasoningPart.reasoning as ReasoningContent)?.text || '');
+        
+        // Only add reasoning events if there's actual content
+        if (reasoningText && reasoningText.trim().length > 0) {
+          events.push({
+            type: 'reasoning',
+            content: {
+              text: reasoningText,
+              timestamp: typeof reasoningPart.reasoning === 'string' ? 
+                new Date().toISOString() : 
+                (reasoningPart.reasoning as ReasoningContent)?.timestamp || new Date().toISOString(),
+              step: typeof reasoningPart.reasoning === 'string' ? 
+                'complete' : 
+                (reasoningPart.reasoning as ReasoningContent)?.step || 'complete',
+            },
+          });
+        }
     }
     // Handle parts with direct reasoning field (as seen in logs)
-    else if ('reasoning' in typedPart && typeof typedPart.reasoning === 'string' && typedPart.reasoning) {
+    else if ('reasoning' in typedPart && typeof typedPart.reasoning === 'string' && typedPart.reasoning && typedPart.reasoning.trim().length > 0) {
       console.log('[Message] Found part with direct reasoning field:', typedPart);
       events.push({
         type: 'reasoning',
@@ -874,14 +888,19 @@ const PurePreviewMessage = ({
     // Handle parts with details array and reasoning field (seen in logs)
     else if ('details' in typedPart && Array.isArray(typedPart.details) && 'reasoning' in typedPart) {
       console.log('[Message] Found part with details array and reasoning:', typedPart);
-      events.push({
-        type: 'reasoning',
-        content: {
-          text: typeof typedPart.reasoning === 'string' ? typedPart.reasoning : '',
-          timestamp: new Date().toISOString(),
-          step: 'complete',
-        },
-      });
+      const reasoningText = typeof typedPart.reasoning === 'string' ? typedPart.reasoning : '';
+      
+      // Only add if there's actual reasoning content
+      if (reasoningText && reasoningText.trim().length > 0) {
+        events.push({
+          type: 'reasoning',
+          content: {
+            text: reasoningText,
+            timestamp: new Date().toISOString(),
+            step: 'complete',
+          },
+        });
+      }
     }
     // Legacy tool-invocation format - not used in AI SDK v5
     // else if (typedPart.type === 'tool-invocation') {
@@ -953,8 +972,7 @@ const PurePreviewMessage = ({
     return events;
   }, [] as ReasoningEvent[]) || [];
 
-  // Check if we're using a model with reasoning support
-  const isReasoningEnabled = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;
+  // isReasoningEnabled is now declared above
   
   // Check if the message itself has a model ID with reasoning support
   const messageModelId = (message as ExtendedUIMessage).modelId;
@@ -970,22 +988,30 @@ const PurePreviewMessage = ({
   }
 
   console.log('[Message] Extracted reasoning events:', reasoningEvents);
+  console.log('[Message] Model supports reasoning:', modelSupportsReasoningCapability);
+  console.log('[Message] Selected model ID:', selectedModelId);
+  console.log('[Message] Message model ID:', messageModelId);
 
   // For messages with think blocks: extract all thinking content from text now,
   // so gating below can consider these tokens.
   const thinkingEvents = extractAllThinkingContent(message);
   reasoningEvents.push(...thinkingEvents);
 
-  // Render MessageReasoning whenever there are reasoning parts/events.
-  // This aligns with AI SDK v5 where models can stream many short reasoning tokens.
+  // Render MessageReasoning only when there's actual meaningful reasoning content
   const hasAnyReasoning = reasoningEvents.length > 0;
   
-  // Avoid showing if the only item is the generic placeholder during loading
-  const isOnlyProcessingPlaceholder = isLoading && 
-    reasoningEvents.length === 1 && 
-    reasoningEvents[0].content.text === 'Processing...';
+  // Check if we have meaningful reasoning content (not just empty or generic placeholders)
+  const hasMeaningfulReasoning = reasoningEvents.some(event => {
+    const text = event.content.text;
+    return text && 
+           text.trim().length > 0 && 
+           text !== 'Processing...' && 
+           text !== 'Processing' && 
+           !text.startsWith('Processing step');
+  });
   
-  const shouldShowReasoning = modelSupportsReasoningCapability && hasAnyReasoning && !isOnlyProcessingPlaceholder;
+  // REMOVED: Custom reasoning component - let AI SDK handle everything natively
+  const shouldShowReasoning = false;
   
   // Determine if reasoning is complete based on events
   const isReasoningComplete = !isLoading || 
@@ -1237,6 +1263,11 @@ const PurePreviewMessage = ({
                               result={output as any}
                               isReadonly={isReadonly}
                             />
+                          ) : toolName === 'createStructuredBookImages' ? (
+                            <StructuredBookImageResults
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
                           ) : toolName === 'generateImage' ? (
                             <ImageResult
                               result={output as GenerateImageOutput}
@@ -1266,7 +1297,7 @@ const PurePreviewMessage = ({
                                 content: (input as AddMemoryInput)?.content,
                               }}
                             />
-                          ) : ['createTaskPlan', 'updateTask', 'completeTask', 'getTaskStatus'].includes(toolName) ? (
+                          ) : ['createTaskPlan', 'updateTask', 'completeTask', 'getTaskStatus', 'addTask'].includes(toolName) ? (
                             <TaskCard 
                               type={(output as any)?.type || 'task-status'}
                               tasks={(output as any)?.tasks}
@@ -1438,7 +1469,142 @@ const PurePreviewMessage = ({
                           ) : null}
                         </div>
                       );
-                      }
+                    }
+                  }
+                }
+
+                  // Handle data stream parts for structured book image creation
+                  if (typedPart.type === 'data') {
+                    const dataPart = typedPart as DataPart;
+                    const dataType = (dataPart.data as any)?.type;
+                    const dataContent = (dataPart.data as any)?.content;
+
+                    if (dataType === 'structured-book-image-start' && dataContent) {
+                      return (
+                        <div key={key}>
+                          <div className="w-fit max-w-full border rounded-lg p-4 bg-blue-50 border-blue-200">
+                            <div className="flex items-center gap-3">
+                              <div className="text-2xl">🎨</div>
+                              <div>
+                                <h3 className="font-semibold text-sm">Starting Structured Image Creation</h3>
+                                <p className="text-xs text-muted-foreground">{dataContent.bookTitle}</p>
+                                <p className="text-xs text-blue-600 mt-1">
+                                  {dataContent.pipeline.totalSteps} assets to create
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (dataType === 'structured-book-image-progress' && dataContent) {
+                      const stepEmoji = dataContent.step === 'character_portrait' ? '👤' :
+                                       dataContent.step === 'environment' ? '🏞️' : '🎬';
+                      return (
+                        <div key={key}>
+                          <div className="w-fit max-w-full border rounded-lg p-3 bg-yellow-50 border-yellow-200">
+                            <div className="flex items-center gap-3">
+                              <div className="text-lg">{stepEmoji}</div>
+                              <div className="flex-1">
+                                <div className="text-sm font-medium">
+                                  {dataContent.description}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Step {dataContent.stepNumber} of {dataContent.totalSteps}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (dataType === 'structured-book-image-result' && dataContent) {
+                      const stepEmoji = dataContent.step === 'character_portrait' ? '👤' :
+                                       dataContent.step === 'environment' ? '🏞️' : '🎬';
+                      return (
+                        <div key={key}>
+                          <div className="w-fit max-w-full border rounded-lg p-4 bg-green-50 border-green-200">
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="text-lg">{stepEmoji}</div>
+                              <div>
+                                <h3 className="font-semibold text-sm flex items-center gap-2">
+                                  {dataContent.item}
+                                  {dataContent.success ? (
+                                    <span className="text-green-500">✅</span>
+                                  ) : (
+                                    <span className="text-red-500">❌</span>
+                                  )}
+                                  {dataContent.existingAsset && (
+                                    <span className="text-xs bg-blue-100 px-2 py-1 rounded">Existing</span>
+                                  )}
+                                </h3>
+                                <p className="text-xs text-muted-foreground">{dataContent.reasoning}</p>
+                              </div>
+                            </div>
+                            {dataContent.success && dataContent.imageUrl && (
+                              <div className="relative w-32 h-32 mx-auto rounded-lg overflow-hidden border">
+                                <img
+                                  src={dataContent.imageUrl}
+                                  alt={dataContent.item}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                            )}
+                            {!dataContent.success && dataContent.error && (
+                              <div className="text-sm text-red-600 bg-red-100 p-2 rounded">
+                                Error: {dataContent.error}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (dataType === 'structured-book-image-complete' && dataContent) {
+                      const isSuccess = dataContent.success;
+                      const bgColor = isSuccess ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
+                      const icon = isSuccess ? '✅' : '❌';
+                      const title = isSuccess ? 'Structured Image Creation Complete' : 'Structured Image Creation Failed';
+                      
+                      return (
+                        <div key={key}>
+                          <div className={`w-fit max-w-full border rounded-lg p-4 ${bgColor}`}>
+                            <div className="flex items-center gap-3 mb-3">
+                              <div className="text-2xl">{icon}</div>
+                              <div>
+                                <h3 className="font-semibold text-sm">{title}</h3>
+                                <p className="text-xs text-muted-foreground">{dataContent.bookTitle}</p>
+                                {dataContent.error && (
+                                  <p className="text-xs text-red-600 mt-1">{dataContent.error}</p>
+                                )}
+                              </div>
+                            </div>
+                            {isSuccess && dataContent.results && (
+                              <div className="grid grid-cols-2 gap-4 text-center">
+                                <div>
+                                  <div className="text-lg font-semibold text-green-600">
+                                    {dataContent.results.totalImagesCreated}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Images Created</div>
+                                </div>
+                                <div>
+                                  <div className="text-lg font-semibold text-blue-600">
+                                    {dataContent.results.characterPortraits + dataContent.results.environments + dataContent.results.scenes}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">Total Assets</div>
+                                </div>
+                              </div>
+                            )}
+                            {!isSuccess && dataContent.summary && (
+                              <div className="text-sm text-red-600 bg-red-100 p-2 rounded mt-2">
+                                Failed to create any images. Please check the error details above and try again.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
                     }
                   }
 
@@ -1471,24 +1637,14 @@ const PurePreviewMessage = ({
                 )}
 
                 {/* Continue button for when LLM exhausts tool calls */}
-                {!isReadonly && message.role === 'assistant' && !isLoading && shouldShowContinueButton(message, 'idle') && setInput && handleSubmit && (
+                {!isReadonly && message.role === 'assistant' && !isLoading && shouldShowContinueButton(message, 'idle') && sendMessage && (
                   <ContinueButton
                     onContinue={() => {
-                      // Set the input to "continue" and trigger submission
-                      setInput('continue');
-                      // Trigger form submission after setting the input
-                      setTimeout(() => {
-                        // Try direct handleSubmit first
-                        if (handleSubmit) {
-                          handleSubmit();
-                        } else {
-                          // Fallback: trigger form submission via DOM
-                          const form = document.querySelector('form[data-chat-form]');
-                          if (form) {
-                            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-                          }
-                        }
-                      }, 10);
+                      // Send continue message directly using sendMessage
+                      sendMessage({
+                        role: 'user',
+                        parts: [{ type: 'text', text: 'continue' }]
+                      });
                     }}
                     isReadonly={isReadonly}
                   />
@@ -1528,6 +1684,7 @@ export const PreviewMessage = memo(
     enableUniversalReasoning?: boolean;
     setInput?: (input: string) => void;
     handleSubmit?: (e?: React.FormEvent) => void;
+    sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
   }, nextProps: {
     chatId: string;
     message: UIMessage;
@@ -1540,6 +1697,7 @@ export const PreviewMessage = memo(
     enableUniversalReasoning?: boolean;
     setInput?: (input: string) => void;
     handleSubmit?: (e?: React.FormEvent) => void;
+    sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
   }) => {
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (prevProps.message.id !== nextProps.message.id) return false;
@@ -1574,8 +1732,8 @@ export const ThinkingMessage = ({ selectedModelId }: { selectedModelId?: string 
       return message;
     }
     
-    // Otherwise use model-appropriate loading text
-    return isReasoningModel ? `Thinking${dots}` : `Processing${dots}`;
+    // Show appropriate loading text for the initial processing phase
+    return `Processing${dots}`;
   };
 
   const displayText = getDisplayText();

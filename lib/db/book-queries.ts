@@ -1,7 +1,9 @@
 import { desc, eq, and, sql } from 'drizzle-orm';
 import { db } from './db';
-import { Book, bookProp, bookTask } from './schema';
-import type { BookProp, BookTask } from './schema';
+import { Book, bookProp, task } from './schema';
+import type { BookProp, Task } from './schema';
+// Legacy import alias
+import type { BookTask } from './schema';
 
 // Types for working with existing Books table
 export interface BookSummary {
@@ -244,7 +246,7 @@ export async function initializeBookTasks(
   bookTitle: string, 
   userId: string, 
   isPictureBook: boolean = false
-): Promise<BookTask[]> {
+): Promise<Task[]> {
   // Define all workflow steps
   const workflowSteps = [
     { stepNumber: 1, stepName: 'Story Planning', toolUsed: 'createBookPlan' },
@@ -263,9 +265,11 @@ export async function initializeBookTasks(
 
   const tasks = await Promise.all(
     applicableSteps.map(async (step) => {
-      const [task] = await db
-        .insert(bookTask)
+      const [newTask] = await db
+        .insert(task)
         .values({
+          title: step.stepName, // Required field in new schema
+          taskType: 'workflow', // Mark as workflow task
           bookId,
           bookTitle,
           stepNumber: step.stepNumber,
@@ -274,23 +278,32 @@ export async function initializeBookTasks(
           isPictureBook,
           userId,
           status: 'pending',
+          dependencies: [], // Initialize empty dependencies
         })
         .onConflictDoNothing() // Don't duplicate if already exists
         .returning();
       
-      return task;
+      return newTask;
     })
   );
 
   return tasks.filter(Boolean); // Remove any undefined tasks from conflicts
 }
 
-export async function getBookTasks(bookId: string, userId: string): Promise<BookTask[]> {
-  return await db
+export async function getBookTasks(bookId: string, userId: string): Promise<Task[]> {
+  const tasks = await db
     .select()
-    .from(bookTask)
-    .where(and(eq(bookTask.bookId, bookId), eq(bookTask.userId, userId)))
-    .orderBy(bookTask.stepNumber);
+    .from(task)
+    .where(
+      and(
+        eq(task.bookId, bookId), 
+        eq(task.userId, userId),
+        eq(task.taskType, 'workflow') // Only get workflow tasks
+      )
+    )
+    .orderBy(task.stepNumber);
+  
+  return tasks as Task[];
 }
 
 export async function updateBookTaskStatus(
@@ -298,7 +311,7 @@ export async function updateBookTaskStatus(
   status: 'pending' | 'in_progress' | 'completed' | 'approved' | 'skipped',
   metadata?: any,
   notes?: string
-): Promise<BookTask | null> {
+): Promise<Task | null> {
   const updates: any = {
     status,
     updatedAt: new Date(),
@@ -321,9 +334,9 @@ export async function updateBookTaskStatus(
   }
 
   const [updatedTask] = await db
-    .update(bookTask)
+    .update(task)
     .set(updates)
-    .where(eq(bookTask.id, taskId))
+    .where(eq(task.id, taskId))
     .returning();
 
   return updatedTask || null;
@@ -335,7 +348,7 @@ export async function getBookProgress(bookId: string, userId: string): Promise<{
   approvedSteps: number;
   currentStep: number | null;
   progressPercentage: number;
-  tasks: BookTask[];
+  tasks: Task[];
 }> {
   const tasks = await getBookTasks(bookId, userId);
   

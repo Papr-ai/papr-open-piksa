@@ -2,8 +2,8 @@ import { streamText, convertToModelMessages, stepCountIs } from 'ai';
 import { auth } from '@/app/(auth)/auth';
 import { myProvider } from '@/lib/ai/providers';
 import { modelIsPremium, modelSupportsReasoning, modelSupportsWebSearch, getWebSearchModel } from '@/lib/ai/models';
-import { checkModelAccess } from '@/lib/subscription/utils';
-import { checkBasicInteractionLimit, checkPremiumInteractionLimit, trackBasicInteraction, trackPremiumInteraction } from '@/lib/subscription/usage-middleware';
+import { trackBasicInteraction, trackPremiumInteraction } from '@/lib/subscription/usage-middleware';
+import { fastCheckChatPermissions, trackInteractionAsync } from '@/lib/subscription/fast-usage-middleware';
 import { getMostRecentUserMessage } from '@/lib/utils';
 import { generateUUID } from '@/lib/utils';
 import { saveMessages, getChatById, saveChat } from '@/lib/db/queries';
@@ -12,7 +12,8 @@ import { getOrCreateChatContext } from '@/lib/ai/memory/chat-context';
 import type { ExtendedUIMessage } from '@/lib/types';
 import { searchMemories } from '@/lib/ai/tools/search-memories';
 import { addMemory } from '@/lib/ai/tools/add-memory';
-import { createMemoryEnabledSystemPrompt, intelligentlyStoreMessageInMemory } from '@/lib/ai/memory/middleware';
+import { updateMemory } from '@/lib/ai/tools/update-memory';
+import { deleteMemory } from '@/lib/ai/tools/delete-memory';
 import { shouldAnalyzeConversation, processConversationCompletion } from '@/lib/ai/conversation-insights';
 import { handleNewChatCreation } from '@/lib/ai/chat-history-context';
 import { systemPrompt } from '@/lib/ai/prompts';
@@ -37,7 +38,6 @@ import {
   createGetStagingStateTool,
   createClearStagedFilesTool
 } from '@/lib/ai/tools/github-integration';
-import { checkOnboardingStatus } from '@/lib/auth/onboarding-middleware';
 
 // Helper function to extract domain name from URL
 function extractDomainName(url: string): string {
@@ -79,43 +79,68 @@ export async function POST(request: Request) {
     
     console.log('[SIMPLE CHAT API] Using model:', modelToUse);
 
-    // Check onboarding status first - this includes auth check
-    const onboardingResult = await checkOnboardingStatus();
-    if (!onboardingResult.isCompleted) {
-      return onboardingResult.response!;
-    }
-
+    // Get session first
     const session = await auth();
     if (!session || !session.user || !session.user.id) {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    // Check model access
-    const modelAccess = await checkModelAccess(session.user.id, modelToUse);
-    if (!modelAccess.allowed) {
-      return new Response(JSON.stringify({ 
-        error: modelAccess.reason || 'Model access denied',
-        code: 'MODEL_ACCESS_DENIED'
-      }), { 
-        status: 403,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    // Check usage limits
-    const isPremium = modelIsPremium(modelToUse);
-    const usageCheck = isPremium 
-      ? await checkPremiumInteractionLimit(session.user.id)
-      : await checkBasicInteractionLimit(session.user.id);
+    // Fast combined permission check (replaces 4+ separate DB queries with 1)
+    const permissionCheck = await fastCheckChatPermissions(session.user.id, modelToUse);
+    
+    if (!permissionCheck.allowed) {
+      // Handle different error types
+      if (permissionCheck.code === 'ONBOARDING_REQUIRED') {
+        return new Response(JSON.stringify({
+          error: 'Please complete onboarding first',
+          code: 'ONBOARDING_REQUIRED',
+          redirectTo: '/onboarding'
+        }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
       
-    if (!usageCheck.allowed) {
-      return new Response(JSON.stringify({ 
-        error: usageCheck.reason,
-        code: 'USAGE_LIMIT_EXCEEDED',
-        usage: usageCheck.usage,
-        shouldShowUpgrade: usageCheck.shouldShowUpgrade
-      }), { 
-        status: 429,
+      if (permissionCheck.code === 'MODEL_ACCESS_DENIED') {
+        return new Response(JSON.stringify({ 
+          error: permissionCheck.reason || 'Model access denied',
+          code: 'MODEL_ACCESS_DENIED',
+          shouldShowUpgrade: permissionCheck.shouldShowUpgrade
+        }), { 
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (permissionCheck.code === 'USAGE_LIMIT_EXCEEDED') {
+        return new Response(JSON.stringify({ 
+          error: permissionCheck.reason,
+          code: 'USAGE_LIMIT_EXCEEDED',
+          usage: permissionCheck.usage,
+          shouldShowUpgrade: permissionCheck.shouldShowUpgrade
+        }), { 
+          status: 429,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      if (permissionCheck.code === 'PLAN_DETECTION_ERROR') {
+        return new Response(JSON.stringify({ 
+          error: permissionCheck.reason,
+          code: 'PLAN_DETECTION_ERROR',
+          shouldRefresh: true
+        }), { 
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Generic error
+      return new Response(JSON.stringify({
+        error: permissionCheck.reason || 'Permission denied',
+        code: permissionCheck.code || 'PERMISSION_DENIED'
+      }), {
+        status: 403,
         headers: { 'Content-Type': 'application/json' }
       });
     }
@@ -123,9 +148,9 @@ export async function POST(request: Request) {
     // Check memory enabled status from headers
     const memoryHeaderValue = request.headers.get('X-Memory-Enabled');
     const isMemoryEnabled = memoryHeaderValue === 'true';
-    console.log('[SIMPLE CHAT API] Memory header value:', memoryHeaderValue);
-    console.log('[SIMPLE CHAT API] Memory enabled:', isMemoryEnabled);
-    console.log('[SIMPLE CHAT API] All headers:', Object.fromEntries(request.headers.entries()));
+    //console.log('[SIMPLE CHAT API] Memory header value:', memoryHeaderValue);
+    //console.log('[SIMPLE CHAT API] Memory enabled:', isMemoryEnabled);
+    //console.log('[SIMPLE CHAT API] All headers:', Object.fromEntries(request.headers.entries()));
 
     const userMessage = getMostRecentUserMessage(messages);
     if (!userMessage) {
@@ -146,14 +171,14 @@ export async function POST(request: Request) {
         return new Response('Unauthorized', { status: 401 });
       }
     } else {
-      console.log('[SIMPLE CHAT API] Created new chat with user context');
+      //console.log('[SIMPLE CHAT API] Created new chat with user context');
     }
 
     // Save user message
-    console.log('[SIMPLE CHAT API] Processing message for user:', session.user.id);
-    console.log('[SIMPLE CHAT API] Message count:', messages.length);
+    //console.log('[SIMPLE CHAT API] Processing message for user:', session.user.id);
+    //console.log('[SIMPLE CHAT API] Message count:', messages.length);
 
-    console.log('[SIMPLE CHAT API] Saving user message to database...');
+    //console.log('[SIMPLE CHAT API] Saving user message to database...');
     await saveMessages({
       messages: [
         {
@@ -171,7 +196,7 @@ export async function POST(request: Request) {
         }
       ]
     });
-    console.log('[SIMPLE CHAT API] User message saved to database');
+    //console.log('[SIMPLE CHAT API] User message saved to database');
 
     // Convert UI messages to model messages format with hardening against malformed parts
     let modelMessages;
@@ -196,14 +221,15 @@ export async function POST(request: Request) {
     }
 
     const supportsReasoning = modelSupportsReasoning(modelToUse);
-    console.log('[SIMPLE CHAT API] Model supports reasoning:', supportsReasoning);
+    console.log('[SIMPLE CHAT API] Model supports reasoning:', supportsReasoning, 'for model:', modelToUse);
 
-    // Prepare tools - note: dataStream is used for progress updates during tool execution
-    // In the simple route, we don't have the complex streaming setup, but tools still return real data
+    // For the simple chat route, we'll collect data stream writes and include them in tool responses
+    // This is a simpler approach than real-time streaming but will show progress after tool completion
+    const dataStreamWrites: any[] = [];
     const dataStream = {
       write: (data: any) => {
-        // For now, just log progress updates - could be enhanced to send to client
-        console.log('[SIMPLE CHAT] Tool progress:', data);
+        //console.log('[SIMPLE CHAT] Tool progress:', data);
+        dataStreamWrites.push(data);
       }
     };
     
@@ -218,6 +244,10 @@ export async function POST(request: Request) {
     tools.requestSuggestions = requestSuggestions({ session, dataStream });
     tools.createImage = createImage({ session });
     tools.createWritingTools = createWritingTools({ session, dataStream });
+    
+    // Structured book image creation tool
+    const { createStructuredBookImages } = await import('@/lib/ai/tools/structured-book-image-creation');
+    tools.createStructuredBookImages = createStructuredBookImages({ session, dataStream });
     
     // Enhanced book creation workflow tools
     const { createEnhancedBookTools } = await import('@/lib/ai/tools/enhanced-book-tools');
@@ -247,8 +277,8 @@ export async function POST(request: Request) {
     tools.getStagingState = createGetStagingStateTool({ session, dataStream });
     tools.clearStagedFiles = createClearStagedFilesTool({ session, dataStream });
     
-    // Task tracker tools
-    const taskTrackerTools = createTaskTrackerTools(dataStream, session);
+    // Task tracker tools - pass chat ID for automatic sessionId
+    const taskTrackerTools = createTaskTrackerTools(dataStream, session, id);
     tools.createTaskPlan = taskTrackerTools.createTaskPlan;
     tools.updateTask = taskTrackerTools.updateTask;
     tools.completeTask = taskTrackerTools.completeTask;
@@ -263,20 +293,26 @@ export async function POST(request: Request) {
       tools.addMemory = addMemory({ 
         session: { user: session.user! } as any
       });
+      tools.updateMemory = updateMemory({ 
+        session: { user: session.user! } as any
+      });
+      tools.deleteMemory = deleteMemory({ 
+        session: { user: session.user! } as any
+      });
     }
 
     // Web search tools (only for Google models when web search is enabled)
     if (isWebSearchEnabled && modelSupportsWebSearch(modelToUse)) {
-      console.log('[SIMPLE CHAT API] Adding Google Search tool');
+      //console.log('[SIMPLE CHAT API] Adding Google Search tool');
       tools.google_search = google.tools.googleSearch({});
     } else {
-      console.log('[SIMPLE CHAT API] Web search not enabled or model does not support it');
-      console.log('[SIMPLE CHAT API] isWebSearchEnabled:', isWebSearchEnabled);
-      console.log('[SIMPLE CHAT API] modelSupportsWebSearch:', modelSupportsWebSearch(modelToUse));
+      //console.log('[SIMPLE CHAT API] Web search not enabled or model does not support it');
+      //console.log('[SIMPLE CHAT API] isWebSearchEnabled:', isWebSearchEnabled);
+      //console.log('[SIMPLE CHAT API] modelSupportsWebSearch:', modelSupportsWebSearch(modelToUse));
     }
 
-    console.log('[SIMPLE CHAT API] Final tools available:', Object.keys(tools));
-    console.log('[SIMPLE CHAT API] Tools details:', JSON.stringify(Object.keys(tools).reduce((acc, key) => ({ ...acc, [key]: typeof tools[key] }), {}), null, 2));
+    //console.log('[SIMPLE CHAT API] Final tools available:', Object.keys(tools));
+    //console.log('[SIMPLE CHAT API] Tools details:', JSON.stringify(Object.keys(tools).reduce((acc, key) => ({ ...acc, [key]: typeof tools[key] }), {}), null, 2));
     
 
     // Get system prompt (memory-enabled or regular)
@@ -289,7 +325,7 @@ export async function POST(request: Request) {
     // Get chat history context for newly created chats only
     let chatHistoryContext = '';
     if (!chatExists && isMemoryEnabled && apiKey && session?.user?.id) {
-      console.log('[SIMPLE CHAT API] 🆕 New chat being created, loading chat history context');
+      //console.log('[SIMPLE CHAT API] 🆕 New chat being created, loading chat history context');
       chatHistoryContext = await handleNewChatCreation(session.user.id, apiKey);
     }
     
@@ -297,17 +333,18 @@ export async function POST(request: Request) {
     let contextualSystemPrompt = baseSystemPrompt;
     
     if (contextString) {
-      console.log('[SIMPLE TEXT CHAT] Adding user context to system prompt:');
-      console.log('='.repeat(80));
-      console.log('User Context Length:', contextString.length);
-      console.log('User Context Preview:', contextString.substring(0, 200) + '...');
-      console.log('='.repeat(80));
+      //console.log('[SIMPLE TEXT CHAT] Adding user context to system prompt:');
+      //console.log('='.repeat(80));
+      //console.log('User Context Length:', contextString.length);
+      //console.log('User Context Preview:', contextString.substring(0, 200) + '...');
+      //console.log('='.repeat(80));
+      //console.log('='.repeat(80));
       
       contextualSystemPrompt += `\n\n${contextString}`;
     }
     
     if (chatHistoryContext) {
-      console.log('[SIMPLE TEXT CHAT] Adding chat history context');
+      //console.log('[SIMPLE TEXT CHAT] Adding chat history context');
       contextualSystemPrompt += `\n\n${chatHistoryContext}`;
     }
     
@@ -343,11 +380,6 @@ Use these tools naturally as part of helping the user - you don't need to announ
       // Use a much shorter system prompt for large contexts
       enhancedSystemPrompt = `You are Pen, an AI work assistant that helps users find information from their Papr memories and create content. You are tasked with responding to user queries by accessing their saved Papr memories when enabled (currently: ${isMemoryEnabled}). Today is ${new Date().toISOString().split('T')[0]}.
 
-You are also an expert software developer and system architect. You excel at:
-- Breaking down complex problems into clear, actionable steps  
-- Writing clean, production-ready code with proper structure and documentation
-- Following best practices for software development and system design
-
 ## 📖 Book Writing Support
 When you detect book writing requests, always use the createBook tool for substantial book content. This tool manages the entire book structure and individual chapters.
 
@@ -367,7 +399,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
     }
     
-    console.log(`[SIMPLE CHAT API] Using ${isMemoryEnabled ? 'memory-enabled' : 'standard'} system prompt`);
+    //console.log(`[SIMPLE CHAT API] Using ${isMemoryEnabled ? 'memory-enabled' : 'standard'} system prompt`);
 
     // Function to sanitize tool names to match OpenAI pattern ^[a-zA-Z0-9_-]+$
     const sanitizeToolName = (name: string): string => {
@@ -382,7 +414,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           if (part.type === 'tool-call' && part.toolName) {
             const sanitizedName = sanitizeToolName(part.toolName);
             if (sanitizedName !== part.toolName) {
-              console.log(`[SIMPLE CHAT API] Sanitizing tool name: "${part.toolName}" -> "${sanitizedName}"`);
+              //console.log(`[SIMPLE CHAT API] Sanitizing tool name: "${part.toolName}" -> "${sanitizedName}"`);
             }
             part = { ...part, toolName: sanitizedName };
           }
@@ -390,7 +422,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           if (part.type === 'tool-result' && part.toolName) {
             const sanitizedName = sanitizeToolName(part.toolName);
             if (sanitizedName !== part.toolName) {
-              console.log(`[SIMPLE CHAT API] Sanitizing tool result name: "${part.toolName}" -> "${sanitizedName}"`);
+              //console.log(`[SIMPLE CHAT API] Sanitizing tool result name: "${part.toolName}" -> "${sanitizedName}"`);
             }
             part = { ...part, toolName: sanitizedName };
           }
@@ -399,7 +431,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           if (part.type === 'tool-result' && part.output) {
             const outputStr = JSON.stringify(part.output);
             if (outputStr.length > 100000) { // Over 100k chars
-              console.log(`[SIMPLE CHAT API] Pre-processing: Sanitizing large tool result: ${part.toolName}, size: ${outputStr.length}`);
+              //console.log(`[SIMPLE CHAT API] Pre-processing: Sanitizing large tool result: ${part.toolName}, size: ${outputStr.length}`);
               
               // For image generation, keep only metadata
               if (part.toolName === 'generateImage') {
@@ -435,7 +467,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
       return msg;
     });
 
-    console.log(`[SIMPLE CHAT API] Pre-processed ${messages.length} messages, removed large binary data`);
+    //console.log(`[SIMPLE CHAT API] Pre-processed ${messages.length} messages, removed large binary data`);
 
     // Fix orphaned tool calls by adding dummy tool results
     const fixedMessages: any[] = [];
@@ -457,7 +489,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
         );
         
         if (orphanedCalls.length > 0) {
-          console.log(`[SIMPLE CHAT API] Found ${orphanedCalls.length} orphaned tool calls, adding dummy results`);
+          //console.log(`[SIMPLE CHAT API] Found ${orphanedCalls.length} orphaned tool calls, adding dummy results`);
           
           // Create dummy tool results for orphaned calls
           const dummyResults = orphanedCalls.map((call: any) => ({
@@ -484,14 +516,14 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
       }
     }
 
-    console.log(`[SIMPLE CHAT API] Fixed messages: ${fixedMessages.length} (was ${preprocessedMessages.length})`);
+    //console.log(`[SIMPLE CHAT API] Fixed messages: ${fixedMessages.length} (was ${preprocessedMessages.length})`);
 
     // Use rate limit handler with automatic retry
     const result = await handleRateLimitWithRetry(
       fixedMessages,
       modelToUse,
       async (messagesToUse) => {
-        console.log(`[SIMPLE CHAT API] Attempting API call with ${messagesToUse.length} messages`);
+        //console.log(`[SIMPLE CHAT API] Attempting API call with ${messagesToUse.length} messages`);
         
         // Convert messages to model format for the actual API call
         let adjustedModelMessages;
@@ -503,7 +535,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
           
         } catch (conversionError) {
-          console.error('[SIMPLE CHAT API] convertToModelMessages failed for truncated messages, sanitizing:', conversionError);
+          //console.error('[SIMPLE CHAT API] convertToModelMessages failed for truncated messages, sanitizing:', conversionError);
           const sanitizedMessages = messagesToUse.map((m: any) => ({
             ...m,
             parts: Array.isArray(m.parts)
@@ -524,7 +556,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
               if (part && typeof part === 'object' && part.text) {
                 const textLength = part.text.length;
                 if (textLength > 100000) { // Over 100k chars
-                  console.log(`[SIMPLE CHAT API] POST-CONVERSION: Sanitizing large content in message, size: ${textLength}`);
+                  //console.log(`[SIMPLE CHAT API] POST-CONVERSION: Sanitizing large content in message, size: ${textLength}`);
                   return {
                     ...part,
                     text: `[Large content truncated - original size: ${textLength} chars]`
@@ -534,7 +566,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
               return part;
             });
           } else if (msg.content && typeof msg.content === 'string' && msg.content.length > 100000) {
-            console.log(`[SIMPLE CHAT API] POST-CONVERSION: Sanitizing large string content, size: ${msg.content.length}`);
+            //console.log(`[SIMPLE CHAT API] POST-CONVERSION: Sanitizing large string content, size: ${msg.content.length}`);
             msg.content = `[Large content truncated - original size: ${msg.content.length} chars]`;
           }
           return msg;
@@ -578,6 +610,8 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
         console.log(`  - Model: ${modelProvider.modelId || 'unknown'}`);
         console.log(`  - Tools count: ${Object.keys(tools).length}`);
+        console.log(`  - Reasoning enabled: ${supportsReasoning}`);
+        console.log(`  - Reasoning config:`, supportsReasoning ? { effort: 'medium', budgetTokens: 2000 } : 'none');
 
                 const streamResult = await streamText({
           model: modelProvider,
@@ -593,6 +627,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
             'searchBooks',
             'requestSuggestions',
             'createImage',
+            'createStructuredBookImages',
             'listRepositories',
             'createProject',
             'getRepositoryFiles',
@@ -608,7 +643,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
             'completeTask',
             'getTaskStatus',
             'addTask',
-            ...(isMemoryEnabled ? ['searchMemories', 'addMemory'] : []),
+            ...(isMemoryEnabled ? ['searchMemories', 'addMemory', 'updateMemory', 'deleteMemory'] : []),
             ...(isWebSearchEnabled && modelSupportsWebSearch(modelToUse) ? ['google_search'] : []),
           ],
           providerOptions: {
@@ -620,16 +655,21 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           onStepFinish: (stepResult) => {
             // Log tool calls for debugging
             if (stepResult.toolCalls && stepResult.toolCalls.length > 0) {
-              console.log('[SIMPLE CHAT API] Tool calls attempted:', JSON.stringify(stepResult.toolCalls, null, 2));
+              //console.log('[SIMPLE CHAT API] Tool calls attempted:', JSON.stringify(stepResult.toolCalls, null, 2));
             }
             if (stepResult.toolResults && stepResult.toolResults.length > 0) {
-              console.log('[SIMPLE CHAT API] Tool results:', JSON.stringify(stepResult.toolResults, null, 2));
+              //console.log('[SIMPLE CHAT API] Tool results:', JSON.stringify(stepResult.toolResults, null, 2));
+            }
+            
+            // Log collected data stream writes (these will be included in the message parts)
+            if (dataStreamWrites.length > 0) {
+              //console.log('[SIMPLE CHAT API] Collected data stream writes:', dataStreamWrites.length);
             }
             if (isWebSearchEnabled) {
               // Check for Google grounding metadata
               const googleMetadata = (stepResult.providerMetadata as any)?.google;
               if (googleMetadata?.groundingMetadata) {
-                console.log('[SIMPLE CHAT API] Found grounding metadata with', googleMetadata.groundingMetadata.groundingSupports?.length, 'sources');
+                //console.log('[SIMPLE CHAT API] Found grounding metadata with', googleMetadata.groundingMetadata.groundingSupports?.length, 'sources');
                 
                 // Capture the grounding metadata for later use
                 if (googleMetadata.groundingMetadata.groundingSupports?.length) {
@@ -657,14 +697,14 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
                   });
                   
                   capturedSources = Array.from(sourceMap.values());
-                  console.log('[SIMPLE CHAT API] Captured', capturedSources.length, 'unique sources from grounding metadata');
+                  //console.log('[SIMPLE CHAT API] Captured', capturedSources.length, 'unique sources from grounding metadata');
                 }
               }
             }
           },
           onFinish: async ({ response }) => {
             if (isWebSearchEnabled) {
-              console.log('[SIMPLE CHAT API] Web search completed');
+              //console.log('[SIMPLE CHAT API] Web search completed');
             }
           },
         });
@@ -746,16 +786,13 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           // Use sanitized messages for processing
           finalMessages = sanitizedMessages;
           
-          // Track usage
+          // Track usage (non-blocking background operation)
           const userId = session.user?.id;
           if (userId) {
-            if (isPremium) {
-              await trackPremiumInteraction(userId);
-              console.log('[SIMPLE CHAT API] Tracked premium interaction');
-            } else {
-              await trackBasicInteraction(userId);
-              console.log('[SIMPLE CHAT API] Tracked basic interaction');
-            }
+            const isPremiumModel = modelIsPremium(modelToUse);
+            // Use fast async tracking - doesn't block response
+            trackInteractionAsync(userId, isPremiumModel ? 'premium' : 'basic');
+            console.log(`[SIMPLE CHAT API] Tracking ${isPremiumModel ? 'premium' : 'basic'} interaction in background`);
           }
 
           // Note: Memory is now handled by the AI itself via addMemory tool calls
@@ -765,19 +802,19 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           const allMessages = [...messages, ...finalMessages.slice(messages.length)];
           const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
           
-          console.log('[SIMPLE CHAT API] 🔍 Checking conversation analysis conditions:', {
+          /*console.log('[SIMPLE CHAT API] 🔍 Checking conversation analysis conditions:', {
             messageCount: allMessages.length,
             isMemoryEnabled,
             hasApiKey: !!PAPR_MEMORY_API_KEY,
             shouldAnalyze: shouldAnalyzeConversation(allMessages),
             chatId: id
-          });
+          });*/
           
           if (isMemoryEnabled && PAPR_MEMORY_API_KEY && shouldAnalyzeConversation(allMessages)) {
-            console.log('[SIMPLE CHAT API] 🔍 Conversation ready for analysis:', {
+            /*console.log('[SIMPLE CHAT API] 🔍 Conversation ready for analysis:', {
               messageCount: allMessages.length,
               chatId: id
-            });
+            });*/
 
             // Process conversation insights in the background
             const currentChat = await getChatById({ id });
@@ -790,13 +827,13 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
               console.error('[SIMPLE CHAT API] 🔍 Error processing conversation insights:', error);
             });
           } else {
-            console.log('[SIMPLE CHAT API] 🔍 Skipping conversation analysis - conditions not met');
+            //console.log('[SIMPLE CHAT API] 🔍 Skipping conversation analysis - conditions not met');
           }
 
           // Save all new messages (assistant messages with tool results)
           const newMessages = finalMessages.slice(messages.length); // Get only new messages
-          console.log('[SIMPLE CHAT API] New messages to save:', newMessages.length);
-          console.log('[SIMPLE CHAT API] New messages details:', JSON.stringify(newMessages, null, 2));
+          //console.log('[SIMPLE CHAT API] New messages to save:', newMessages.length);
+          //console.log('[SIMPLE CHAT API] New messages details:', JSON.stringify(newMessages, null, 2));
           
           for (const message of newMessages) {
             console.log('[SIMPLE CHAT API] Processing message:', {
@@ -807,9 +844,9 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
             });
             
             if (message.role === 'assistant') {
-              console.log('[SIMPLE CHAT API] Saving assistant message with parts:', message.parts.length);
-              console.log('[SIMPLE CHAT API] Parts details:', JSON.stringify(message.parts, null, 2));
-              console.log('[SIMPLE CHAT API] Model to save:', modelToUse);
+              //console.log('[SIMPLE CHAT API] Saving assistant message with parts:', message.parts.length);
+              //console.log('[SIMPLE CHAT API] Parts details:', JSON.stringify(message.parts, null, 2));
+              //console.log('[SIMPLE CHAT API] Model to save:', modelToUse);
               
               // Extract tool calls from parts for the tool_calls field
               const toolCalls = message.parts
@@ -824,7 +861,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
                   // Don't include the result/output - that stays in parts for UI rendering
                 }));
               
-              console.log('[SIMPLE CHAT API] Extracted tool calls:', JSON.stringify(toolCalls, null, 2));
+              //console.log('[SIMPLE CHAT API] Extracted tool calls:', JSON.stringify(toolCalls, null, 2));
 
               // Extract sources from message metadata if available
               const sources = (message as any).metadata?.sources || capturedSources;
@@ -844,13 +881,13 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
                 ...(sources && sources.length > 0 && { sources }),
               };
               
-              console.log('[SIMPLE CHAT API] Message object to save:', JSON.stringify(messageToSave, null, 2));
+              //console.log('[SIMPLE CHAT API] Message object to save:', JSON.stringify(messageToSave, null, 2));
               
               await saveMessages({
                 messages: [messageToSave]
               });
               
-              console.log('[SIMPLE CHAT API] Assistant message saved successfully');
+              //console.log('[SIMPLE CHAT API] Assistant message saved successfully');
             }
           }
         } catch (error) {

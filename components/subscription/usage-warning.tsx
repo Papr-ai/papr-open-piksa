@@ -104,8 +104,11 @@ export function UsageOverviewCard() {
     premiumInteractions: { current: number; limit: number; percentage: number };
     memoriesAdded: { current: number; limit: number; percentage: number };
     memoriesSearched: { current: number; limit: number; percentage: number };
+    voiceChats: { current: number; limit: number; percentage: number };
+    videosGenerated: { current: number; limit: number; percentage: number };
     plan: string;
   } | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (session?.user) {
@@ -115,15 +118,42 @@ export function UsageOverviewCard() {
 
   const fetchUsageOverview = async () => {
     try {
-      const response = await fetch('/api/subscription/usage-overview');
+      setLoading(true);
+      // Use the new optimized endpoint
+      const response = await fetch('/api/user/usage');
       if (response.ok) {
         const data = await response.json();
         setUsageData(data);
+      } else {
+        // Fallback to old endpoint
+        const fallbackResponse = await fetch('/api/subscription/usage-overview');
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          setUsageData(data);
+        }
       }
     } catch (error) {
       console.error('Error fetching usage overview:', error);
+    } finally {
+      setLoading(false);
     }
   };
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            Usage Overview
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground">Loading usage data...</p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   if (!usageData || !session?.user) return null;
 
@@ -219,6 +249,42 @@ export function UsageOverviewCard() {
             />
           </div>
         </div>
+
+        {usageData.voiceChats && (
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <span>Voice Chats</span>
+              <span>{formatUsage(usageData.voiceChats.current, usageData.voiceChats.limit)}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${getProgressColor(usageData.voiceChats.percentage)}`}
+                style={{ 
+                  width: `${Math.min(usageData.voiceChats.percentage, 100)}%`,
+                  ...getProgressStyle(usageData.voiceChats.percentage)
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {usageData.videosGenerated && (
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <span>Videos Generated</span>
+              <span>{formatUsage(usageData.videosGenerated.current, usageData.videosGenerated.limit)}</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full ${getProgressColor(usageData.videosGenerated.percentage)}`}
+                style={{ 
+                  width: `${Math.min(usageData.videosGenerated.percentage, 100)}%`,
+                  ...getProgressStyle(usageData.videosGenerated.percentage)
+                }}
+              />
+            </div>
+          </div>
+        )}
 
         {usageData.plan === 'free' && (
           <div className="pt-2 border-t">

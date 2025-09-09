@@ -6,6 +6,7 @@ import { optimizeImageCreation } from '@/lib/ai/image-creation-optimizer';
 const createImageInput = z.object({
   description: z.string().describe('Detailed description of the image to create'),
   seedImages: z.array(z.string()).optional().describe('COMPLETE URLs of existing images to use as seeds for consistency. Only provide if you have full HTTP URLs or complete base64 data URLs. Leave empty to let the tool search memory automatically.'),
+  seedImageTypes: z.array(z.enum(['character', 'environment', 'prop', 'other'])).optional().describe('Types of seed images provided (character, environment, prop, other). Must match the order of seedImages array. This helps optimize prompts for seeded image operations.'),
   sceneContext: z.string().optional().describe('Context about the current scene and story for continuity'),
   priorScene: z.string().optional().describe('Description of the previous scene for visual continuity'),
   styleConsistency: z.boolean().optional().default(false).describe('Whether to prioritize style consistency with seed images'),
@@ -32,7 +33,7 @@ export type CreateImageOutput = z.infer<typeof createImageOutput>;
 
 export const createImage = ({ session }: { session: Session }) =>
   tool({
-    description: `ENHANCED: Create images with automatic memory search and continuity management.
+    description: `ENHANCED: Create images with automatic memory search, continuity management, and Gemini-optimized prompts.
 
     🚨 **CRITICAL WORKFLOW CHANGE**:
     The AI assistant should ALWAYS use searchMemories BEFORE calling this tool to find existing assets and ask user approval!
@@ -41,6 +42,7 @@ export const createImage = ({ session }: { session: Session }) =>
     - Automatically searches memory for relevant seed images when none provided
     - Uses merge+edit for multiple seeds, edit for single seed, generate for new scenes
     - Ensures visual consistency across scenes and characters
+    - Optimizes prompts using Gemini 2.5 Flash best practices
     
     🧠 **Enhanced Memory Integration**:
     - Backend automatically searches memory when no seed images provided
@@ -48,10 +50,17 @@ export const createImage = ({ session }: { session: Session }) =>
     - Maintains consistent character appearances and environments
     - Uses prior scene context for smooth visual transitions
     
+    🎯 **Gemini Prompt Optimization**:
+    - Transforms simple descriptions into detailed, narrative prompts
+    - Applies photography terms for realistic images (camera angles, lighting, composition)
+    - Uses hyper-specific details and semantic positive language
+    - Follows Gemini's best practices for coherent, high-quality images
+    - Adapts prompts based on image type (photorealistic, illustration, sticker, etc.)
+    
     📝 **Usage Examples**:
-    - "Create Sarah in the library" → Memory search finds Sarah's portrait + library images automatically
-    - "Show the next scene in the same room" → Uses room + character consistency from memory
-    - "Generate a new magical forest" → Creates fresh scene when no relevant memories exist
+    - "Create Sarah in the library" → Memory search finds Sarah's portrait + library images, optimizes to detailed scene description
+    - "Show the next scene in the same room" → Uses room + character consistency from memory with cinematic prompt
+    - "Generate a new magical forest" → Creates fresh scene with atmospheric, narrative description
     
     ⚠️ **IMPORTANT - Seed Images**:
     - Tool now searches memory automatically if no seedImages provided
@@ -61,10 +70,11 @@ export const createImage = ({ session }: { session: Session }) =>
     - Leave seedImages empty to trigger automatic memory search
     
     ✨ **Best Practices**:
-    - Provide detailed descriptions for better memory search and results
-    - Include scene context for story continuity
-    - Mention specific characters/locations for better memory matching
-    - Leave seedImages empty unless you have complete, valid URLs - memory search is more reliable`,
+    - Provide detailed descriptions - they'll be enhanced with Gemini best practices automatically
+    - Include scene context for story continuity and better prompt optimization
+    - Mention specific characters/locations for better memory matching and prompt details
+    - Leave seedImages empty unless you have complete, valid URLs - memory search is more reliable
+    - Simple descriptions work well - the system will optimize them into professional prompts`,
     inputSchema: createImageInput,
     execute: async (input) => {
       try {
@@ -93,6 +103,7 @@ export const createImage = ({ session }: { session: Session }) =>
         const optimizedResult = await optimizeImageCreation({
           description: input.description,
           seedImages: validSeedImages,
+          seedImageTypes: input.seedImageTypes,
           sceneContext: input.sceneContext,
           priorScene: input.priorScene,
           styleConsistency: input.styleConsistency || false,

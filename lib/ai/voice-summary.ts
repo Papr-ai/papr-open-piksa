@@ -73,6 +73,10 @@ export async function saveVoiceConversationSummary({
       conversationLength: conversationText.length
     });
 
+    // Generate a temporary UUID for the voice summary request
+    const { generateUUID } = await import('@/lib/utils');
+    const tempChatId = generateUUID();
+    
     // Generate summary using the chat-simple API
     const summaryResponse = await fetch('/api/chat-simple', {
       method: 'POST',
@@ -80,11 +84,14 @@ export async function saveVoiceConversationSummary({
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        id: tempChatId, // Use a proper UUID for the chat ID
         messages: [
           {
-            id: 'voice-summary-request',
+            id: generateUUID(), // Generate a proper UUID for the message ID
             role: 'user',
-            content: `Please create a concise summary of this voice conversation session. Focus on:
+            parts: [{
+              type: 'text',
+              text: `Please create a concise summary of this voice conversation session. Focus on:
 - Main topics discussed
 - Key decisions or conclusions reached
 - Important information shared
@@ -94,11 +101,10 @@ export async function saveVoiceConversationSummary({
 Keep the summary concise but comprehensive. Here's the voice conversation:
 
 ${conversationText}`,
+            }]
           }
         ],
-        selectedModel: 'gpt-5-nano',
-        isMemoryEnabled: false, // Don't store the summary request itself
-        isWebSearchEnabled: false,
+        selectedChatModel: 'gpt-5-mini', // Fix the field name
       }),
     });
 

@@ -20,7 +20,7 @@ const createBookSchema = z.object({
   chapterNumber: z.number().describe('The chapter number (1, 2, 3, etc.)'),
   description: z.string().optional().describe('Optional description or outline for the chapter'),
   bookId: z.string().optional().describe('Optional bookId for existing book. Use searchBooks tool first (without bookTitle parameter) to get all books and let AI choose the right one. If not provided, a new book will be created.'),
-  bookContext: z.string().optional().describe('Optional context about the book, characters, plot, and writing style from previous chapters. Use searchMemories tool first to gather relevant context before calling this tool.'),
+  bookContext: z.string().optional().describe('CRITICAL: Full context from the chat conversation AND memory searches including ALL character details (names, ages, genders, descriptions), plot points, story elements, and writing style. This must include conversation context to prevent character information from being lost or changed. Use searchMemories tool first, then combine with conversation details.'),
 });
 
 type CreateBookInput = z.infer<typeof createBookSchema>;
@@ -38,7 +38,7 @@ type CreateBookOutput = {
 export const createBook = ({ session, dataStream }: CreateBookProps) =>
   tool({
     description:
-      'Create or add to a book with chapters. This tool manages the entire book structure and can add new chapters to existing books. Use this instead of createDocument for book content. IMPORTANT WORKFLOW: 1) Use searchBooks tool first (without bookTitle parameter) to get all existing books and let AI choose the right one, 2) Use searchMemories tool to gather relevant context about the book, characters, plot, and writing style, 3) Pass the relevant context via the bookContext parameter to maintain consistency across chapters.',
+      'Create or add to a book with chapters. This tool manages the entire book structure and can add new chapters to existing books. Use this instead of createDocument for book content. 🚨 CRITICAL WORKFLOW: 1) Use searchBooks tool first (without bookTitle parameter) to get all existing books and let AI choose the right one, 2) Use searchMemories tool to gather relevant context about the book, characters, plot, and writing style, 3) EXTRACT ALL RELEVANT DETAILS from the current conversation (character names, ages, genders, plot points, etc.) and pass via the bookContext parameter to maintain consistency across chapters. The AI MUST include conversation context to prevent character details from being lost or changed.',
     inputSchema: createBookSchema,
     execute: async (input: CreateBookInput): Promise<CreateBookOutput> => {
       const { bookTitle, chapterTitle, chapterNumber, description, bookId: existingBookId, bookContext } = input;
@@ -59,11 +59,12 @@ export const createBook = ({ session, dataStream }: CreateBookProps) =>
         content: id,
       });
 
-      // Use provided book context from the main LLM's memory search
+      // Validate and use provided book context from the main LLM's memory search
       if (bookContext) {
-        console.log(`[createBook] Using provided book context for "${bookTitle}" (${bookContext.length} chars)`);
+        console.log(`[createBook] ✅ Using provided book context for "${bookTitle}" (${bookContext.length} chars)`);
       } else {
-        console.log(`[createBook] No book context provided for "${bookTitle}"`);
+        console.warn(`[createBook] ⚠️ WARNING: No book context provided for "${bookTitle}" - this may result in character details being lost or inconsistent!`);
+        console.warn('[createBook] The AI should search memory and extract conversation context before calling this tool.');
       }
 
       // Generate chapter content

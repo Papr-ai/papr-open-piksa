@@ -2,8 +2,9 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { CheckCircleIcon, CircleIcon, ClockIcon, PlayIcon, XCircleIcon } from 'lucide-react';
+import { CheckCircleIcon, CircleIcon, ClockIcon, PlayIcon, XCircleIcon, ChevronDownIcon, ChevronRightIcon } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useState } from 'react';
 
 interface Task {
   id: string;
@@ -24,13 +25,14 @@ interface TaskProgress {
 }
 
 interface TaskCardProps {
-  type: 'task-plan-created' | 'task-updated' | 'task-completed' | 'task-status';
+  type: 'task-plan-created' | 'task-updated' | 'task-completed' | 'task-status' | 'task-plan-creating';
   tasks?: Task[];
   task?: Task;
   nextTask?: Task;
   progress?: TaskProgress;
   allCompleted?: boolean;
   message?: string;
+  taskCount?: number; // For showing count during creation
 }
 
 // Helper function to get status icon
@@ -79,26 +81,114 @@ function formatDate(dateString: string) {
   }
 }
 
-export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, message }: TaskCardProps) {
-  // Show compact version for individual task updates/completions
-  const isCompact = type === 'task-updated' || type === 'task-completed';
+// Compact Task Item Component
+function CompactTaskItem({ task, isUpNext }: { task: Task; isUpNext: boolean }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <div
+      className={`border-b last:border-b-0 transition-colors ${
+        isUpNext 
+          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700' 
+          : task.status === 'in_progress' 
+          ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-700' 
+          : task.status === 'completed'
+          ? 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-700'
+          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'
+      }`}
+    >
+      {/* Compact header - always visible */}
+      <div 
+        className="flex items-center gap-2 py-2 px-3 cursor-pointer hover:bg-opacity-80 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        {getStatusIcon(task.status)}
+        <span className="font-medium text-sm dark:text-gray-100 flex-1 truncate">
+          {task.title}
+        </span>
+        <div className="flex items-center gap-1.5">
+          <Badge className={`text-xs px-1.5 py-0.5 ${getStatusBadgeColor(task.status)}`}>
+            {task.status.replace('_', ' ')}
+          </Badge>
+          {task.description && (
+            <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+              {isExpanded ? (
+                <ChevronDownIcon className="w-3 h-3" />
+              ) : (
+                <ChevronRightIcon className="w-3 h-3" />
+              )}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded details - only visible when expanded */}
+      {isExpanded && task.description && (
+        <div className="px-3 pb-2 border-t border-gray-200 dark:border-gray-600">
+          <div className="pt-2">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-1.5">{task.description}</p>
+            <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              {task.estimatedDuration && (
+                <span className="flex items-center gap-1">
+                  <ClockIcon className="w-2.5 h-2.5" />
+                  {task.estimatedDuration}
+                </span>
+              )}
+              {task.dependencies && task.dependencies.length > 0 && (
+                <span>{task.dependencies.length} dependencies</span>
+              )}
+              {task.createdAt && (
+                <span>Created {formatDate(task.createdAt.toString())}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, message, taskCount }: TaskCardProps) {
+  
+  // Debug logging to see what data we're receiving
+  console.log('[TaskCard] Received props:', {
+    type,
+    tasks: tasks?.length || 0,
+    tasksData: tasks,
+    task,
+    nextTask,
+    progress,
+    allCompleted,
+    message,
+    taskCount
+  });
+  
+  // Show compact version for individual task updates/completions and empty task status
+  const isCompact = type === 'task-updated' || type === 'task-completed' || 
+    (type === 'task-status' && (!tasks || tasks.length === 0));
   
   const getTitle = () => {
     switch (type) {
+      case 'task-plan-creating':
+        return `Creating Task Plan`;
       case 'task-plan-created':
-        return `📋 Task Plan Created`;
+        return `Task Plan Created`;
       case 'task-updated':
-        return `📝 Task Updated`;
+        return `Task Updated`;
       case 'task-completed':
-        return `✅ Task Completed`;
+        return `Task Completed`;
       case 'task-status':
-        return `📊 Task Status`;
+        return `Task Status`;
       default:
-        return `📋 Task Tracker`;
+        return `Task Tracker`;
     }
   };
 
   const getProgressMessage = () => {
+    if (type === 'task-plan-creating') {
+      return taskCount ? `Planning ${taskCount} tasks...` : 'Analyzing requirements and creating task plan...';
+    }
+    
     if (allCompleted) {
       return `🎉 All tasks completed! Great work!`;
     }
@@ -111,10 +201,26 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
   };
 
   // Modern SVG icons matching Papr logo style
-  const getModernIcon = (status: 'completed' | 'updated' | 'up-next') => {
+  const getModernIcon = (status: 'completed' | 'updated' | 'up-next' | 'plan-created') => {
     const gradientId = `gradient-${status}-${Math.random().toString(36).substr(2, 9)}`;
     
     switch (status) {
+      case 'plan-created':
+        return (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <defs>
+              <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#0060E0" />
+                <stop offset="60%" stopColor="#00ACFA" />
+                <stop offset="100%" stopColor="#0BCDFF" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="12" height="12" rx="2" fill={`url(#${gradientId})`}/>
+            <path d="M4 5h8M4 7h6M4 9h8M4 11h4" stroke="white" strokeWidth="1.2" strokeLinecap="round"/>
+            <circle cx="12" cy="4" r="2" fill="#10B981"/>
+            <path d="M11 4l0.5 0.5L13 3" stroke="white" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        );
       case 'completed':
         return (
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -165,14 +271,18 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
   if (isCompact) {
     // Use the type prop to determine the correct display
     const isUpNext = nextTask && task && task.id === nextTask.id && task.status === 'pending';
-    const statusType = type === 'task-completed' ? 'completed' : isUpNext ? 'up-next' : 'updated';
-    const statusText = type === 'task-completed' ? 'completed' : type === 'task-updated' ? 'updated' : 'up next';
+    const statusType = type === 'task-completed' ? 'completed' : 
+                      type === 'task-status' ? 'updated' : 
+                      isUpNext ? 'up-next' : 'updated';
+    const statusText = type === 'task-completed' ? 'completed' : 
+                      type === 'task-updated' ? 'updated' : 
+                      type === 'task-status' ? 'no tasks found' : 'up next';
     
     // Get the task title - could be from task object or message
-    const taskTitle = task?.title || message || 'Task';
+    const taskTitle = type === 'task-status' ? 'No Task Plan Found' : task?.title || message || 'Task';
     
     return (
-      <div className={`flex items-center gap-3 py-2 px-3 border rounded-lg text-sm transition-colors ${
+      <div className={`flex items-center gap-2 py-1.5 px-2.5 border rounded-lg text-xs transition-colors w-fit max-w-full ${
         isUpNext 
           ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700' 
           : type === 'task-completed'
@@ -180,14 +290,14 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
           : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-700'
       }`}>
         {getModernIcon(statusType)}
-        <span className="font-medium dark:text-gray-100">
+        <span className="font-medium text-xs dark:text-gray-100">
           Task {statusText}:
         </span>
-        <span className="text-gray-700 dark:text-gray-300 flex-1 truncate">
+        <span className="text-gray-700 dark:text-gray-300 flex-1 truncate text-sm">
           {taskTitle}
         </span>
         {progress && (
-          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2 whitespace-nowrap">
+          <span className="text-sm text-gray-500 dark:text-gray-400 ml-2 whitespace-nowrap">
             {progress.completed}/{progress.total}
           </span>
         )}
@@ -195,13 +305,46 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
     );
   }
 
+  // Special loading card for task creation
+  if (type === 'task-plan-creating') {
+    return (
+      <Card className="border-l-4 border-l-blue-500 dark:border-l-blue-400 dark:bg-gray-900">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg dark:text-gray-100">
+            <div className="flex items-center gap-2">
+              <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+              {getTitle()}
+            </div>
+          </CardTitle>
+          <div className="text-sm text-muted-foreground dark:text-gray-400">
+            {getProgressMessage()}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center p-8 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+            <div className="text-center">
+              <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+              <div className="text-blue-800 dark:text-blue-400 font-medium mb-2">
+                Setting up your task plan
+              </div>
+              <div className="text-sm text-blue-600 dark:text-blue-500">
+                Breaking down your request into manageable steps...
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
-    <Card className="my-4 border-l-4 border-l-blue-500 dark:border-l-blue-400 dark:bg-gray-900">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg dark:text-gray-100">
+    <Card className="border-l-4 border-l-blue-500 dark:border-l-blue-400 dark:bg-gray-900 w-fit max-w-full">
+      <CardHeader className="pb-2 pt-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold dark:text-gray-100">
+          {type === 'task-plan-created' && getModernIcon('plan-created')}
           {getTitle()}
         </CardTitle>
-        <div className="text-sm text-muted-foreground dark:text-gray-400">
+        <div className="text-xs text-muted-foreground dark:text-gray-400">
           {getProgressMessage()}
         </div>
         {progress && (
@@ -216,67 +359,53 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
         )}
       </CardHeader>
       
-      <CardContent className="space-y-4">
+      <CardContent>
 
 
         {/* Task list display for task-plan-created and task-status */}
-        {(type === 'task-plan-created' || type === 'task-status') && tasks && tasks.length > 0 && (
-          <div className="space-y-2">
-            {tasks.slice(0, 5).map((t, index) => {
-              const isUpNext = nextTask && t.id === nextTask.id && t.status === 'pending';
+        {(type === 'task-plan-created' || type === 'task-status') && (
+          tasks && tasks.length > 0 ? (
+          <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            {tasks.slice(0, 10).map((t, index) => {
+              const isUpNext = !!(nextTask && t.id === nextTask.id && t.status === 'pending');
               return (
-              <div
-                key={t.id}
-                className={`flex items-start gap-3 p-3 rounded-lg border ${
-                  isUpNext 
-                    ? 'border-blue-300 bg-blue-50 dark:border-blue-600 dark:bg-blue-900/20' 
-                    : t.status === 'in_progress' 
-                    ? 'border-blue-200 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/10' 
-                    : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800'
-                }`}
-              >
-                {getStatusIcon(t.status)}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-sm dark:text-gray-100">{t.title}</span>
-                    <Badge className={`text-xs ${getStatusBadgeColor(t.status)}`}>
-                      {t.status.replace('_', ' ')}
-                    </Badge>
-                  </div>
-                  {t.description && (
-                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2">{t.description}</p>
-                  )}
-                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {t.estimatedDuration && (
-                      <span className="flex items-center gap-1">
-                        <ClockIcon className="w-3 h-3" />
-                        {t.estimatedDuration}
-                      </span>
-                    )}
-                    {t.dependencies && t.dependencies.length > 0 && (
-                      <span>{t.dependencies.length} dependencies</span>
-                    )}
-                  </div>
-                </div>
-              </div>
+                <CompactTaskItem 
+                  key={t.id} 
+                  task={t} 
+                  isUpNext={isUpNext}
+                />
               );
             })}
             
-            {tasks.length > 5 && (
-              <div className="text-sm text-gray-500 text-center py-2">
-                ... and {tasks.length - 5} more tasks
+            {tasks.length > 10 && (
+              <div className="text-sm text-gray-500 text-center py-2 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+                <span className="px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded-full text-xs">
+                  + {tasks.length - 10} more tasks
+                </span>
               </div>
             )}
           </div>
+          ) : (
+            // Show message when no tasks are found for task-status
+            <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="text-gray-600 dark:text-gray-400 font-medium text-sm">No Task Plan Found</div>
+              <div className="text-sm text-gray-500 dark:text-gray-500 mt-1">
+                {type === 'task-status' 
+                  ? 'No active task plan for this session. Create a task plan to get started.'
+                  : 'Task plan is empty.'
+                }
+              </div>
+            </div>
+          )
         )}
 
         {/* Next task is now highlighted directly in the task list above */}
 
         {/* Success message for all completed */}
         {allCompleted && (
-          <div className="border-t pt-3 dark:border-gray-700">
-            <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-              <div className="text-green-800 dark:text-green-400 font-medium">🎉 All Tasks Completed!</div>
+          <div className="border-t pt-2 dark:border-gray-700">
+            <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+              <div className="text-green-800 dark:text-green-400 font-medium text-sm">🎉 All Tasks Completed!</div>
               <div className="text-sm text-green-600 dark:text-green-500 mt-1">
                 Great job completing all the tasks in your plan!
               </div>
@@ -303,8 +432,9 @@ export function detectTaskTrackerData(content: string): TaskCardProps | null {
           const parsed = JSON.parse(jsonMatch.trim());
           
           if (parsed.type && typeof parsed.type === 'string' && parsed.type.startsWith('task-')) {
-            // Prioritize certain types: task-plan-created > task-completed > task-updated
+            // Prioritize certain types: task-plan-creating > task-plan-created > task-completed > task-updated
             const priority = {
+              'task-plan-creating': 4,
               'task-plan-created': 3,
               'task-completed': 2,
               'task-updated': 1,
@@ -324,6 +454,7 @@ export function detectTaskTrackerData(content: string): TaskCardProps | null {
                 progress: parsed.progress,
                 allCompleted: parsed.allCompleted,
                 message: parsed.message,
+                taskCount: parsed.taskCount,
               };
             }
           }
@@ -353,6 +484,7 @@ export function detectTaskTrackerData(content: string): TaskCardProps | null {
         progress: parsed.progress,
         allCompleted: parsed.allCompleted,
         message: parsed.message,
+        taskCount: parsed.taskCount,
       };
     }
     return null;

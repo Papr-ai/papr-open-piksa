@@ -50,7 +50,7 @@ export function PricingCard({
         </div>
       )}
       
-      <CardHeader className="text-center">
+      <CardHeader className="text-center pb-4">
         <CardTitle className="text-2xl" style={{
           color: isCurrentPlan ? '#0161E0' : ''
         }}>
@@ -73,7 +73,7 @@ export function PricingCard({
         </div>
       </CardHeader>
       
-      <CardContent>
+      <CardContent className="pt-0 px-6 pb-6">
         <Button 
           onClick={() => {
             if (isCurrentPlan && hasActiveSubscription && onManageSubscription) {
@@ -93,10 +93,10 @@ export function PricingCard({
            'Subscribe'}
         </Button>
         
-        <div className="space-y-3">
+        <div className="space-y-4">
           <p className="text-sm font-semibold">This includes:</p>
           
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center gap-2">
               <div className="flex-shrink-0" style={{ color: '#0161E0' }}>
                 <CheckCircleFillIcon size={16} />

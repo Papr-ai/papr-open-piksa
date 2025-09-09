@@ -419,11 +419,16 @@ export function MessageReasoning({
   );
   
   // Determine if we should show the reasoning section
-  // Only hide if the only event is a generic "Processing..." step AND no tool calls
-  const shouldHideReasoningUI = events.length === 1 && 
-    events[0].content.text === "Processing..." &&
-    !isLoading &&
-    !hasToolCalls;
+  // Hide if there are no meaningful events or only generic placeholders
+  const shouldHideReasoningUI = events.length === 0 || 
+    (events.length === 1 && 
+     (events[0].content.text === "Processing..." || 
+      events[0].content.text === "Processing" ||
+      events[0].content.text === "" ||
+      !events[0].content.text ||
+      events[0].content.text.trim().length === 0) &&
+     !isLoading &&
+     !hasToolCalls);
     
   // Never hide reasoning if we've completed a memory search
   if (isMemorySearchComplete) {
@@ -573,16 +578,19 @@ export function MessageReasoning({
   const mainThinkingText = mainThinkingEvent ? mainThinkingEvent.content.text : null;
 
   // Compute status text for header - modified to use "Thoughts" when complete
-  // Only show "Thinking..." if we're actively in the thinking state
-  const hasStartedReasoning = events.some(e => 
-    e.content.step !== 'init' && 
-    e.content.text && 
-    e.content.text !== 'Processing...'
+  // Only show "Thinking..." if we have actual thinking content
+  const hasActualThinking = events.some(e => 
+    e.content.step === 'think' ||
+    (e.content.text && 
+     e.content.text.length > 20 &&
+     e.content.text !== 'Processing...' &&
+     e.content.text !== 'Processing' &&
+     !e.content.text.startsWith('Processing step'))
   );
   
-  const statusText = isLoading && hasStartedReasoning
+  const statusText = isLoading && hasActualThinking
     ? 'Thinking...'
-    : isLoading && !hasStartedReasoning
+    : isLoading && !hasActualThinking
     ? 'Processing...'
     : `Thoughts`;
 

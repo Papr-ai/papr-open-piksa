@@ -1,5 +1,5 @@
 import type { InferSelectModel } from 'drizzle-orm';
-import { sql } from 'drizzle-orm';
+import { sql, relations } from 'drizzle-orm';
 import {
   pgTable,
   varchar,
@@ -160,20 +160,42 @@ export const bookProp = pgTable('BookProp', {
 
 export type BookProp = InferSelectModel<typeof bookProp>;
 
-// Book tasks table for tracking workflow progress
-export const bookTask = pgTable('BookTask', {
+// Unified task table for both workflow and general task tracking
+export const task = pgTable('Tasks', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
-  bookId: uuid('bookId').notNull(), // References bookId from Books table
-  bookTitle: varchar('bookTitle', { length: 255 }).notNull(), // Denormalized for easy access
-  stepNumber: integer('stepNumber').notNull(), // 1-7 based on WORKFLOW_STEPS
-  stepName: varchar('stepName', { length: 100 }).notNull(), // e.g., 'Story Planning', 'Chapter Drafting'
-  status: varchar('status', { length: 50 }).notNull().default('pending'), // 'pending', 'in_progress', 'completed', 'approved', 'skipped'
+  
+  // Core task fields (used by both types)
+  title: varchar('title', { length: 255 }).notNull(), // Task title/name
+  description: text('description'), // Task description
+  status: varchar('status', { length: 50 }).notNull().default('pending'), // 'pending', 'in_progress', 'completed', 'blocked', 'cancelled', 'approved', 'skipped'
+  
+  // Task type and context
+  taskType: varchar('taskType', { length: 50 }).notNull().default('workflow'), // 'workflow' or 'general'
+  sessionId: varchar('sessionId', { length: 255 }), // For general tasks tied to chat sessions
+  
+  // Book workflow specific fields (nullable for general tasks)
+  bookId: uuid('bookId'), // References bookId from Books table (null for general tasks)
+  bookTitle: varchar('bookTitle', { length: 255 }), // Denormalized for easy access (null for general tasks)
+  stepNumber: integer('stepNumber'), // 1-7 based on WORKFLOW_STEPS (null for general tasks)
+  stepName: varchar('stepName', { length: 100 }), // e.g., 'Story Planning', 'Chapter Drafting' (null for general tasks)
+  isPictureBook: boolean('isPictureBook').default(false), // Determines which steps are applicable (false for general tasks)
+  
+  // Task relationships and dependencies
+  parentTaskId: uuid('parentTaskId'), // For subtasks - self-reference added in relations
+  dependencies: jsonb('dependencies').default('[]'), // Array of task IDs that must be completed first
+  
+  // Timing and tools
   toolUsed: varchar('toolUsed', { length: 100 }), // e.g., 'createBookPlan', 'draftChapter'
+  estimatedDuration: varchar('estimatedDuration', { length: 50 }), // e.g., '30 minutes', '2 hours'
+  actualDuration: varchar('actualDuration', { length: 50 }), // Actual time taken
   completedAt: timestamp('completedAt'),
   approvedAt: timestamp('approvedAt'),
+  
+  // Metadata and notes
   metadata: jsonb('metadata').default({}), // Store step-specific data, results, etc.
   notes: text('notes'), // User notes or AI-generated summaries
-  isPictureBook: boolean('isPictureBook').default(false), // Determines which steps are applicable
+  
+  // User and timestamps
   userId: uuid('userId')
     .notNull()
     .references(() => user.id),
@@ -181,11 +203,26 @@ export const bookTask = pgTable('BookTask', {
   updatedAt: timestamp('updatedAt').notNull().defaultNow(),
 }, (table) => {
   return {
+    // Workflow tasks must have unique bookId + stepNumber combination
     uniqueBookStep: unique().on(table.bookId, table.stepNumber),
+    // General tasks should have unique sessionId + title combination to prevent duplicates
+    uniqueSessionTask: unique().on(table.sessionId, table.title),
   };
 });
 
-export type BookTask = InferSelectModel<typeof bookTask>;
+// Task relations for self-references
+export const taskRelations = relations(task, ({ one, many }) => ({
+  parent: one(task, {
+    fields: [task.parentTaskId],
+    references: [task.id],
+  }),
+  children: many(task),
+}));
+
+export type Task = InferSelectModel<typeof task>;
+
+// Legacy type alias for backward compatibility
+export type BookTask = Task;
 
 // DEPRECATED: The following schema is deprecated and will be removed in the future.
 // Read the migration guide at https://github.com/vercel/ai-chatbot/blob/main/docs/04-migrate-to-parts.md

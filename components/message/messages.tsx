@@ -27,6 +27,7 @@ interface MessagesProps {
   voiceState?: VoiceChatState;
   setInput?: (input: string) => void;
   handleSubmit?: (e?: React.FormEvent) => void;
+  sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
 }
 
 function PureMessages({
@@ -44,11 +45,12 @@ function PureMessages({
   voiceState,
   setInput,
   handleSubmit,
+  sendMessage,
 }: MessagesProps) {
   // Mobile detection hook
   const isMobile = useIsMobile();
   
-  const [messagesContainerRef, messagesEndRef] =
+  const [messagesContainerRef, messagesEndRef, scrollToBottom] =
     useScrollToBottom<HTMLDivElement>();
   
   const [isScrolledUp, setIsScrolledUp] = useState(false);
@@ -80,16 +82,13 @@ function PureMessages({
       messages.length > 0 &&
       messages[messages.length - 1].role === 'user'
     ) {
-      // Force scroll to bottom
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      // Force scroll to bottom when user sends a message
+      scrollToBottom();
     }
     
     prevMessagesLengthRef.current = messages.length;
-  }, [messages.length, messages]);
+  }, [messages.length, messages, scrollToBottom]);
   
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  };
   
   // Check if the last message has proper content to display
   useEffect(() => {
@@ -132,30 +131,29 @@ function PureMessages({
   // Check if we're using the reasoning model
   const isReasoningModel = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;
   
-  // Determine if we should show the thinking state - unified approach
-  const shouldShowThinking = 
-    // For non-reasoning model, show during submit and streaming (for tool execution)
-    !isReasoningModel ? 
-      // Show loading indicator during submit state or streaming without visible content
-      ((status === 'submitted' || status === 'streaming') && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'user') ||
-      // Also show during streaming if the last message is an assistant message without visible content
-      (status === 'streaming' && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'assistant' && 
-       !hasVisibleContent)
-      :
-      // For reasoning model, show if no message with reasoning is being displayed
-      ((status === 'submitted' || status === 'streaming') && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'user' && 
-       !hasVisibleContent) ||
-      // Also show during streaming if the last message is an assistant message without visible content
-      (status === 'streaming' && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'assistant' && 
-       !hasVisibleContent);
+  // Check if we have any reasoning content in the current messages
+  const hasReasoningContent = messages.some(message => {
+    if (message.role !== 'assistant') return false;
+    
+    // Check for reasoning parts
+    if (message.parts?.some(part => (part as any).type === 'reasoning')) {
+      return true;
+    }
+    
+    // Check for <think> blocks in text content
+    const textContent = message.parts
+      ?.filter(part => (part as any).type === 'text')
+      ?.map(part => (part as any).text)
+      ?.join(' ') || '';
+    
+    return /<think>[\s\S]*<\/think>/.test(textContent);
+  });
+
+  // Show loading indicator when AI is processing (before any content appears)
+  const shouldShowThinking = (status === 'submitted' || status === 'streaming') && 
+    messages.length > 0 && 
+    messages[messages.length - 1].role === 'user' && 
+    !hasVisibleContent;
   
   // Don't filter messages, just modify how they're displayed
   // This ensures tool calls and reasoning events are always visible
@@ -248,6 +246,7 @@ function PureMessages({
                 enableUniversalReasoning={enableUniversalReasoning}
                 setInput={setInput}
                 handleSubmit={handleSubmit}
+                sendMessage={sendMessage}
               />
             </div>
           );

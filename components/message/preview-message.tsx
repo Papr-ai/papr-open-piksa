@@ -342,7 +342,7 @@ export function ThinkingMessage({ selectedModelId }: { selectedModelId?: string 
       return message;
     }
     
-    return isReasoningModel ? `Thinking${dots}` : `Processing${dots}`;
+    return `Processing${dots}`;
   };
 
   const displayText = getDisplayText();

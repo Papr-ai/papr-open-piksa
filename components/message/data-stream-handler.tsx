@@ -18,6 +18,11 @@ export type DataStreamDelta = {
     | 'image-generated'
     | 'image-edited'
     | 'images-merged'
+    | 'structured-book-image-start'
+    | 'structured-book-image-progress'
+    | 'structured-book-image-result'
+    | 'structured-book-image-complete'
+    | 'structured-book-image-approval'
     | 'title'
     | 'id'
     | 'suggestion'
@@ -519,6 +524,55 @@ Please reply with **Approve** to proceed with creation, or **Stop** to cancel.`,
           if (imagesMergedData.content) {
             setThinkingState('✅ Images merged successfully', 'tool-result-success');
           }
+          break;
+
+        case 'structured-book-image-start':
+          // Handle structured book image creation start
+          const startData = dataPart.data as any;
+          console.log('[DATA STREAM] Structured book image creation started:', startData);
+          
+          setThinkingState(`🎨 Starting systematic image creation for "${startData.content?.bookTitle}"`, 'tool-result-info');
+          break;
+
+        case 'structured-book-image-progress':
+          // Handle structured book image creation progress
+          const imageProgressData = dataPart.data as any;
+          console.log('[DATA STREAM] Structured book image progress:', imageProgressData);
+          
+          const stepLabel = imageProgressData.content?.step === 'character_portrait' ? 'Character Portrait' :
+                           imageProgressData.content?.step === 'environment' ? 'Environment' : 'Scene';
+          setThinkingState(
+            `🎨 ${stepLabel}: ${imageProgressData.content?.item} (${imageProgressData.content?.stepNumber}/${imageProgressData.content?.totalSteps})`,
+            'tool-progress'
+          );
+          break;
+
+        case 'structured-book-image-result':
+          // Handle structured book image creation result
+          const resultData = dataPart.data as any;
+          console.log('[DATA STREAM] Structured book image result:', resultData);
+          
+          if (resultData.content?.success) {
+            const stepEmoji = resultData.content?.step === 'character_portrait' ? '👤' :
+                             resultData.content?.step === 'environment' ? '🏞️' : '🎬';
+            setThinkingState(
+              `✅ ${stepEmoji} ${resultData.content?.item} ${resultData.content?.existingAsset ? '(existing)' : '(created)'}`,
+              'tool-result-success'
+            );
+          } else {
+            setThinkingState(`❌ Failed to create ${resultData.content?.item}`, 'tool-result-error');
+          }
+          break;
+
+        case 'structured-book-image-complete':
+          // Handle structured book image creation completion
+          const completeData = dataPart.data as any;
+          console.log('[DATA STREAM] Structured book image creation complete:', completeData);
+          
+          setThinkingState(
+            `🎉 Created ${completeData.content?.results?.totalImagesCreated} images for "${completeData.content?.bookTitle}"`,
+            'tool-result-success'
+          );
           break;
 
         case 'repository-created':

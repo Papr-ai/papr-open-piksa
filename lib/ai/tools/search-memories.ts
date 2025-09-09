@@ -78,9 +78,9 @@ export const searchMemories = ({ session }: { session: Session }): Tool<SearchMe
       }
 
       try {
-        // Check usage limits before proceeding
-        const { checkMemorySearchLimit } = await import('@/lib/subscription/usage-middleware');
-        const usageCheck = await checkMemorySearchLimit(session.user.id);
+        // Check usage limits before proceeding (using fast middleware)
+        const { fastCheckMemorySearchLimit, trackMemorySearchAsync } = await import('@/lib/subscription/fast-usage-middleware');
+        const usageCheck = await fastCheckMemorySearchLimit(session.user.id);
         if (!usageCheck.allowed) {
           console.log('[Memory Tool] Memory search limit exceeded for user:', session.user.id);
           if (step) await step(`❌ ${usageCheck.reason}`);
@@ -89,6 +89,9 @@ export const searchMemories = ({ session }: { session: Session }): Tool<SearchMe
             shouldShowUpgrade: usageCheck.shouldShowUpgrade
           };
         }
+        
+        // Track the search asynchronously (non-blocking)
+        trackMemorySearchAsync(session.user.id);
 
         // Initialize memory service instead of direct client
         const initStartTime = Date.now();

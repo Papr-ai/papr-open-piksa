@@ -23,6 +23,7 @@ const genres = [
   'Children\'s Fantasy',
   'Children\'s Adventure',
   'Educational',
+  'Comic Book',
   'Young Adult Fantasy',
   'Young Adult Romance',
   'Adult Fiction',

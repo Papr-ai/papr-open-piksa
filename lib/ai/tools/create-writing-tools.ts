@@ -116,7 +116,7 @@ ${existingContent ? `Build upon this existing content: ${existingContent}` : ''}
 Create a well-structured, detailed ${toolTypeNames[toolType].toLowerCase()} that will serve as a valuable reference for writing the book. Use clear headings, bullet points, and organize the information logically.`;
 
       const streamResult = streamText({
-        model: openai('gpt-4o'),
+        model: openai('gpt-5'),
         system: systemPrompt,
         prompt: contentPrompt,
       });

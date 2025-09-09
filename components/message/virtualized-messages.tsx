@@ -46,20 +46,13 @@ export function VirtualizedMessages({
     overscan: 5, // Number of items to render outside of the visible area
   });
 
-  // Handle automatic scrolling
+  // Track new messages but don't auto-scroll
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
     // Check if new messages have been added
     if (messages.length > lastMessageCountRef.current) {
       setHasNewMessages(true);
       lastMessageCountRef.current = messages.length;
-
-      // Auto-scroll only if user hasn't manually scrolled up
-      if (!userHasScrolled) {
-        container.scrollTop = container.scrollHeight;
-      }
+      // No automatic scrolling - let users control their position
     }
   }, [messages.length]);
 

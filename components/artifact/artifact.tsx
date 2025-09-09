@@ -11,6 +11,7 @@ import {
 } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { useDebounceCallback, useWindowSize } from 'usehooks-ts';
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
 import type { Document, Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
 import { MultimodalInput } from '../message/multimodal-input';
@@ -828,230 +829,304 @@ function PureArtifact({
             />
           )}
 
+          {/* Desktop layout with resizable panels */}
           {!isMobile && (
             <motion.div
-              className="fixed w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
-              initial={{ opacity: 0, x: windowWidth, scale: 1 }}
-              animate={{
-                opacity: 1,
-                x: windowWidth - 400,
-                scale: 1,
-                transition: {
-                  delay: 0.2,
-                  type: 'spring',
-                  stiffness: 200,
-                  damping: 30,
-                },
-              }}
-              exit={{
-                opacity: 0,
-                x: windowWidth,
-                pointerEvents: 'none',
-                transition: { duration: 0.0 },
-              }}
+              className="fixed inset-0 bg-background"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.1 } }}
             >
-              <AnimatePresence>
-                {!isCurrentVersion && (
+              <PanelGroup direction="horizontal" className="h-dvh w-dvw">
+                {/* Artifact Content Panel */}
+                <Panel defaultSize={60} minSize={40} maxSize={75}>
                   <motion.div
-                    className="left-0 absolute h-dvh w-[400px] top-0 bg-zinc-900/50 z-50"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                  />
-                )}
-              </AnimatePresence>
+                    className="h-full flex flex-col"
+                    initial={{
+                      opacity: 1,
+                      x: artifact.boundingBox.left,
+                      y: artifact.boundingBox.top,
+                      height: artifact.boundingBox.height,
+                      width: artifact.boundingBox.width,
+                      borderRadius: 50,
+                    }}
+                    animate={{
+                      opacity: 1,
+                      x: 0,
+                      y: 0,
+                      height: '100%',
+                      width: '100%',
+                      borderRadius: 0,
+                      transition: {
+                        type: 'spring',
+                        stiffness: 200,
+                        damping: 30,
+                      },
+                    }}
+                    exit={{
+                      opacity: 0,
+                      scale: 0.95,
+                      pointerEvents: 'none',
+                      transition: { duration: 0.12 },
+                    }}
+                  >
+                    <div className="p-2 flex flex-row justify-between items-start w-full">
+                      <div className="w-full mx-auto flex flex-row justify-between items-start">
+                        <div className="flex flex-row gap-4 items-start">
+                          <ArtifactCloseButton chatId={chatId} />
 
-              <div className="flex flex-col h-full justify-between items-center">
-                <ArtifactMessages
-                  chatId={chatId}
-                  status={status}
-                  votes={votes}
-                  messages={messages}
-                  setMessages={setMessages}
-                  reload={reload}
-                  isReadonly={isReadonly}
-                  artifactStatus={artifact.status}
-                  selectedModelId={selectedModelId}
-                  setInput={setInput}
-                  handleSubmit={handleSubmit}
-                />
+                          <div className="flex flex-col">
+                            <div className="font-medium">{artifact.title}</div>
 
-                {/* Usage Warning positioned right above the input */}
-                <div className="w-[95%] mx-auto px-4">
-                  <UsageWarning />
-                </div>
+                            {isContentDirty ? (
+                              <div className="text-sm text-muted-foreground">
+                                Saving changes...
+                              </div>
+                            ) : document ? (
+                              <div className="text-sm text-muted-foreground">
+                                {`Updated ${formatDistance(
+                                  new Date(document.createdAt),
+                                  new Date(),
+                                  {
+                                    addSuffix: true,
+                                  },
+                                )}`}
+                              </div>
+                            ) : (
+                              <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
+                            )}
+                          </div>
+                        </div>
 
-                <div className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
-                  <MultimodalInput
-                    chatId={chatId}
-                    input={input}
-                    setInput={setInput}
-                    handleSubmit={handleSubmit}
-                    status={status}
-                    stop={stop}
-                    attachments={attachments}
-                    setAttachments={setAttachments}
-                    messages={messages}
-                    append={append}
-                    className="bg-background dark:bg-muted"
-                    setMessages={setMessages}
-                    selectedModelId={selectedModelId}
-                    selectedVisibilityType={selectedVisibilityType}
-                  />
-                </div>
-              </div>
+                        <ArtifactActions
+                          artifact={artifact}
+                          currentVersionIndex={currentVersionIndex}
+                          handleVersionChange={handleVersionChange}
+                          isCurrentVersion={isCurrentVersion}
+                          mode={mode}
+                          metadata={metadata}
+                          setMetadata={setMetadata}
+                          appendMessage={append}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="dark:bg-muted bg-background h-full overflow-y-scroll !max-w-full items-center">
+                      <artifactDefinition.content
+                        title={artifact.title}
+                        content={
+                          isCurrentVersion
+                            ? artifact.content
+                            : getDocumentContentById(currentVersionIndex)
+                        }
+                        mode={mode}
+                        status={artifact.status}
+                        currentVersionIndex={currentVersionIndex}
+                        suggestions={[]}
+                        onSaveContent={saveContent}
+                        isInline={false}
+                        isCurrentVersion={isCurrentVersion}
+                        getDocumentContentById={getDocumentContentById}
+                        isLoading={isDocumentsFetching && !artifact.content}
+                        metadata={metadata}
+                        setMetadata={setMetadata}
+                        language={artifact.language}
+                        handleVersionChange={handleVersionChange}
+                        totalVersions={artifact.kind === 'book' ? bookVersions?.length : documents?.length}
+                      />
+
+                      <AnimatePresence>
+                        {isCurrentVersion && (
+                          <Toolbar
+                            isToolbarVisible={isToolbarVisible}
+                            setIsToolbarVisible={setIsToolbarVisible}
+                            append={append}
+                            status={status}
+                            stop={stop}
+                            setMessages={setMessages}
+                            artifactKind={artifact.kind}
+                          />
+                        )}
+                      </AnimatePresence>
+                    </div>
+
+                    <AnimatePresence>
+                      {!isCurrentVersion && (
+                        <VersionFooter
+                          currentVersionIndex={currentVersionIndex}
+                          documents={documents}
+                          handleVersionChange={handleVersionChange}
+                        />
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                </Panel>
+
+                {/* Resize Handle */}
+                <PanelResizeHandle className="w-2 bg-border hover:bg-accent transition-colors cursor-col-resize relative group">
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-1 h-8 bg-muted-foreground/30 rounded-full group-hover:bg-muted-foreground/50 transition-colors" />
+                  </div>
+                </PanelResizeHandle>
+
+                {/* Chat Panel */}
+                <Panel defaultSize={40} minSize={25} maxSize={60}>
+                  <motion.div
+                    className="bg-muted dark:bg-background h-full flex flex-col"
+                    initial={{ opacity: 0, x: 50 }}
+                    animate={{
+                      opacity: 1,
+                      x: 0,
+                      transition: {
+                        delay: 0.2,
+                        type: 'spring',
+                        stiffness: 200,
+                        damping: 30,
+                      },
+                    }}
+                    exit={{
+                      opacity: 0,
+                      x: 50,
+                      pointerEvents: 'none',
+                      transition: { duration: 0.12 },
+                    }}
+                  >
+                    <AnimatePresence>
+                      {!isCurrentVersion && (
+                        <motion.div
+                          className="absolute inset-0 bg-zinc-900/50 z-50"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                        />
+                      )}
+                    </AnimatePresence>
+
+                    <div className="flex flex-col h-full justify-between items-center">
+                      <ArtifactMessages
+                        chatId={chatId}
+                        status={status}
+                        votes={votes}
+                        messages={messages}
+                        setMessages={setMessages}
+                        reload={reload}
+                        isReadonly={isReadonly}
+                        artifactStatus={artifact.status}
+                        selectedModelId={selectedModelId}
+                        setInput={setInput}
+                        handleSubmit={handleSubmit}
+                        sendMessage={append}
+                      />
+
+                      {/* Usage Warning positioned right above the input */}
+                      <div className="w-[95%] mx-auto px-4">
+                        <UsageWarning />
+                      </div>
+
+                      <div className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
+                        <MultimodalInput
+                          chatId={chatId}
+                          input={input}
+                          setInput={setInput}
+                          handleSubmit={handleSubmit}
+                          status={status}
+                          stop={stop}
+                          attachments={attachments}
+                          setAttachments={setAttachments}
+                          messages={messages}
+                          append={append}
+                          className="bg-background dark:bg-muted"
+                          setMessages={setMessages}
+                          selectedModelId={selectedModelId}
+                          selectedVisibilityType={selectedVisibilityType}
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                </Panel>
+              </PanelGroup>
             </motion.div>
           )}
 
-          <motion.div
-            className="fixed dark:bg-muted bg-background h-dvh flex flex-col overflow-y-scroll md:border-r dark:border-zinc-700 border-zinc-200 w-full"
-            initial={
-              isMobile
-                ? {
-                    opacity: 1,
-                    x: artifact.boundingBox.left,
-                    y: artifact.boundingBox.top,
-                    height: artifact.boundingBox.height,
-                    width: artifact.boundingBox.width,
-                    borderRadius: 50,
-                  }
-                : {
-                    opacity: 1,
-                    x: artifact.boundingBox.left,
-                    y: artifact.boundingBox.top,
-                    height: artifact.boundingBox.height,
-                    width: artifact.boundingBox.width,
-                    borderRadius: 50,
-                  }
-            }
-            animate={
-              isMobile
-                ? {
-                    opacity: 1,
-                    x: 0,
-                    y: 0,
-                    height: windowHeight,
-                    width: windowWidth ? windowWidth : 'calc(100dvw)',
-                    borderRadius: 0,
-                    transition: {
-                      type: 'spring',
-                      stiffness: 200,
-                      damping: 30,
-                    },
-                  }
-                : {
-                    opacity: 1,
-                    x: 0,
-                    y: 0,
-                    height: windowHeight,
-                    width: windowWidth
-                      ? windowWidth - 400
-                      : 'calc(100dvw-400px)',
-                    borderRadius: 0,
-                    transition: {
-                      type: 'spring',
-                      stiffness: 200,
-                      damping: 30,
-                    },
-                  }
-            }
-            exit={{
-              opacity: 0,
-              scale: 0.95,
-              pointerEvents: 'none',
-              transition: { duration: 0.12 },
-            }}
-          >
-            <div className="p-2 flex flex-row justify-between items-start w-full">
-              <div className="w-full mx-auto flex flex-row justify-between items-start">
-                <div className="flex flex-row gap-4 items-start">
-                  <ArtifactCloseButton chatId={chatId} />
+          {/* Mobile layout - original behavior */}
+          {isMobile && (
+            <>
+              <motion.div
+                className="fixed w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
+                initial={{ opacity: 0, x: windowWidth, scale: 1 }}
+                animate={{
+                  opacity: 1,
+                  x: windowWidth - 400,
+                  scale: 1,
+                  transition: {
+                    delay: 0.2,
+                    type: 'spring',
+                    stiffness: 200,
+                    damping: 30,
+                  },
+                }}
+                exit={{
+                  opacity: 0,
+                  x: windowWidth,
+                  pointerEvents: 'none',
+                  transition: { duration: 0.0 },
+                }}
+              >
+                <AnimatePresence>
+                  {!isCurrentVersion && (
+                    <motion.div
+                      className="left-0 absolute h-dvh w-[400px] top-0 bg-zinc-900/50 z-50"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    />
+                  )}
+                </AnimatePresence>
 
-                  <div className="flex flex-col">
-                    <div className="font-medium">{artifact.title}</div>
+                <div className="flex flex-col h-full justify-between items-center">
+                  <ArtifactMessages
+                    chatId={chatId}
+                    status={status}
+                    votes={votes}
+                    messages={messages}
+                    setMessages={setMessages}
+                    reload={reload}
+                    isReadonly={isReadonly}
+                    artifactStatus={artifact.status}
+                    selectedModelId={selectedModelId}
+                    setInput={setInput}
+                    handleSubmit={handleSubmit}
+                    sendMessage={append}
+                  />
 
-                    {isContentDirty ? (
-                      <div className="text-sm text-muted-foreground">
-                        Saving changes...
-                      </div>
-                    ) : document ? (
-                      <div className="text-sm text-muted-foreground">
-                        {`Updated ${formatDistance(
-                          new Date(document.createdAt),
-                          new Date(),
-                          {
-                            addSuffix: true,
-                          },
-                        )}`}
-                      </div>
-                    ) : (
-                      <div className="w-32 h-3 mt-2 bg-muted-foreground/20 rounded-md animate-pulse" />
-                    )}
+                  {/* Usage Warning positioned right above the input */}
+                  <div className="w-[95%] mx-auto px-4">
+                    <UsageWarning />
+                  </div>
+
+                  <div className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
+                    <MultimodalInput
+                      chatId={chatId}
+                      input={input}
+                      setInput={setInput}
+                      handleSubmit={handleSubmit}
+                      status={status}
+                      stop={stop}
+                      attachments={attachments}
+                      setAttachments={setAttachments}
+                      messages={messages}
+                      append={append}
+                      className="bg-background dark:bg-muted"
+                      setMessages={setMessages}
+                      selectedModelId={selectedModelId}
+                      selectedVisibilityType={selectedVisibilityType}
+                    />
                   </div>
                 </div>
+              </motion.div>
+            </>
+          )}
 
-                <ArtifactActions
-                  artifact={artifact}
-                  currentVersionIndex={currentVersionIndex}
-                  handleVersionChange={handleVersionChange}
-                  isCurrentVersion={isCurrentVersion}
-                  mode={mode}
-                  metadata={metadata}
-                  setMetadata={setMetadata}
-                  appendMessage={append}
-                />
-              </div>
-            </div>
-
-            <div className="dark:bg-muted bg-background h-full overflow-y-scroll !max-w-full items-center">
-              <artifactDefinition.content
-                title={artifact.title}
-                content={
-                  isCurrentVersion
-                    ? artifact.content
-                    : getDocumentContentById(currentVersionIndex)
-                }
-                mode={mode}
-                status={artifact.status}
-                currentVersionIndex={currentVersionIndex}
-                suggestions={[]}
-                onSaveContent={saveContent}
-                isInline={false}
-                isCurrentVersion={isCurrentVersion}
-                getDocumentContentById={getDocumentContentById}
-                isLoading={isDocumentsFetching && !artifact.content}
-                metadata={metadata}
-                setMetadata={setMetadata}
-                language={artifact.language}
-                handleVersionChange={handleVersionChange}
-                totalVersions={artifact.kind === 'book' ? bookVersions?.length : documents?.length}
-              />
-
-              <AnimatePresence>
-                {isCurrentVersion && (
-                  <Toolbar
-                    isToolbarVisible={isToolbarVisible}
-                    setIsToolbarVisible={setIsToolbarVisible}
-                    append={append}
-                    status={status}
-                    stop={stop}
-                    setMessages={setMessages}
-                    artifactKind={artifact.kind}
-                  />
-                )}
-              </AnimatePresence>
-            </div>
-
-            <AnimatePresence>
-              {!isCurrentVersion && (
-                <VersionFooter
-                  currentVersionIndex={currentVersionIndex}
-                  documents={documents}
-                  handleVersionChange={handleVersionChange}
-                />
-              )}
-            </AnimatePresence>
-          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

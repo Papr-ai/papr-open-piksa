@@ -239,7 +239,26 @@ export function createMemoryService(apiKey: string) {
         console.warn('[Memory] No app user ID provided for tracking - memory usage not tracked');
       }
 
-      console.log(`[Memory] Stored content as memory ${response.data[0].memoryId}`);
+      const memoryId = response.data[0].memoryId;
+      console.log(`[Memory] Stored content as memory ${memoryId}`);
+
+      // BOOK PROPS HOOK: Automatically save book props to database if applicable
+      if (appUserId) {
+        try {
+          const { onMemorySaved } = await import('@/lib/ai/memory/book-props-hook');
+          await onMemorySaved({
+            userId: appUserId,
+            content,
+            type,
+            metadata: fullMetadata.customMetadata || {},
+            memoryId
+          });
+        } catch (error) {
+          console.error('[Memory] Book props hook failed (non-critical):', error);
+          // Don't fail the memory save if book props hook fails
+        }
+      }
+
       return true;
     } catch (error) {
       console.error('[Memory] Error storing content:', error);

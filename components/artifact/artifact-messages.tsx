@@ -38,6 +38,7 @@ interface ArtifactMessagesProps {
   selectedModelId?: string;
   setInput?: (input: string) => void;
   handleSubmit?: (e?: React.FormEvent) => void;
+  sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
 }
 
 function PureArtifactMessages({
@@ -51,8 +52,9 @@ function PureArtifactMessages({
   selectedModelId,
   setInput,
   handleSubmit,
+  sendMessage,
 }: ArtifactMessagesProps) {
-  const [messagesContainerRef, messagesEndRef] =
+  const [messagesContainerRef, messagesEndRef, scrollToBottom] =
     useScrollToBottom<HTMLDivElement>();
 
   // Logic for showing thinking state - same as main Messages component
@@ -131,6 +133,7 @@ function PureArtifactMessages({
               selectedModelId={selectedModelId}
               setInput={setInput}
               handleSubmit={handleSubmit}
+              sendMessage={sendMessage}
           />
           );
         })}

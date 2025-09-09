@@ -15,6 +15,7 @@ import { SessionProvider } from 'next-auth/react';
 import { UsageWarning } from '@/components/subscription/usage-warning';
 import { OnboardingGuard } from '@/components/auth/onboarding-guard';
 import { ConditionalLayout } from '@/components/layout/conditional-layout';
+import { SubscriptionProvider } from '@/components/subscription/subscription-context';
 
 import './globals.css';
 
@@ -57,21 +58,23 @@ export default async function RootLayout({
       </head>
       <body className="antialiased h-screen">
         <SessionProvider session={session}>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
-            <BreadcrumbProvider>
-              <Toaster position="top-center" />
-              <OnboardingGuard>
-                <ConditionalLayout user={session?.user} isCollapsed={isCollapsed}>
-                  {children}
-                </ConditionalLayout>
-              </OnboardingGuard>
-            </BreadcrumbProvider>
-          </ThemeProvider>
+          <SubscriptionProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              enableSystem
+              disableTransitionOnChange
+            >
+              <BreadcrumbProvider>
+                <Toaster position="top-center" />
+                <OnboardingGuard>
+                  <ConditionalLayout user={session?.user} isCollapsed={isCollapsed}>
+                    {children}
+                  </ConditionalLayout>
+                </OnboardingGuard>
+              </BreadcrumbProvider>
+            </ThemeProvider>
+          </SubscriptionProvider>
         </SessionProvider>
       </body>
     </html>

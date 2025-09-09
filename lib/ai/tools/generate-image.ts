@@ -4,6 +4,7 @@ import { generateUUID } from '@/lib/utils';
 import { saveImageToBlob } from '@/lib/utils/blob-storage';
 import type { Session } from 'next-auth';
 import type { DataStreamWriter } from '@/lib/types';
+import { optimizeImagePrompt } from '@/lib/ai/image-prompt-optimizer';
 
 interface GenerateImageProps {
   session: Session | null;
@@ -63,8 +64,9 @@ async function generateImageWithGemini(prompt: string): Promise<string> {
           }
         ],
         generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 4096,
+          temperature: 1,
+          maxOutputTokens: 8192,
+          topP: 0.95,  
         }
       })
     }
@@ -113,36 +115,70 @@ export const generateImage = ({ session, dataStream }: GenerateImageProps) =>
         throw new Error('User must be authenticated to generate images');
       }
 
-      // Enhance the prompt with context and style guidance
-      let enhancedPrompt = prompt;
-      
-      if (context) {
-        enhancedPrompt = `${prompt}\n\nAdditional context: ${context}`;
-      }
-      
-      if (title) {
-        enhancedPrompt = `Image for "${title}": ${enhancedPrompt}`;
-      }
-      
-      if (subtitle) {
-        enhancedPrompt = `${subtitle}: ${enhancedPrompt}`;
-      }
+      // Optimize the prompt using Gemini best practices
+      let optimizedPrompt = prompt;
+      try {
+        console.log('[Generate Image] Optimizing prompt using Gemini best practices...');
+        
+        // Build context for optimization
+        let fullContext = context || '';
+        if (title) fullContext += ` Title: ${title}.`;
+        if (subtitle) fullContext += ` Subtitle: ${subtitle}.`;
+        
+        const promptOptimization = await optimizeImagePrompt({
+          description: prompt,
+          sceneContext: fullContext || undefined,
+          style: style,
+          imageType: style === 'realistic' ? 'photorealistic' : 'illustration',
+          userId: session.user.id
+        });
+        
+        optimizedPrompt = promptOptimization.optimizedPrompt;
+        console.log('[Generate Image] Prompt optimized successfully:', {
+          originalLength: prompt.length,
+          optimizedLength: optimizedPrompt.length,
+          reasoning: promptOptimization.reasoning.substring(0, 100) + '...'
+        });
+      } catch (promptError) {
+        console.warn('[Generate Image] Prompt optimization failed, using enhanced fallback:', promptError);
+        
+        // Fallback: Basic enhancement with context and style
+        let enhancedPrompt = prompt;
+        
+        if (context) {
+          enhancedPrompt = `${prompt}\n\nAdditional context: ${context}`;
+        }
+        
+        if (title) {
+          enhancedPrompt = `Image for "${title}": ${enhancedPrompt}`;
+        }
+        
+        if (subtitle) {
+          enhancedPrompt = `${subtitle}: ${enhancedPrompt}`;
+        }
 
-      // Add style guidance
-      const stylePrompts = {
-        realistic: 'photorealistic, detailed, high quality',
-        artistic: 'artistic, creative, expressive',
-        illustration: 'book illustration style, clean lines, suitable for reading',
-        sketch: 'pencil sketch, hand-drawn, artistic sketch style',
-        watercolor: 'watercolor painting, soft colors, artistic brush strokes',
-        'digital-art': 'digital art, modern, clean, professional illustration'
-      };
+        // Add style guidance
+        const stylePrompts = {
+          realistic: 'photorealistic, detailed, high quality',
+          artistic: 'artistic, creative, expressive',
+          illustration: 'book illustration style, clean lines, suitable for reading',
+          sketch: 'pencil sketch, hand-drawn, artistic sketch style',
+          watercolor: 'watercolor painting, soft colors, artistic brush strokes',
+          'digital-art': 'digital art, modern, clean, professional illustration'
+        };
 
-      enhancedPrompt += `. Style: ${stylePrompts[style]}.`;
+        optimizedPrompt = enhancedPrompt + `. Style: ${stylePrompts[style]}.`;
+      }
 
       try {
+        // Log the final prompt being sent to Gemini
+        console.log('🎨 [FINAL IMAGE PROMPT] Sending to Gemini 2.5 Flash Image Preview:');
+        console.log('=' .repeat(80));
+        console.log(optimizedPrompt);
+        console.log('=' .repeat(80));
+        
         // Generate the image using direct Gemini API call
-        const imageBase64 = await generateImageWithGemini(enhancedPrompt);
+        const imageBase64 = await generateImageWithGemini(optimizedPrompt);
 
         // Save the image to Vercel Blob storage
         const permanentImageUrl = await saveImageToBlob(imageBase64, session.user.id, 'generated');

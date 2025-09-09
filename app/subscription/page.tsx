@@ -7,16 +7,21 @@ import { PricingCard } from '@/components/subscription/pricing-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { SUBSCRIPTION_PLANS } from '@/lib/subscription/plans';
-import { useSubscription } from '@/hooks/use-subscription';
+import { useSubscription } from '@/components/subscription/subscription-context';
 
 export default function SubscriptionPage() {
   const { data: session, status: sessionStatus } = useSession();
-  // Only start fetching subscription data after we have a confirmed authenticated session
-  const subscriptionStatus = useSubscription(sessionStatus === 'authenticated' && !!session?.user);
+  // Use the new real-time subscription context
+  const subscriptionContext = useSubscription();
   const [subscribing, setSubscribing] = useState(false);
 
   // Debug logging to help identify the issue
-  console.log('Subscription page render:', { sessionStatus, hasUser: !!session?.user, subscriptionLoading: subscriptionStatus.loading });
+  console.log('Subscription page render:', { 
+    sessionStatus, 
+    hasUser: !!session?.user, 
+    subscriptionLoading: subscriptionContext.subscriptionLoading,
+    isConnected: subscriptionContext.isConnected 
+  });
 
   const handleSubscribe = async (planId: string) => {
     if (!session?.user || planId === 'free') return;
@@ -68,7 +73,7 @@ export default function SubscriptionPage() {
   };
 
   // Show loading state while session is loading or subscription data is loading
-  if (sessionStatus === 'loading' || (sessionStatus === 'authenticated' && subscriptionStatus.loading)) {
+  if (sessionStatus === 'loading' || (sessionStatus === 'authenticated' && subscriptionContext.subscriptionLoading)) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
@@ -126,9 +131,9 @@ export default function SubscriptionPage() {
             isPopular={plan.isPopular}
             onSubscribe={handleSubscribe}
             onManageSubscription={handleManageSubscription}
-            isCurrentPlan={subscriptionStatus.subscriptionPlan === plan.id}
-            hasActiveSubscription={subscriptionStatus.hasActiveSubscription}
-            renewalDate={subscriptionStatus.subscriptionCurrentPeriodEnd}
+            isCurrentPlan={subscriptionContext.subscription.subscriptionPlan === plan.id}
+            hasActiveSubscription={subscriptionContext.subscription.hasActiveSubscription}
+            renewalDate={subscriptionContext.subscription.subscriptionCurrentPeriodEnd?.toISOString()}
             loading={subscribing}
           />
         ))}

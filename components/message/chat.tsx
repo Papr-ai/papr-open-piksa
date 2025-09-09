@@ -300,7 +300,7 @@ export function Chat({
   );
 
   const [attachments, setAttachments] = useState<Array<FileUIPart>>([]);
-  const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
+  const isArtifactVisible = artifact.isVisible;
 
   // Create handleSubmit function
   const handleSubmit = useCallback((e?: React.FormEvent) => {
@@ -448,6 +448,7 @@ export function Chat({
             voiceState={voiceState}
             setInput={setInput}
             handleSubmit={handleSubmit}
+            sendMessage={sendMessage}
           />
         </div>
 

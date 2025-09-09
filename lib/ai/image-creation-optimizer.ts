@@ -4,9 +4,11 @@ import { mergeImages } from '@/lib/ai/tools/merge-images';
 import type { CreateImageInput } from '@/lib/ai/tools/create-image';
 import { createMemoryService } from '@/lib/ai/memory/service';
 import { ensurePaprUser } from '@/lib/ai/memory/middleware';
+import { optimizeImagePrompt } from '@/lib/ai/image-prompt-optimizer';
 
 interface ImageCreationContext extends CreateImageInput {
   userId?: string;
+  seedImageTypes?: ('character' | 'environment' | 'prop' | 'other')[];
 }
 
 interface OptimizedImageResult {
@@ -85,6 +87,33 @@ export async function optimizeImageCreation(
 
   console.log(`[ImageCreationOptimizer] Final seed images count: ${validSeedImages.length}`);
 
+  // Optimize the prompt using Gemini best practices
+  let optimizedDescription = context.description;
+  try {
+    console.log('[ImageCreationOptimizer] Optimizing prompt using Gemini best practices...');
+    const promptOptimization = await optimizeImagePrompt({
+      description: context.description,
+      sceneContext: context.sceneContext,
+      priorScene: context.priorScene,
+      style: 'realistic', // Default to realistic for most use cases
+      aspectRatio: context.aspectRatio,
+      seedImages: validSeedImages,
+      seedImageTypes: context.seedImageTypes,
+      userId: userId,
+      isEditing: validSeedImages.length > 0 // Use editing mode if we have seed images
+    });
+    
+    optimizedDescription = promptOptimization.optimizedPrompt;
+    console.log('[ImageCreationOptimizer] Prompt optimized successfully:', {
+      originalLength: context.description.length,
+      optimizedLength: optimizedDescription.length,
+      reasoning: promptOptimization.reasoning.substring(0, 100) + '...'
+    });
+  } catch (promptError) {
+    console.warn('[ImageCreationOptimizer] Prompt optimization failed, using original:', promptError);
+    // Continue with original description
+  }
+
   try {
     if (validSeedImages.length > 1) {
       // Multiple seeds: mergeImages → editImage
@@ -109,9 +138,14 @@ export async function optimizeImageCreation(
         outputHeight: 1024
       });
       
+      console.log('🔄 [FINAL IMAGE PROMPT] Sending to editImage (merge+edit approach):');
+      console.log('=' .repeat(80));
+      console.log(optimizedDescription);
+      console.log('=' .repeat(80));
+      
       const editResult = await (editImage({ session: mockSession as any, dataStream: mockDataStream }).execute as any)({
         imageUrl: (mergeResult as any).mergedImageUrl!,
-        prompt: context.description,
+        prompt: optimizedDescription,
         aspectRatio: context.aspectRatio
       });
       
@@ -119,17 +153,22 @@ export async function optimizeImageCreation(
         imageUrl: (editResult as any).editedImageUrl,
         approach: 'merge_edit',
         seedImagesUsed: validSeedImages.slice(0, 4),
-        reasoning: `Merged ${validSeedImages.length} seed images and edited with new prompt`,
-        actualPrompt: context.description
+        reasoning: `Merged ${validSeedImages.length} seed images and edited with optimized prompt`,
+        actualPrompt: optimizedDescription
       };
       
     } else if (validSeedImages.length === 1) {
       // Single seed: editImage
       console.log('[ImageCreationOptimizer] Single seed detected, using edit approach');
       
+      console.log('🔄 [FINAL IMAGE PROMPT] Sending to editImage (single seed approach):');
+      console.log('=' .repeat(80));
+      console.log(optimizedDescription);
+      console.log('=' .repeat(80));
+      
       const editResult = await (editImage({ session: mockSession as any, dataStream: mockDataStream }).execute as any)({
         imageUrl: validSeedImages[0],
-        prompt: context.description,
+        prompt: optimizedDescription,
         aspectRatio: context.aspectRatio
       });
       
@@ -137,16 +176,21 @@ export async function optimizeImageCreation(
         imageUrl: (editResult as any).editedImageUrl,
         approach: 'edit',
         seedImagesUsed: validSeedImages,
-        reasoning: `Edited single seed image with new prompt`,
-        actualPrompt: context.description
+        reasoning: `Edited single seed image with optimized prompt`,
+        actualPrompt: optimizedDescription
       };
       
     } else {
       // No seeds: generateImage
       console.log('[ImageCreationOptimizer] No seeds detected, using generate approach');
       
+      console.log('🆕 [FINAL IMAGE PROMPT] Sending to generateImage (no seeds approach):');
+      console.log('=' .repeat(80));
+      console.log(optimizedDescription);
+      console.log('=' .repeat(80));
+      
       const generateResult = await (generateImage({ session: mockSession as any, dataStream: mockDataStream }).execute as any)({
-        prompt: context.description,
+        prompt: optimizedDescription,
         aspectRatio: context.aspectRatio
       });
       
@@ -154,8 +198,8 @@ export async function optimizeImageCreation(
         imageUrl: (generateResult as any).imageUrl,
         approach: 'generate',
         seedImagesUsed: [],
-        reasoning: `Generated new image from prompt (no seed images available)`,
-        actualPrompt: context.description
+        reasoning: `Generated new image from optimized prompt (no seed images available)`,
+        actualPrompt: optimizedDescription
       };
     }
     
@@ -166,7 +210,7 @@ export async function optimizeImageCreation(
     try {
       console.log('[ImageCreationOptimizer] Using fallback generateImage approach');
       const generateResult = await (generateImage({ session: mockSession as any, dataStream: mockDataStream }).execute as any)({
-        prompt: context.description,
+        prompt: optimizedDescription,
         aspectRatio: context.aspectRatio || '1:1'
       });
       
@@ -175,7 +219,7 @@ export async function optimizeImageCreation(
         approach: 'generate',
         seedImagesUsed: [],
         reasoning: `Fallback to generate due to error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        actualPrompt: context.description
+        actualPrompt: optimizedDescription
       };
     } catch (finalError) {
       console.error('[ImageCreationOptimizer] Final fallback failed:', finalError);

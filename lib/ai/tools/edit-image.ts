@@ -4,6 +4,7 @@ import { generateUUID } from '@/lib/utils';
 import { saveImageToBlob } from '@/lib/utils/blob-storage';
 import type { Session } from 'next-auth';
 import type { DataStreamWriter } from '@/lib/types';
+import { optimizeImagePrompt } from '@/lib/ai/image-prompt-optimizer';
 
 interface EditImageProps {
   session: Session | null;
@@ -88,7 +89,7 @@ async function urlToBase64(url: string, retries = 3): Promise<string> {
 // Function to edit image using Gemini 2.5 Flash Image Preview API
 async function editImageWithGemini(
   imageBase64: string, 
-  prompt: string, 
+  optimizedPrompt: string, 
   editType: string,
   preserveOriginal: boolean
 ): Promise<string> {
@@ -109,22 +110,14 @@ async function editImageWithGemini(
     }
   }
 
-  // Create enhanced prompt based on edit type and preservation settings
-  let enhancedPrompt = '';
-  
-  if (preserveOriginal) {
-    const preservationInstructions = {
-      modify: 'Using the provided image, please modify it as requested while keeping everything else exactly the same, preserving the original style, lighting, and composition.',
-      add: 'Using the provided image, please add the requested elements to the scene. Ensure the additions integrate naturally with the existing style, lighting, and composition.',
-      remove: 'Using the provided image, please remove the specified elements from the scene. Keep everything else exactly the same, preserving the original style and composition.',
-      replace: 'Using the provided image, please replace the specified elements as requested. Ensure the replacements match the original style, lighting, and composition.',
-      'style-change': 'Using the provided image as reference, please recreate it with the requested style changes while maintaining the same composition and subject matter.'
-    };
-    
-    enhancedPrompt = `${preservationInstructions[editType as keyof typeof preservationInstructions]} ${prompt}`;
-  } else {
-    enhancedPrompt = `Create a new image based on the provided image with these changes: ${prompt}`;
-  }
+  // Use the optimized prompt directly - the Visual Editor template handles all the formatting
+  const finalPrompt = optimizedPrompt;
+
+  // Log the final prompt being sent to Gemini
+  console.log('✏️ [FINAL IMAGE PROMPT] Sending to Gemini 2.5 Flash Image Preview (Edit):');
+  console.log('=' .repeat(80));
+  console.log(finalPrompt);
+  console.log('=' .repeat(80));
 
   // Use Gemini 2.5 Flash Image Preview for image-to-image generation
   const response = await fetch(
@@ -139,7 +132,7 @@ async function editImageWithGemini(
           {
             parts: [
               {
-                text: enhancedPrompt
+                text: finalPrompt
               },
               {
                 inlineData: {
@@ -151,9 +144,10 @@ async function editImageWithGemini(
           }
         ],
         generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-        }
+          temperature: 1,
+          maxOutputTokens: 8192,
+          topP: 0.95,  
+        }      
       })
     }
   );
@@ -199,10 +193,35 @@ export const editImage = ({ session, dataStream }: EditImageProps) =>
         throw new Error('User must be authenticated to edit images');
       }
 
-      // Enhance the prompt with context if provided
-      let enhancedPrompt = prompt;
-      if (context) {
-        enhancedPrompt = `${prompt}\n\nAdditional context: ${context}`;
+      // Optimize the prompt using Gemini best practices for image editing
+      let optimizedPrompt = prompt;
+      try {
+        console.log('[Edit Image] Optimizing prompt using Gemini best practices...');
+        
+        const promptOptimization = await optimizeImagePrompt({
+          description: prompt,
+          sceneContext: context,
+          style: 'realistic', // Default to realistic for editing
+          imageType: 'photorealistic', // Most edits are on realistic images
+          userId: session.user.id,
+          isEditing: true, // Flag to use Visual Editor template
+          seedImages: [imageUrl] // Pass the source image as seed
+        });
+        
+        optimizedPrompt = promptOptimization.optimizedPrompt;
+        console.log('[Edit Image] Prompt optimized successfully:', {
+          originalLength: prompt.length,
+          optimizedLength: optimizedPrompt.length,
+          reasoning: promptOptimization.reasoning.substring(0, 100) + '...'
+        });
+      } catch (promptError) {
+        console.warn('[Edit Image] Prompt optimization failed, using enhanced fallback:', promptError);
+        
+        // Fallback: Basic enhancement with context
+        optimizedPrompt = prompt;
+        if (context) {
+          optimizedPrompt = `${prompt}\n\nAdditional context: ${context}`;
+        }
       }
 
       try {
@@ -226,7 +245,7 @@ export const editImage = ({ session, dataStream }: EditImageProps) =>
         // Edit the image using direct Gemini API call
         const editedImageBase64 = await editImageWithGemini(
           imageBase64, 
-          enhancedPrompt, 
+          optimizedPrompt, 
           editType, 
           preserveOriginal
         );

@@ -30,7 +30,11 @@ const bookPlanningSchema = z.object({
     backstory: z.string().optional().describe('Character backstory and history')
   })).describe('Main characters with detailed descriptions'),
   styleBible: z.string().describe('Art and writing style guidelines for consistency'),
-  isPictureBook: z.boolean().describe('Whether this is a picture book requiring illustrations')
+  isPictureBook: z.boolean().describe('Whether this is a picture book requiring illustrations'),
+  conversationContext: z.string().optional().describe('CRITICAL: Full context from the chat conversation including all character details, plot points, and story elements discussed. This ensures consistency with what was established in the conversation.'),
+  skipMemorySearch: z.boolean().optional().default(false).describe('Set to true if the AI has already searched memories and has all necessary context from the conversation'),
+  autoCreateDocuments: z.boolean().optional().default(false).describe('Set to true to automatically create character profile and outline documents using createDocument tool'),
+  skipApprovalGate: z.boolean().optional().default(false).describe('Set to true when user has indicated to proceed/continue without explicit approval')
 });
 
 const chapterDraftSchema = z.object({
@@ -108,6 +112,17 @@ export const createBookPlan = ({ session, dataStream }: { session: Session; data
   tool({
     description: `Step 1 of Enhanced Book Creation: Plan high-level story, themes, and main characters.
     
+    🚨 CRITICAL REQUIREMENTS:
+    1. ALWAYS searches memory FIRST for existing book plans, character information, and related content
+    2. MUST receive conversationContext parameter with ALL details from the chat conversation
+    3. Uses existing context to build upon previous work, ensuring NO information is lost
+    
+    The conversationContext parameter is ESSENTIAL to preserve:
+    - Character names, ages, genders, and descriptions from the conversation
+    - Plot details and story elements discussed in chat
+    - User preferences and specific requirements mentioned
+    - Any existing character portraits or images referenced
+    
     This tool creates the foundational elements of your book:
     - Story premise and themes
     - Main character personalities and descriptions
@@ -117,7 +132,68 @@ export const createBookPlan = ({ session, dataStream }: { session: Session; data
     After completion, user approval is required before proceeding to Step 2 (Chapter Writing).`,
     inputSchema: bookPlanningSchema,
     execute: async (input) => {
-      const { bookTitle, genre, targetAge, premise, themes, mainCharacters, styleBible, isPictureBook } = input;
+      const { bookTitle, genre, targetAge, premise, themes, mainCharacters, styleBible, isPictureBook, conversationContext, skipMemorySearch, autoCreateDocuments, skipApprovalGate } = input;
+      
+      // Validate that conversation context was provided
+      if (!conversationContext || conversationContext.length < 50) {
+        console.warn('[createBookPlan] ⚠️ WARNING: conversationContext is missing or very short. This may result in character details being lost or changed!');
+        console.warn('[createBookPlan] conversationContext length:', conversationContext?.length || 0);
+      } else {
+        console.log('[createBookPlan] ✅ Conversation context provided:', conversationContext.substring(0, 100) + '...');
+      }
+
+      // CONDITIONALLY SEARCH MEMORY - skip if AI already has context
+      let existingBookContext = '';
+      let existingCharacters: any[] = [];
+      
+      if (!skipMemorySearch && session?.user?.id) {
+        try {
+          const { createMemoryService } = await import('@/lib/ai/memory/service');
+          const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
+          const apiKey = process.env.PAPR_MEMORY_API_KEY;
+          
+          if (apiKey) {
+            const memoryService = createMemoryService(apiKey);
+            const paprUserId = await ensurePaprUser(session.user.id, apiKey);
+            
+            if (paprUserId) {
+              console.log('[createBookPlan] Searching memory for existing book plans and characters...');
+              
+              // Search for existing book plans
+              const bookMemories = await memoryService.searchMemories(
+                paprUserId,
+                `book brief "${bookTitle}" story premise themes characters`,
+                10
+              );
+              
+              if (bookMemories.length > 0) {
+                existingBookContext = bookMemories.map(mem => mem.content).join('\n\n');
+                console.log(`[createBookPlan] Found ${bookMemories.length} existing book-related memories`);
+              }
+              
+              // Search for existing characters mentioned in the plan
+              for (const character of mainCharacters) {
+                const charMemories = await memoryService.searchMemories(
+                  paprUserId,
+                  `character "${character.name}" personality description portrait`,
+                  5
+                );
+                
+                if (charMemories.length > 0) {
+                  existingCharacters.push({
+                    name: character.name,
+                    existingInfo: charMemories.map(mem => mem.content).join('\n'),
+                    memories: charMemories
+                  });
+                  console.log(`[createBookPlan] Found existing information for character: ${character.name}`);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[createBookPlan] Error searching memory:', error);
+        }
+      }
       
       dataStream.write?.({
         type: 'kind',
@@ -129,15 +205,16 @@ export const createBookPlan = ({ session, dataStream }: { session: Session; data
         content: `${bookTitle} - Story Plan`,
       });
 
-      // Generate unique book ID
-      const bookId = `book_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      // Generate unique book ID using proper UUID format
+      const { generateUUID } = await import('@/lib/utils');
+      const bookId = generateUUID();
 
       dataStream.write?.({
         type: 'id',
         content: bookId,
       });
 
-      // Save book plan to memory
+      // Save book plan to memory with existing context integration
       if (session?.user?.id) {
         try {
           const { createMemoryService } = await import('@/lib/ai/memory/service');
@@ -149,10 +226,25 @@ export const createBookPlan = ({ session, dataStream }: { session: Session; data
             const paprUserId = await ensurePaprUser(session.user.id, apiKey);
             
             if (paprUserId) {
-              // Save book brief to memory
+              // Save enhanced book brief with existing context AND conversation context
+              const bookBriefContent = `Book: ${bookTitle}
+
+Genre: ${genre}
+Target Age: ${targetAge}
+
+Premise: ${premise}
+
+Themes: ${themes.join(', ')}
+
+Style Bible: ${styleBible}
+
+${conversationContext ? `\n--- CONVERSATION CONTEXT ---\n${conversationContext}` : ''}
+
+${existingBookContext ? `\n--- EXISTING CONTEXT FROM MEMORY ---\n${existingBookContext}` : ''}`;
+
               await memoryService.storeContent(
                 paprUserId,
-                `Book: ${bookTitle}\n\nGenre: ${genre}\nTarget Age: ${targetAge}\n\nPremise: ${premise}\n\nThemes: ${themes.join(', ')}\n\nStyle Bible: ${styleBible}`,
+                bookBriefContent,
                 'text',
                 {
                   kind: 'book_brief',
@@ -162,34 +254,135 @@ export const createBookPlan = ({ session, dataStream }: { session: Session; data
                   target_age: targetAge,
                   is_picture_book: isPictureBook,
                   step: 'planning',
-                  status: 'pending_approval'
+                  status: 'pending_approval',
+                  has_existing_context: existingBookContext.length > 0,
+                  has_conversation_context: !!conversationContext
                 },
                 session.user.id
               );
 
-              // Save character bios to memory
+              // Save or update character bios in memory
               for (const character of mainCharacters) {
-                await memoryService.storeContent(
-                  paprUserId,
-                  `Character: ${character.name}\n\nRole: ${character.role}\nPersonality: ${character.personality}\nPhysical Description: ${character.physicalDescription}\n${character.backstory ? `Backstory: ${character.backstory}` : ''}`,
-                  'text',
-                  {
-                    kind: 'character',
-                    book_id: bookId,
-                    book_title: bookTitle,
-                    character_name: character.name,
-                    character_role: character.role,
-                    step: 'planning',
-                    status: 'pending_approval'
-                  },
-                  session.user.id
-                );
+                const existingChar = existingCharacters.find(ec => ec.name === character.name);
+                
+                const characterContent = `Character: ${character.name}
+
+Role: ${character.role}
+Personality: ${character.personality}
+Physical Description: ${character.physicalDescription}
+${character.backstory ? `Backstory: ${character.backstory}` : ''}`;
+
+                const characterMetadata = {
+                  kind: 'character',
+                  book_id: bookId,
+                  book_title: bookTitle,
+                  character_name: character.name,
+                  character_role: character.role,
+                  step: 'planning',
+                  status: 'pending_approval',
+                  updated_at: new Date().toISOString()
+                };
+
+                if (existingChar && existingChar.memories && existingChar.memories.length > 0) {
+                  // Update the most recent existing memory instead of creating a new one
+                  const mostRecentMemory = existingChar.memories[0]; // First result is usually most recent
+                  console.log(`[createBookPlan] Updating existing memory for character: ${character.name}`);
+                  
+                  await memoryService.updateMemory(
+                    mostRecentMemory.id,
+                    {
+                      content: characterContent,
+                      metadata: {
+                        customMetadata: characterMetadata
+                      }
+                    }
+                  );
+                } else {
+                  // Create new memory if none exists
+                  console.log(`[createBookPlan] Creating new memory for character: ${character.name}`);
+                  
+                  await memoryService.storeContent(
+                    paprUserId,
+                    characterContent,
+                    'text',
+                    characterMetadata,
+                    session.user.id
+                  );
+                }
               }
             }
           }
         } catch (error) {
           console.error('[createBookPlan] Error saving to memory:', error);
         }
+      }
+
+      // AUTOMATICALLY CREATE DOCUMENTS if requested
+      if (autoCreateDocuments) {
+        try {
+          console.log('[createBookPlan] Auto-creating character profiles and outline documents...');
+          
+          // Import createDocument tool
+          const { createDocument } = await import('./create-document');
+          const docTool = createDocument({ session, dataStream });
+
+          // Create character profiles document
+          const characterProfilesContent = mainCharacters.map(char => 
+            `## ${char.name}
+**Role**: ${char.role}
+**Personality**: ${char.personality}  
+**Physical Description**: ${char.physicalDescription}
+${char.backstory ? `**Backstory**: ${char.backstory}` : ''}`
+          ).join('\n\n');
+
+          const characterContext = `${conversationContext || ''}\n\nBook: ${bookTitle}\nGenre: ${genre}\nTarget Age: ${targetAge}`;
+          
+          if (docTool.execute) {
+            await docTool.execute({
+              title: `${bookTitle} - Character Profiles`,
+              kind: 'text',
+              conversationContext: characterContext
+            }, { toolCallId: 'char-profiles-' + Date.now(), messages: [] });
+          }
+
+          // Create story outline document  
+          const outlineContent = `# ${bookTitle} - Story Outline
+
+**Genre**: ${genre}
+**Target Age**: ${targetAge}
+
+## Premise
+${premise}
+
+## Themes
+${themes.map(theme => `- ${theme}`).join('\n')}
+
+## Main Characters
+${mainCharacters.map(char => `- **${char.name}**: ${char.role} - ${char.personality}`).join('\n')}
+
+## Style Bible
+${styleBible}`;
+
+          if (docTool.execute) {
+            await docTool.execute({
+              title: `${bookTitle} - Story Outline`,
+              kind: 'text', 
+              conversationContext: characterContext
+            }, { toolCallId: 'outline-' + Date.now(), messages: [] });
+          }
+
+          console.log('[createBookPlan] ✅ Auto-created character profiles and outline documents');
+        } catch (docError) {
+          console.error('[createBookPlan] Error creating documents:', docError);
+        }
+      }
+
+      // ASYNC DATABASE STORAGE for characters and props
+      if (session?.user?.id) {
+        // Don't await this - run in background
+        saveCharactersToDatabase(session.user.id, bookId, bookTitle, mainCharacters).catch(error => {
+          console.error('[createBookPlan] Background database save failed:', error);
+        });
       }
 
       return {
@@ -203,8 +396,14 @@ export const createBookPlan = ({ session, dataStream }: { session: Session; data
         mainCharacters,
         styleBible,
         isPictureBook,
-        nextStep: 'Approval Gate 1: Please review and approve the story plan and character bios before proceeding to chapter writing.',
-        approvalRequired: true
+        existingContext: {
+          foundBookContext: existingBookContext.length > 0,
+          foundCharacters: existingCharacters.length,
+          characterDetails: existingCharacters.map(ec => ({ name: ec.name, hasExistingInfo: true }))
+        },
+        documentsCreated: autoCreateDocuments,
+        nextStep: skipApprovalGate ? 'Proceeding to Step 2 (Chapter Drafting)' : 'Approval Gate 1: Please review and approve the story plan and character bios before proceeding to chapter writing.',
+        approvalRequired: !skipApprovalGate
       };
     },
   });
@@ -457,7 +656,7 @@ export const createCharacterPortraits = ({ session, dataStream }: { session: Ses
         let portraitUrl = '';
         let existingPortrait = false;
 
-        // Search memory for existing character portrait
+        // Search memory for existing character portrait (broader search across all books first)
         if (session?.user?.id) {
           try {
             const { createMemoryService } = await import('@/lib/ai/memory/service');
@@ -469,24 +668,49 @@ export const createCharacterPortraits = ({ session, dataStream }: { session: Ses
               const paprUserId = await ensurePaprUser(session.user.id, apiKey);
               
               if (paprUserId) {
-                // Search for existing character
-                const existingCharacters = await memoryService.searchMemories(
+                console.log(`[createCharacterPortraits] Searching memory for character: ${characterName}`);
+                
+                // First: Search for existing character in THIS book
+                let existingCharacters = await memoryService.searchMemories(
                   paprUserId, 
                   `character ${characterName} portrait ${bookId}`,
                   10
                 );
 
-                const existingCharacter = existingCharacters.find((mem: FormattedMemory) => 
+                let existingCharacter = existingCharacters.find((mem: FormattedMemory) => 
                   mem.metadata?.kind === 'character' && 
                   mem.metadata?.character_name === characterName &&
                   mem.metadata?.book_id === bookId &&
                   mem.metadata?.portrait_url
                 );
 
+                // Second: If not found in this book, search across ALL books for this character
+                if (!existingCharacter) {
+                  console.log(`[createCharacterPortraits] Character ${characterName} not found in current book, searching across all books...`);
+                  
+                  const globalCharacters = await memoryService.searchMemories(
+                    paprUserId, 
+                    `character "${characterName}" portrait personality description`,
+                    15
+                  );
+
+                  existingCharacter = globalCharacters.find((mem: FormattedMemory) => 
+                    mem.metadata?.kind === 'character' && 
+                    mem.metadata?.character_name === characterName &&
+                    mem.metadata?.portrait_url
+                  );
+                  
+                  if (existingCharacter) {
+                    console.log(`[createCharacterPortraits] Found existing character ${characterName} from different book: ${existingCharacter.metadata?.book_title || 'Unknown'}`);
+                  }
+                }
+
                 if (existingCharacter && existingCharacter.metadata?.portrait_url) {
                   portraitUrl = existingCharacter.metadata.portrait_url as string;
                   existingPortrait = true;
-                  console.log(`[createCharacterPortraits] Found existing portrait for ${characterName}`);
+                  console.log(`[createCharacterPortraits] Using existing portrait for ${characterName}: ${portraitUrl.substring(0, 50)}...`);
+                } else {
+                  console.log(`[createCharacterPortraits] No existing portrait found for ${characterName}, will generate new one if requested`);
                 }
               }
             }
@@ -613,7 +837,7 @@ This portrait will be used as a seed image for scene composition, so it must hav
     },
   });
 
-// Helper function to get character description from memory
+// Helper function to get character description from memory (searches across all books)
 async function getCharacterDescription(session: Session, bookId: string, characterName: string): Promise<string> {
   try {
     const { createMemoryService } = await import('@/lib/ai/memory/service');
@@ -627,19 +851,48 @@ async function getCharacterDescription(session: Session, bookId: string, charact
     
     if (!paprUserId) return '';
     
-    const memories = await memoryService.searchMemories(
+    console.log(`[getCharacterDescription] Searching for character: ${characterName}`);
+    
+    // First: Search in current book
+    let memories = await memoryService.searchMemories(
       paprUserId,
       `character ${characterName} personality physical description ${bookId}`,
       5
     );
 
-    const characterMemory = memories.find((mem: FormattedMemory) => 
+    let characterMemory = memories.find((mem: FormattedMemory) => 
       mem.metadata?.kind === 'character' && 
       mem.metadata?.character_name === characterName &&
       mem.metadata?.book_id === bookId
     );
 
-    return characterMemory?.content || `${characterName} from the book`;
+    // Second: If not found in current book, search globally
+    if (!characterMemory) {
+      console.log(`[getCharacterDescription] Character ${characterName} not found in current book, searching globally...`);
+      
+      const globalMemories = await memoryService.searchMemories(
+        paprUserId,
+        `character "${characterName}" personality physical description`,
+        10
+      );
+
+      characterMemory = globalMemories.find((mem: FormattedMemory) => 
+        mem.metadata?.kind === 'character' && 
+        mem.metadata?.character_name === characterName
+      );
+      
+      if (characterMemory) {
+        console.log(`[getCharacterDescription] Found character ${characterName} from different book: ${characterMemory.metadata?.book_title || 'Unknown'}`);
+      }
+    }
+
+    if (characterMemory?.content) {
+      console.log(`[getCharacterDescription] Using existing description for ${characterName}`);
+      return characterMemory.content;
+    } else {
+      console.log(`[getCharacterDescription] No existing description found for ${characterName}`);
+      return `${characterName} from the book`;
+    }
   } catch (error) {
     console.error('[getCharacterDescription] Error:', error);
     return `${characterName} from the book`;
@@ -651,5 +904,67 @@ export type ChapterDraftInput = z.infer<typeof chapterDraftSchema>;
 export type SceneSegmentationInput = z.infer<typeof sceneSegmentationSchema>;
 export type BatchCharacterCreationInput = z.infer<typeof batchCharacterCreationSchema>;
 export type CharacterPortraitInput = z.infer<typeof characterPortraitSchema>;
+
+// Async database storage function for characters and props
+async function saveCharactersToDatabase(
+  userId: string, 
+  bookId: string, 
+  bookTitle: string, 
+  characters: any[]
+): Promise<void> {
+  try {
+    console.log('[saveCharactersToDatabase] Saving characters to database...');
+    
+    // Import database utilities
+    const { db } = await import('@/lib/db/db');
+    const { sql } = await import('drizzle-orm');
+    
+    // Check if we have a book_props table or similar
+    // For now, we'll store in a generic way that can be expanded
+    for (const character of characters) {
+      try {
+        // Check if character already exists to avoid duplicates
+        const existingChar = await db.execute(
+          sql`SELECT id FROM book_props 
+              WHERE user_id = ${userId} 
+              AND book_id = ${bookId} 
+              AND prop_type = 'character' 
+              AND prop_name = ${character.name}
+              LIMIT 1`
+        );
+
+        if (existingChar.length === 0) {
+          // Insert new character
+          await db.execute(
+            sql`INSERT INTO book_props (
+              user_id, book_id, book_title, prop_type, prop_name, 
+              prop_data, created_at, updated_at
+            ) VALUES (
+              ${userId}, ${bookId}, ${bookTitle}, 'character', ${character.name},
+              ${JSON.stringify({
+                role: character.role,
+                personality: character.personality,
+                physicalDescription: character.physicalDescription,
+                backstory: character.backstory
+              })}, 
+              NOW(), NOW()
+            )`
+          );
+          
+          console.log(`[saveCharactersToDatabase] ✅ Saved character: ${character.name}`);
+        } else {
+          console.log(`[saveCharactersToDatabase] Character ${character.name} already exists, skipping`);
+        }
+      } catch (charError) {
+        console.error(`[saveCharactersToDatabase] Error saving character ${character.name}:`, charError);
+      }
+    }
+    
+    console.log('[saveCharactersToDatabase] ✅ Completed database storage');
+  } catch (error) {
+    console.error('[saveCharactersToDatabase] Database storage failed:', error);
+    // Don't throw - this is a background operation
+  }
+}
 export type EnvironmentCreationInput = z.infer<typeof environmentCreationSchema>;
 export type SceneCompositionInput = z.infer<typeof sceneCompositionSchema>;

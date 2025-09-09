@@ -52,7 +52,9 @@ const sceneCompositionSchema = z.object({
   lighting: z.string().describe('Lighting conditions'),
   cameraAngle: z.string().describe('Camera angle/perspective'),
   compositionalNotes: z.string().optional().describe('Special compositional requirements'),
-  seed: z.number().optional().describe('Random seed for consistency')
+  seed: z.number().optional().describe('Random seed for consistency'),
+  checkEnvironmentContinuity: z.boolean().optional().default(true).describe('Whether to check if this scene is in the same environment as the previous scene for visual continuity'),
+  priorSceneId: z.string().optional().describe('ID of the previous scene to check for environment continuity')
 });
 
 const sceneManifestSchema = z.object({
@@ -72,6 +74,10 @@ const sceneManifestSchema = z.object({
 export const createEnvironments = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
   tool({
     description: `Step 5 of Enhanced Book Creation: Create environment master plates in batches.
+    
+    IMPORTANT: This tool ALWAYS searches memory FIRST for existing environments across all books 
+    before creating new ones. It reuses existing environments when similar locations, time of day, 
+    and weather conditions are found.
     
     Generates up to 3 environment master plate images at a time. Each environment shows
     the full room/location from above or at an angle that reveals the complete space.
@@ -111,7 +117,7 @@ export const createEnvironments = ({ session, dataStream }: { session: Session; 
         let environmentImageUrl = '';
         let existingEnvironment = false;
 
-        // Check for existing environment in memory
+        // Check for existing environment in memory (search across all books)
         if (session?.user?.id) {
           try {
             const { createMemoryService } = await import('@/lib/ai/memory/service');
@@ -123,23 +129,50 @@ export const createEnvironments = ({ session, dataStream }: { session: Session; 
               const paprUserId = await ensurePaprUser(session.user.id, apiKey);
               
               if (paprUserId) {
-                // Search for existing environment
-                const existingEnvironments = await memoryService.searchMemories(
+                console.log(`[createEnvironments] Searching for environment: ${location} at ${timeOfDay}`);
+                
+                // First: Search for existing environment in THIS book
+                let existingEnvironments = await memoryService.searchMemories(
                   paprUserId, 
                   `environment ${location} ${timeOfDay} ${weather} ${bookId}`,
                   10
                 );
 
-                const existingEnv = existingEnvironments.find((mem: FormattedMemory) => 
+                let existingEnv = existingEnvironments.find((mem: FormattedMemory) => 
                   mem.metadata?.kind === 'environment' && 
                   mem.metadata?.environment_id === environmentId &&
                   mem.metadata?.image_url
                 );
 
+                // Second: If not found in current book, search across ALL books for similar environments
+                if (!existingEnv) {
+                  console.log(`[createEnvironments] Environment ${location} not found in current book, searching globally...`);
+                  
+                  const globalEnvironments = await memoryService.searchMemories(
+                    paprUserId, 
+                    `environment "${location}" ${timeOfDay} ${weather} master plate`,
+                    15
+                  );
+
+                  existingEnv = globalEnvironments.find((mem: FormattedMemory) => 
+                    mem.metadata?.kind === 'environment' && 
+                    mem.metadata?.location === location &&
+                    mem.metadata?.time_of_day === timeOfDay &&
+                    mem.metadata?.weather === weather &&
+                    mem.metadata?.image_url
+                  );
+                  
+                  if (existingEnv) {
+                    console.log(`[createEnvironments] Found similar environment ${location} from different book: ${existingEnv.metadata?.book_title || 'Unknown'}`);
+                  }
+                }
+
                 if (existingEnv && existingEnv.metadata?.image_url) {
                   environmentImageUrl = existingEnv.metadata.image_url as string;
                   existingEnvironment = true;
-                  console.log(`[createEnvironments] Found existing environment: ${location}`);
+                  console.log(`[createEnvironments] Using existing environment: ${location} - ${environmentImageUrl.substring(0, 50)}...`);
+                } else {
+                  console.log(`[createEnvironments] No existing environment found for ${location} at ${timeOfDay}, will generate new one`);
                 }
               }
             }
@@ -154,29 +187,28 @@ export const createEnvironments = ({ session, dataStream }: { session: Session; 
             const { createImage } = await import('./create-image');
             const imageTool = createImage({ session });
 
-            const fullDescription = `CHILDREN'S BOOK ENVIRONMENT: ${location} at ${timeOfDay}
+            const fullDescription = `Create an empty environment: ${location} at ${timeOfDay}
 
-SCENE SETUP: ${masterPlateDescription}
-TIME: ${timeOfDay}
+ENVIRONMENT DETAILS: ${masterPlateDescription}
+TIME: ${timeOfDay}  
 WEATHER: ${weather}
 PERSISTENT ELEMENTS: ${persistentElements.join(', ')}
 
 CRITICAL REQUIREMENTS:
-1. Show the COMPLETE environment from above or at an elevated angle that reveals the entire space
-2. Include ALL rooms, areas, and spatial relationships - show the full layout
-3. NO CHARACTERS in the environment - this is an empty background plate
-4. Include all persistent elements: ${persistentElements.join(', ')}
-5. Consistent children's book illustration style
-6. Clear, detailed view suitable for placing characters into the scene later
-7. Environment should be well-lit and show all important areas
-8. This will be used as a base layer for scene composition
+1. EMPTY environment with no characters or people
+2. Complete view of the ${location} showing the entire space
+3. Include persistent elements: ${persistentElements.join(', ')}
+4. Children's book illustration style
+5. Well-lit and detailed for character placement later
+6. ${timeOfDay} lighting with ${weather} conditions
 
-Think of this as an architectural or doll house view where you can see the entire space clearly, making it easy to place characters anywhere within the environment.`;
+This empty environment will serve as a background for placing characters into scenes.`;
             
             if (imageTool.execute) {
               const imageResult = await imageTool.execute({
               description: fullDescription,
-              sceneContext: `Environment master plate for children's book scenes - empty background showing complete space for character placement`,
+              sceneContext: `Empty environment master plate for children's book scenes - background showing complete space for character placement`,
+              seedImageTypes: ['environment'],
               aspectRatio,
               styleConsistency: true
             }, { toolCallId: 'book-env-' + Date.now(), messages: [] } as ToolCallOptions) as CreateImageOutput;
@@ -418,10 +450,18 @@ export const createSceneManifest = ({ session, dataStream }: { session: Session;
 // Step 6B: Scene Composition and Rendering Tool
 export const renderScene = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
   tool({
-    description: `Step 6B of Enhanced Book Creation: Compose and render scene.
+    description: `Step 6B of Enhanced Book Creation: Compose and render scene with visual continuity.
+    
+    🔗 **ENVIRONMENT CONTINUITY**: Automatically detects when consecutive scenes occur in the same environment and uses the prior scene's image as a seed to ensure visual consistency and smooth transitions between book spreads.
     
     Composes the final scene image from environment plate + canon characters + props.
-    Uses approved scene manifest and performs final validation.`,
+    Uses approved scene manifest and performs final validation.
+    
+    **Key Features**:
+    - Detects same environment as previous scene for visual continuity
+    - Seeds prior scene image when environments match
+    - Maintains consistent lighting, camera angles, and environmental details
+    - Ensures smooth visual flow between consecutive book spreads`,
     inputSchema: sceneCompositionSchema,
     execute: async (input) => {
       const { 
@@ -434,7 +474,9 @@ export const renderScene = ({ session, dataStream }: { session: Session; dataStr
         lighting, 
         cameraAngle, 
         compositionalNotes,
-        seed 
+        seed,
+        checkEnvironmentContinuity,
+        priorSceneId
       } = input;
       
       dataStream.write?.({
@@ -454,6 +496,62 @@ export const renderScene = ({ session, dataStream }: { session: Session; dataStr
 
       let sceneImageUrl = '';
       const seedImages: string[] = [];
+      const seedImageTypes: ('character' | 'environment' | 'prop' | 'other')[] = [];
+      let environmentContinuityDetected = false;
+      let priorSceneImageUrl: string | null = null;
+
+      // Check for environment continuity with prior scene
+      if (checkEnvironmentContinuity && priorSceneId && session?.user?.id) {
+        try {
+          const { createMemoryService } = await import('@/lib/ai/memory/service');
+          const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
+          const apiKey = process.env.PAPR_MEMORY_API_KEY;
+          
+          if (apiKey) {
+            const memoryService = createMemoryService(apiKey);
+            const paprUserId = await ensurePaprUser(session.user.id, apiKey);
+            
+            if (paprUserId) {
+              // Search for prior scene information
+              const priorSceneMemories = await memoryService.searchMemories(
+                paprUserId,
+                `scene ${priorSceneId} render ${bookId}`,
+                5
+              );
+              
+              if (priorSceneMemories.length > 0) {
+                const priorScene = priorSceneMemories.find((mem: FormattedMemory) => 
+                  mem.metadata?.kind === 'scene_render' && 
+                  mem.metadata?.scene_id === priorSceneId
+                );
+                
+                if (priorScene) {
+                  const priorEnvironmentId = priorScene.metadata?.environment_id;
+                  
+                  // Check if same environment
+                  if (priorEnvironmentId === environmentId) {
+                    environmentContinuityDetected = true;
+                    priorSceneImageUrl = priorScene.metadata?.final_image_url as string;
+                    
+                    if (priorSceneImageUrl) {
+                      console.log(`[renderScene] 🔗 Environment continuity detected! Prior scene ${priorSceneId} in same environment ${environmentId}`);
+                      console.log(`[renderScene] 🖼️ Using prior scene image as seed for visual continuity`);
+                      
+                      // Announce continuity to user
+                      dataStream.write?.({
+                        type: 'text',
+                        content: `🔗 **Environment Continuity Detected**: This scene takes place in the same environment as the previous scene (${priorSceneId}). Using the prior scene image as a seed to ensure visual consistency and smooth transitions between spreads.`,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error('[renderScene] Error checking environment continuity:', error);
+        }
+      }
 
       // Gather all seed images from memory
       if (session?.user?.id) {
@@ -467,21 +565,28 @@ export const renderScene = ({ session, dataStream }: { session: Session; dataStr
             const paprUserId = await ensurePaprUser(session.user.id, apiKey);
             
             if (paprUserId) {
-              // Get environment image
-              const envMemories = await memoryService.searchMemories(
-                paprUserId,
-                `environment ${environmentId} ${bookId}`,
-                5
-              );
-              
-              const environment = envMemories.find((mem: FormattedMemory) => 
-                mem.metadata?.kind === 'environment' && 
-                mem.metadata?.environment_id === environmentId &&
-                mem.metadata?.image_url
-              );
-              
-              if (environment?.metadata?.image_url) {
-                seedImages.push(environment.metadata.image_url as string);
+              // Prioritize prior scene image for environment continuity
+              if (environmentContinuityDetected && priorSceneImageUrl) {
+                seedImages.push(priorSceneImageUrl);
+                seedImageTypes.push('environment');
+              } else {
+                // Get environment image
+                const envMemories = await memoryService.searchMemories(
+                  paprUserId,
+                  `environment ${environmentId} ${bookId}`,
+                  5
+                );
+                
+                const environment = envMemories.find((mem: FormattedMemory) => 
+                  mem.metadata?.kind === 'environment' && 
+                  mem.metadata?.environment_id === environmentId &&
+                  mem.metadata?.image_url
+                );
+                
+                if (environment?.metadata?.image_url) {
+                  seedImages.push(environment.metadata.image_url as string);
+                  seedImageTypes.push('environment');
+                }
               }
 
               // Get character images
@@ -500,6 +605,7 @@ export const renderScene = ({ session, dataStream }: { session: Session; dataStr
                 
                 if (character?.metadata?.portrait_url) {
                   seedImages.push(character.metadata.portrait_url as string);
+                  seedImageTypes.push('character');
                 }
               }
 
@@ -519,6 +625,7 @@ export const renderScene = ({ session, dataStream }: { session: Session; dataStr
                 
                 if (prop?.metadata?.image_url) {
                   seedImages.push(prop.metadata.image_url as string);
+                  seedImageTypes.push('prop');
                 }
               }
             }
@@ -559,7 +666,9 @@ The seed images provide:
           const imageResult = await imageTool.execute({
             description: fullDescription,
             seedImages: seedImages.length > 0 ? seedImages : undefined,
-            sceneContext: `Scene composition for children's book - combining environment background with character portraits to create cohesive scene`,
+            seedImageTypes: seedImageTypes.length > 0 ? seedImageTypes : undefined,
+            sceneContext: `Scene composition for children's book${environmentContinuityDetected ? ' - maintaining visual continuity from prior scene in same environment' : ' - combining environment background with character portraits to create cohesive scene'}`,
+            priorScene: environmentContinuityDetected ? `Prior scene ${priorSceneId} in same environment for visual continuity` : undefined,
             styleConsistency: true,
             aspectRatio: '16:9'
           }, { toolCallId: 'book-scene-' + Date.now(), messages: [] } as ToolCallOptions) as CreateImageOutput;
@@ -618,9 +727,13 @@ The seed images provide:
         sceneId,
         sceneImageUrl,
         seedImagesUsed: seedImages.length,
+        environmentContinuityDetected,
+        priorSceneUsed: environmentContinuityDetected ? priorSceneId : null,
         lighting,
         cameraAngle,
-        nextStep: 'Approval Gate 7: Please review the rendered scene. Approve or request fixes before proceeding to the next scene.',
+        nextStep: environmentContinuityDetected 
+          ? `Approval Gate 7: Please review the rendered scene. Visual continuity has been maintained from the prior scene in the same environment. Approve or request fixes before proceeding to the next scene.`
+          : 'Approval Gate 7: Please review the rendered scene. Approve or request fixes before proceeding to the next scene.',
         approvalRequired: true
       };
     },
