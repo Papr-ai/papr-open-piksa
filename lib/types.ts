@@ -1,4 +1,4 @@
-import type { UIMessage, ToolUIPart, DynamicToolUIPart } from 'ai';
+import type { UIMessage, ToolUIPart, DynamicToolUIPart, TextPart } from 'ai';
 
 // Define a compatible stream writer interface that works with our existing code
 // while supporting the AI SDK 5.0 approach
@@ -13,6 +13,129 @@ export interface DataStreamWriter {
 
 // Use the actual AI SDK 5.0 tool UI part types - these replace ToolInvocation
 export type ToolInvocation = ToolUIPart | DynamicToolUIPart;
+
+// Export the ToolUIPart from AI SDK
+export { ToolUIPart };
+
+// Export TextPart type
+export { TextPart };
+
+// Message part types
+export type MessagePart = TextPart | ToolUIPart | DynamicToolUIPart;
+
+// Tool output types
+export interface WeatherAtLocation {
+  latitude: number;
+  longitude: number;
+  generationtime_ms: number;
+  utc_offset_seconds: number;
+  timezone: string;
+  timezone_abbreviation: string;
+  elevation: number;
+  current_units: {
+    time: string;
+    interval: string;
+    temperature_2m: string;
+  };
+  current: {
+    time: string;
+    interval: number;
+    temperature_2m: number;
+  };
+  hourly_units: {
+    time: string;
+    temperature_2m: string;
+  };
+  hourly: {
+    time: string[];
+    temperature_2m: number[];
+  };
+  daily_units: {
+    time: string;
+    sunrise: string;
+    sunset: string;
+  };
+  daily: {
+    time: string[];
+    sunrise: string[];
+    sunset: string[];
+  };
+}
+
+export interface DocumentToolOutput {
+  success: boolean;
+  id: string;
+  title: string;
+  kind: 'text' | 'image' | 'book' | 'sheet' | 'memory';
+  content?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface CreateBookOutput {
+  success: boolean;
+  id: string;
+  bookId?: string;
+  bookTitle: string;
+  chapterTitle: string;
+  chapterNumber: number;
+  content: string;
+  saveError?: string;
+  saved?: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface SearchBooksOutput {
+  books: Array<{
+    bookId: string;
+    bookTitle: string;
+    chapterCount: number;
+    lastChapterNumber: number;
+    lastUpdated: string;
+  }>;
+  totalBooks?: number;
+  message?: string;
+}
+
+export interface AddMemoryOutput {
+  success: boolean;
+  memoryId?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface AddMemoryInput {
+  content: string;
+  category?: string;
+  type?: string;
+}
+
+export interface GenerateImageOutput {
+  success: boolean;
+  id: string;
+  imageUrl: string;
+  prompt: string;
+  style: string;
+  context?: string;
+  title?: string;
+  subtitle?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface EditImageOutput {
+  success: boolean;
+  id: string;
+  originalImageUrl: string;
+  editedImageUrl: string;
+  prompt: string;
+  editType: string;
+  preserveOriginal: boolean;
+  context?: string;
+  message?: string;
+  error?: string;
+}
 
 // Extended UI message type that includes additional properties needed by the app
 export interface ExtendedUIMessage extends UIMessage {

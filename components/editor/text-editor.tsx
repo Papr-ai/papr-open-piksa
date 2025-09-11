@@ -24,6 +24,7 @@ import {
 } from '@/lib/editor/suggestions';
 import { imageHandlerPlugin } from '@/lib/editor/image-handler';
 import { createImageNodeView } from '@/lib/editor/image-nodeview';
+import { createSceneNodeView } from '@/lib/editor/scene-nodeview';
 
 type EditorProps = {
   content: string;
@@ -70,6 +71,7 @@ function PureEditor({
         state,
         nodeViews: {
           image: createImageNodeView as any,
+          scene: createSceneNodeView as any,
         },
       });
     }

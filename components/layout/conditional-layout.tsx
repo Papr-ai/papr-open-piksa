@@ -19,8 +19,8 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
   const pathname = usePathname();
   const { data: clientSession, status } = useSession();
   
-  // Use client-side session as the source of truth for user state
-  const currentUser = clientSession?.user || user;
+  // Use client-side session as the source of truth for user state, but fallback to server user during loading
+  const currentUser = status === 'loading' ? user : (clientSession?.user || user);
   
   // Detect chat pages that need full-height layout (specific book chat pages, not all /books/ pages)
   const isChatPage = pathname?.startsWith('/chat/') || (pathname?.startsWith('/books/') && pathname?.match(/^\/books\/[^\/]+$/));
@@ -44,8 +44,8 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
     return <>{children}</>;
   }
 
-  // Don't render sidebar if we're still loading the session
-  if (status === 'loading') {
+  // Don't render sidebar layout if we're still loading the session and have no server user
+  if (status === 'loading' && !user) {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="text-center">
@@ -55,8 +55,11 @@ export function ConditionalLayout({ children, user, isCollapsed }: ConditionalLa
     );
   }
 
+  // Determine if sidebar should be open based on current auth state
+  const shouldSidebarBeOpen = currentUser ? !isCollapsed : false;
+
   return (
-    <SidebarProvider defaultOpen={!isCollapsed} className="h-full">
+    <SidebarProvider defaultOpen={shouldSidebarBeOpen} className="h-full">
       <AppSidebar user={currentUser} />
       <SidebarInset className="h-full overflow-hidden flex flex-col bg-sidebar">
         {currentUser ? (

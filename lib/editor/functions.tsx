@@ -24,7 +24,8 @@ export const buildDocumentFromContent = (content: string) => {
     let storyContext;
     if (storyContextEncoded) {
       try {
-        storyContext = Buffer.from(storyContextEncoded.trim(), 'base64').toString();
+        // Use browser-compatible base64 decoding
+        storyContext = atob(storyContextEncoded.trim());
       } catch (e) {
         console.warn('Failed to decode story context:', e);
       }
@@ -62,7 +63,7 @@ export const buildDocumentFromContent = (content: string) => {
   return parser.parse(tempContainer);
 };
 
-// Create a custom serializer that handles our enhanced image nodes
+// Create a custom serializer that handles our enhanced image nodes and scene nodes
 const customMarkdownSerializer = new MarkdownSerializer(
   {
     // Use all default node serializers
@@ -84,12 +85,33 @@ const customMarkdownSerializer = new MarkdownSerializer(
       }
       
       if (storyContext) {
-        // Encode story context to avoid markdown conflicts
-        const encodedContext = Buffer.from(storyContext).toString('base64');
+        // Encode story context to avoid markdown conflicts using browser-compatible base64
+        const encodedContext = btoa(storyContext);
         markdown += `<!-- storyContext: ${encodedContext} -->`;
       }
       
       state.write(markdown);
+    },
+    // Add scene serializer to properly handle scene nodes
+    scene(state, node) {
+      const { sceneId, sceneNumber, synopsis, imageUrl, environment, characters, storyContext } = node.attrs;
+      
+      // Create scene div with data attributes
+      let sceneHtml = `<div class="scene-block" data-scene-id="${sceneId}" data-scene-number="${sceneNumber}"`;
+      
+      if (synopsis) sceneHtml += ` data-synopsis="${synopsis}"`;
+      if (imageUrl) sceneHtml += ` data-image-url="${imageUrl}"`;
+      if (environment) sceneHtml += ` data-environment="${environment}"`;
+      if (storyContext) sceneHtml += ` data-story-context="${storyContext}"`;
+      if (characters && characters.length > 0) {
+        sceneHtml += ` data-characters="${JSON.stringify(characters).replace(/"/g, '&quot;')}"`;
+      }
+      
+      sceneHtml += '>\n\n';
+      
+      state.write(sceneHtml);
+      state.renderContent(node);
+      state.write('\n\n</div>');
     },
   },
   // Use all default mark serializers
@@ -99,6 +121,8 @@ const customMarkdownSerializer = new MarkdownSerializer(
 export const buildContentFromDocument = (document: Node) => {
   return customMarkdownSerializer.serialize(document);
 };
+
+// Note: buildContentFromScenes moved to server-side utility to avoid client-side database imports
 
 export const createDecorations = (
   suggestions: Array<UISuggestion>,

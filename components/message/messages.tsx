@@ -96,37 +96,64 @@ function PureMessages({
     
     // If the last message is from the assistant, check for content
     if (lastMessage && lastMessage.role === 'assistant') {
+      console.log('[Messages] Checking assistant message for visible content:', {
+        messageId: lastMessage.id,
+        partsCount: lastMessage.parts?.length || 0,
+        parts: lastMessage.parts?.map(p => ({ type: (p as any).type, hasText: !!(p as any).text })),
+        status: status
+      });
+      
       // Check for any content that should be displayed
-      const hasContent = lastMessage.parts?.some(part => {
+      const hasContent = lastMessage.parts && lastMessage.parts.length > 0 && lastMessage.parts.some(part => {
         // Safely check part type without TypeScript errors
         const partType = part.type;
         
         // Check for tool calls
-        if (partType === 'tool-invocation') return true;
+        if (partType === 'tool-invocation') {
+          console.log('[Messages] Found tool-invocation part');
+          return true;
+        }
         
         // Check for reasoning parts
-        if (partType === 'reasoning') return true;
+        if (partType === 'reasoning') {
+          console.log('[Messages] Found reasoning part');
+          return true;
+        }
         
         // Check for step-start events
-        if (partType === 'step-start') return true;
+        if (partType === 'step-start') {
+          console.log('[Messages] Found step-start part');
+          return true;
+        }
         
         // Check for text content
-        if (partType === 'text' && 'text' in part && typeof part.text === 'string' && part.text.length > 0) return true;
+        if (partType === 'text' && 'text' in part && typeof part.text === 'string' && part.text.length > 0) {
+          console.log('[Messages] Found text part with content:', (part as any).text.substring(0, 50));
+          return true;
+        }
         
         // Check for parts with reasoning field
-        if ('reasoning' in part && typeof part.reasoning === 'string' && part.reasoning.length > 20) return true;
+        if ('reasoning' in part && typeof part.reasoning === 'string' && part.reasoning.length > 20) {
+          console.log('[Messages] Found part with reasoning field');
+          return true;
+        }
         
         // Check for parts with details array and reasoning
-        if ('details' in part && Array.isArray(part.details) && 'reasoning' in part) return true;
+        if ('details' in part && Array.isArray(part.details) && 'reasoning' in part) {
+          console.log('[Messages] Found part with details and reasoning');
+          return true;
+        }
         
+        console.log('[Messages] Part has no visible content:', { type: partType, part });
         return false;
       });
       
+      console.log('[Messages] Assistant message hasVisibleContent:', !!hasContent);
       setHasVisibleContent(!!hasContent);
     } else {
       setHasVisibleContent(false);
     }
-  }, [messages]);
+  }, [messages, status]);
 
   // Check if we're using the reasoning model
   const isReasoningModel = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;
@@ -149,11 +176,9 @@ function PureMessages({
     return /<think>[\s\S]*<\/think>/.test(textContent);
   });
 
-  // Show loading indicator when AI is processing (before any content appears)
-  const shouldShowThinking = (status === 'submitted' || status === 'streaming') && 
-    messages.length > 0 && 
-    messages[messages.length - 1].role === 'user' && 
-    !hasVisibleContent;
+  // Let AI SDK v5 handle thinking states natively - removed custom logic
+  // The useChat hook manages message states and streaming automatically
+  const shouldShowThinking = false; // Disabled custom thinking logic
   
   // Don't filter messages, just modify how they're displayed
   // This ensures tool calls and reasoning events are always visible
@@ -177,20 +202,37 @@ function PureMessages({
           // AI SDK v5 embeds tool results as parts within assistant messages,
           // so we don't need to handle separate tool messages
 
-          // For the last assistant message during streaming
-          const isLastAssistantMessage = 
-            status === 'streaming' && 
-            index === displayMessages.length - 1 && 
+          // Check if this is an assistant message during active streaming/processing
+          const isStreamingAssistantMessage = 
+            (status === 'streaming' || status === 'submitted') && 
             message.role === 'assistant';
           
-          // Keep showing the thinking indicator alongside empty assistant messages
-          // instead of hiding the entire assistant message
-          if (isLastAssistantMessage && !hasVisibleContent) {
-            return (
-              <div key={message.id}>
-                <ThinkingMessage selectedModelId={selectedModelId} />
-              </div>
-            );
+          // Check if THIS specific message has visible content (not just the last one)
+          const messageHasVisibleContent = message.parts && message.parts.length > 0 && message.parts.some(part => {
+            const partType = part.type;
+            if (partType === 'tool-invocation') return true;
+            if (partType === 'reasoning') return true;
+            if (partType === 'step-start') return true;
+            if (partType === 'text' && 'text' in part && typeof part.text === 'string' && part.text.length > 0) return true;
+            if ('reasoning' in part && typeof part.reasoning === 'string' && part.reasoning.length > 20) return true;
+            if ('details' in part && Array.isArray(part.details) && 'reasoning' in part) return true;
+            return false;
+          });
+          
+          // Hide empty streaming assistant messages completely
+          // The thinking state is handled by dataStream progress updates instead
+          const isEmptyStreamingMessage = isStreamingAssistantMessage && !messageHasVisibleContent && 
+            index === displayMessages.length - 1; // Only for the last (current) message
+          
+          if (isEmptyStreamingMessage) {
+            console.log('[Messages] Hiding empty streaming assistant message:', {
+              messageId: message.id,
+              status,
+              messageHasVisibleContent,
+              partsCount: message.parts?.length || 0,
+              isLastMessage: index === displayMessages.length - 1
+            });
+            return null; // Hide empty streaming messages completely
           }
           
           // Augment the message with reasoning steps if applicable
@@ -225,12 +267,21 @@ function PureMessages({
                   isReadonly={isReadonly}
                   selectedModelId={selectedModelId}
                   enableUniversalReasoning={enableUniversalReasoning}
-                  setInput={setInput}
-                  handleSubmit={handleSubmit}
+                  sendMessage={sendMessage}
                 />
               </div>
             );
           }
+          
+          console.log('[Messages] Rendering normal PreviewMessage:', {
+            messageId: message.id,
+            role: message.role,
+            status,
+            messageHasVisibleContent,
+            partsCount: message.parts?.length || 0,
+            isStreamingAssistantMessage,
+            isEmptyStreamingMessage
+          });
           
           return (
             <div key={message.id}>
@@ -244,18 +295,14 @@ function PureMessages({
                 isReadonly={isReadonly}
                 selectedModelId={selectedModelId}
                 enableUniversalReasoning={enableUniversalReasoning}
-                setInput={setInput}
-                handleSubmit={handleSubmit}
                 sendMessage={sendMessage}
               />
             </div>
           );
         })}
 
-        {/* Only show the global thinking indicator if there's no assistant message being displayed yet */}
-        {shouldShowThinking && !displayMessages.some(
-          (msg) => msg.role === 'assistant' && msg.id === messages[messages.length - 1].id
-        ) && <ThinkingMessage selectedModelId={selectedModelId} />}
+        {/* Show the global thinking indicator when AI is processing but no assistant message exists yet */}
+        {shouldShowThinking && <ThinkingMessage selectedModelId={selectedModelId} />}
         
         <div
           ref={messagesEndRef}

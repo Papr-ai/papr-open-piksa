@@ -113,13 +113,38 @@ export function sanitizeResponseMessages({
 
     if (typeof message.content === 'string') return message;
 
-    const sanitizedContent = message.content.filter((content) =>
-      content.type === 'tool-call'
-        ? toolResultIds.includes(content.toolCallId)
-        : content.type === 'text'
-          ? content.text.length > 0
-          : true,
-    );
+    // For reasoning-enabled models, we need to be more careful about filtering
+    // to ensure reasoning items have their required following items
+    const hasReasoningContent = reasoning || message.content.some((content) => content.type === 'reasoning');
+    
+    let sanitizedContent;
+    
+    if (hasReasoningContent) {
+      // More permissive filtering for reasoning messages to preserve required structure
+      sanitizedContent = message.content.filter((content) => {
+        if (content.type === 'tool-call') {
+          return toolResultIds.includes(content.toolCallId);
+        }
+        if (content.type === 'text') {
+          // Keep text content even if empty for reasoning messages to maintain structure
+          return true;
+        }
+        if (content.type === 'reasoning') {
+          return true;
+        }
+        // Keep other content types for reasoning messages to ensure proper structure
+        return true;
+      });
+    } else {
+      // Original strict filtering for non-reasoning messages
+      sanitizedContent = message.content.filter((content) =>
+        content.type === 'tool-call'
+          ? toolResultIds.includes(content.toolCallId)
+          : content.type === 'text'
+            ? content.text.length > 0
+            : true,
+      );
+    }
 
     if (reasoning) {
       // @ts-expect-error: reasoning message parts in sdk is wip

@@ -109,23 +109,23 @@ export const {
       }
 
       // For other providers (like credentials), allow sign-in
-      console.log(`[Auth] Allowing sign-in for provider: ${account?.provider || 'unknown'}`);
+      //console.log(`[Auth] Allowing sign-in for provider: ${account?.provider || 'unknown'}`);
       return true;
     },
     async jwt({ token, user, account }) {
-      console.log(`[Auth] JWT callback called with provider: ${account?.provider}`);
+      //console.log(`[Auth] JWT callback called with provider: ${account?.provider}`);
       
       if (user) {
-        console.log(`[Auth] JWT callback user:`, { id: user.id, email: user.email });
+        //console.log(`[Auth] JWT callback user:`, { id: user.id, email: user.email });
         
         // For GitHub OAuth, we need to get the database user ID, not the GitHub user ID
         if (account?.provider === 'github') {
           try {
-            console.log(`[Auth] Looking up database user for GitHub OAuth user: ${user.email}`);
+            //console.log(`[Auth] Looking up database user for GitHub OAuth user: ${user.email}`);
             const dbUsers = await getUser(user.email!);
             if (dbUsers.length > 0) {
               const dbUser = dbUsers[0];
-              console.log(`[Auth] Found database user:`, { id: dbUser.id, email: dbUser.email, paprUserId: dbUser.paprUserId });
+              //console.log(`[Auth] Found database user:`, { id: dbUser.id, email: dbUser.email, paprUserId: dbUser.paprUserId });
               
               token.id = dbUser.id;  // Use database user ID, not GitHub user ID
               token._paprUserId = dbUser.paprUserId;
@@ -140,9 +140,9 @@ export const {
         } else {
           // For other providers (like credentials), use the provided user ID
           token.id = user.id;
-          console.log(`[Auth] Credentials login - user object keys:`, Object.keys(user));
-          console.log(`[Auth] Credentials login - _paprUserId in user:`, '_paprUserId' in user);
-          console.log(`[Auth] Credentials login - user._paprUserId:`, (user as any)._paprUserId);
+          //console.log(`[Auth] Credentials login - user object keys:`, Object.keys(user));
+          //console.log(`[Auth] Credentials login - _paprUserId in user:`, '_paprUserId' in user);
+          //console.log(`[Auth] Credentials login - user._paprUserId:`, (user as any)._paprUserId);
           if ('_paprUserId' in user) {
             token._paprUserId = user._paprUserId;
           }
@@ -155,7 +155,7 @@ export const {
         token.githubLogin = account.login;
       }
       
-      console.log(`[Auth] JWT token final state:`, { id: token.id, _paprUserId: token._paprUserId });
+      //console.log(`[Auth] JWT token final state:`, { id: token.id, _paprUserId: token._paprUserId });
       return token;
     },
     async session({ session, token }) {
@@ -173,7 +173,7 @@ export const {
             
 
           } else {
-            console.log(`[Auth] Session callback - No DB user found for ID:`, token.id);
+            //console.log(`[Auth] Session callback - No DB user found for ID:`, token.id);
           }
         } catch (error) {
           console.error('Error fetching user data for session:', error);

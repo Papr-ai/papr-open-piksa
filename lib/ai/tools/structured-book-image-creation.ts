@@ -31,9 +31,9 @@ const structuredBookImageCreationSchema = z.object({
     actions: z.string().optional().describe('Specific actions or poses for characters')
   })).describe('List of scenes to create by compositing characters and environments'),
   conversationContext: z.string().optional().describe('CRITICAL: Complete context from the conversation including Style Bible, character details, plot elements, and any established visual style to ensure consistency across all images'),
-  skipApprovalGates: z.boolean().optional().default(false).describe('Set to true to skip user approval gates and create all images automatically'),
-  approvedCharacters: z.boolean().optional().default(false).describe('Set to true if characters have already been approved by the user'),
-  approvedEnvironments: z.boolean().optional().default(false).describe('Set to true if environments have already been approved by the user')
+  skipApprovalGates: z.boolean().optional().default(false).describe('ONLY set to true if user explicitly requests to skip all approval gates and create all images automatically. Default: false (use approval gates)'),
+  approvedCharacters: z.boolean().optional().default(false).describe('ONLY set to true if this is a continuation call after user has already approved character portraits in a previous tool execution. Default: false'),
+  approvedEnvironments: z.boolean().optional().default(false).describe('ONLY set to true if this is a continuation call after user has already approved environment images in a previous tool execution. Default: false')
 });
 
 export type StructuredBookImageCreationInput = z.infer<typeof structuredBookImageCreationSchema>;
@@ -142,17 +142,29 @@ interface StructuredBookImageCreationOutput {
 
 export const createStructuredBookImages = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
   tool({
-    description: `Structured Book Image Creation Tool - Follows strict 4-step process:
+    description: `Structured Book Image Creation Tool - Follows strict 4-step process with APPROVAL GATES:
 
 1. MEMORY CHECK: Search memory for existing character portraits and environments
 2. CHARACTER PORTRAITS: Create transparent character portraits if missing, save to memory & book_props
+   → 🛑 APPROVAL GATE: Tool stops here for user approval before proceeding
 3. ENVIRONMENTS: Create empty top-view environments, save to memory & book_props  
+   → 🛑 APPROVAL GATE: Tool stops here for user approval before proceeding
 4. SCENE COMPOSITION: Create scenes by seeding environment + character(s), save to memory
+
+⚠️ IMPORTANT: By default, this tool STOPS after each phase for user approval:
+- After creating characters, it returns and waits for approval
+- After creating environments, it returns and waits for approval  
+- Only continues to next phase when user explicitly approves
 
 🎨 CRITICAL: This tool extracts the book's Style Bible from conversationContext to ensure ALL images (characters, environments, scenes) maintain consistent visual style throughout the book. Each book has its own unique art style that must be preserved.
 
 This tool ensures systematic asset creation and prevents duplicate work by checking memory first.
-All created images are automatically saved to both memory and the book_props database.`,
+All created images are automatically saved to both memory and the book_props database.
+
+📋 PARAMETERS:
+- skipApprovalGates: Set to false (default) to use approval gates, true only if user explicitly says to skip approvals
+- approvedCharacters: Set to true only if characters were already approved in a previous call
+- approvedEnvironments: Set to true only if environments were already approved in a previous call`,
     inputSchema: structuredBookImageCreationSchema,
     execute: async (input): Promise<StructuredBookImageCreationOutput> => {
       const { 
@@ -195,12 +207,25 @@ All created images are automatically saved to both memory and the book_props dat
       let totalImagesCreated = 0;
 
       try {
-        // STEP 1: Memory Checks
-        console.log('[StructuredBookImages] STEP 1: Checking memory for existing assets...');
+        // STEP 1: Memory & Database Checks
+        console.log('[StructuredBookImages] STEP 1: Checking memory and database for existing assets...');
         
-        // Check for existing character portraits
+        // Check for existing character portraits (memory + database)
         for (const character of characters) {
           const memoryResult = await checkMemoryForCharacter(character.name, bookId, session);
+          
+          // If not found in memory, check database
+          if (!memoryResult.found && session?.user?.id) {
+            const dbResult = await checkDatabaseForCharacter(character.name, bookId, session.user.id);
+            if (dbResult.found) {
+              console.log(`[StructuredBookImages] Character "${character.name}": FOUND in database`);
+              // Use database result but mark as memory result for compatibility
+              memoryResult.found = true;
+              memoryResult.imageUrl = dbResult.imageUrl;
+              memoryResult.memoryId = dbResult.propId; // Use prop ID as reference
+            }
+          }
+          
           results.memoryChecks.characters.push(memoryResult);
           console.log(`[StructuredBookImages] Character "${character.name}": ${memoryResult.found ? 'FOUND' : 'NOT FOUND'}`);
         }
@@ -1305,4 +1330,45 @@ function generateNextSteps(summary: any, results: any): string {
   }
 
   return steps.join('\n');
+}
+
+/**
+ * Check database for existing character
+ */
+async function checkDatabaseForCharacter(
+  characterName: string, 
+  bookId: string, 
+  userId: string
+): Promise<{ found: boolean; imageUrl?: string; propId?: string }> {
+  try {
+    const { db } = await import('@/lib/db/db');
+    const { bookProp } = await import('@/lib/db/schema');
+    const { and, eq } = await import('drizzle-orm');
+    
+    const existingCharacter = await db
+      .select()
+      .from(bookProp)
+      .where(
+        and(
+          eq(bookProp.userId, userId),
+          eq(bookProp.bookId, bookId),
+          eq(bookProp.type, 'character'),
+          eq(bookProp.name, characterName)
+        )
+      )
+      .limit(1);
+    
+    if (existingCharacter.length > 0 && existingCharacter[0].imageUrl) {
+      return {
+        found: true,
+        imageUrl: existingCharacter[0].imageUrl,
+        propId: existingCharacter[0].id
+      };
+    }
+    
+    return { found: false };
+  } catch (error) {
+    console.error(`[checkDatabaseForCharacter] Error checking database for ${characterName}:`, error);
+    return { found: false };
+  }
 }

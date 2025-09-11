@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -25,6 +25,10 @@ export function UsageWarning() {
   const { data: session } = useSession();
   const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
+  
+  // Add caching to prevent redundant API calls
+  const lastFetchTime = useRef(0);
+  const CACHE_DURATION = 30000; // 30 seconds cache
 
   useEffect(() => {
     if (session?.user) {
@@ -33,11 +37,19 @@ export function UsageWarning() {
   }, [session]);
 
   const fetchUsageWarnings = async () => {
+    // Check cache
+    const now = Date.now();
+    if ((now - lastFetchTime.current) < CACHE_DURATION) {
+      console.log('[UsageWarning] Using cached usage warnings');
+      return;
+    }
+
     try {
       const response = await fetch('/api/subscription/usage-warnings');
       if (response.ok) {
         const data = await response.json();
         setUsageData(data);
+        lastFetchTime.current = now;
       }
     } catch (error) {
       console.error('Error fetching usage warnings:', error);

@@ -71,11 +71,18 @@ export const register = async (
       return { status: 'user_exists' } as RegisterActionState;
     }
     await createUser(validatedData.email, validatedData.password);
-    await signIn('credentials', {
+    
+    // Sign in the user with redirect to ensure proper session establishment
+    const signInResult = await signIn('credentials', {
       email: validatedData.email,
       password: validatedData.password,
       redirect: false,
     });
+
+    if (signInResult?.error) {
+      console.error('Sign-in error after registration:', signInResult.error);
+      return { status: 'failed' };
+    }
 
     return { status: 'success' };
   } catch (error) {

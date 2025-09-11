@@ -23,6 +23,11 @@ export type DataStreamDelta = {
     | 'structured-book-image-result'
     | 'structured-book-image-complete'
     | 'structured-book-image-approval'
+    | 'single-book-image-start'
+    | 'single-book-image-complete'
+    | 'single-book-image-auto-inserted'
+    | 'single-book-image-auto-insert-failed'
+    | 'single-book-image-auto-insert-error'
     | 'title'
     | 'id'
     | 'suggestion'
@@ -534,6 +539,20 @@ Please reply with **Approve** to proceed with creation, or **Stop** to cancel.`,
           setThinkingState(`🎨 Starting systematic image creation for "${startData.content?.bookTitle}"`, 'tool-result-info');
           break;
 
+        case 'single-book-image-start':
+          // Handle single book image creation start
+          const singleStartData = dataPart.data as any;
+          console.log('[DATA STREAM] Single book image creation started:', singleStartData);
+          
+          const progressText = singleStartData.content?.currentStep && singleStartData.content?.totalSteps 
+            ? ` (${singleStartData.content.currentStep}/${singleStartData.content.totalSteps})` 
+            : '';
+          setThinkingState(
+            `🎨 Creating ${singleStartData.content?.imageType}: ${singleStartData.content?.name}${progressText}`, 
+            'tool-progress'
+          );
+          break;
+
         case 'structured-book-image-progress':
           // Handle structured book image creation progress
           const imageProgressData = dataPart.data as any;
@@ -572,6 +591,53 @@ Please reply with **Approve** to proceed with creation, or **Stop** to cancel.`,
           setThinkingState(
             `🎉 Created ${completeData.content?.results?.totalImagesCreated} images for "${completeData.content?.bookTitle}"`,
             'tool-result-success'
+          );
+          break;
+
+        case 'single-book-image-complete':
+          // Handle single book image creation completion
+          const singleCompleteData = dataPart.data as any;
+          console.log('[DATA STREAM] Single book image creation complete:', singleCompleteData);
+          
+          const completedImageType = singleCompleteData.content?.imageType;
+          const completedName = singleCompleteData.content?.name;
+          const completedProgressText = singleCompleteData.content?.currentStep && singleCompleteData.content?.totalSteps 
+            ? ` (${singleCompleteData.content.currentStep}/${singleCompleteData.content.totalSteps})` 
+            : '';
+          
+          setThinkingState(
+            `✅ ${completedImageType?.charAt(0).toUpperCase() + completedImageType?.slice(1)}: ${completedName}${completedProgressText}`,
+            'tool-result-success'
+          );
+          break;
+
+        case 'single-book-image-auto-inserted':
+          // Handle successful scene image auto-insertion
+          const insertedData = dataPart.data as any;
+          console.log('[DATA STREAM] Scene image auto-inserted:', insertedData);
+          setThinkingState(
+            `🎉 Scene image "${insertedData.content?.name}" automatically placed in book!`,
+            'tool-result-success'
+          );
+          break;
+
+        case 'single-book-image-auto-insert-failed':
+          // Handle failed scene image auto-insertion
+          const failedData = dataPart.data as any;
+          console.log('[DATA STREAM] Scene image auto-insert failed:', failedData);
+          setThinkingState(
+            `⚠️ Scene image created but needs manual placement: ${failedData.content?.error}`,
+            'tool-result-warning'
+          );
+          break;
+
+        case 'single-book-image-auto-insert-error':
+          // Handle scene image auto-insertion error
+          const errorData = dataPart.data as any;
+          console.log('[DATA STREAM] Scene image auto-insert error:', errorData);
+          setThinkingState(
+            `❌ Error auto-inserting scene image: ${errorData.content?.error}`,
+            'tool-result-error'
           );
           break;
 

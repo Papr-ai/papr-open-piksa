@@ -350,7 +350,50 @@ export async function getBookProgress(bookId: string, userId: string): Promise<{
   progressPercentage: number;
   tasks: Task[];
 }> {
-  const tasks = await getBookTasks(bookId, userId);
+  let tasks = await getBookTasks(bookId, userId);
+  
+  // If no workflow tasks found, look for general tasks linked to this book
+  if (tasks.length === 0) {
+    console.log(`[getBookProgress] No workflow tasks found for book ${bookId}, checking general tasks`);
+    try {
+      const { unifiedTaskService } = await import('@/lib/db/unified-task-service');
+      const generalTasks = await unifiedTaskService.getAllTasks(userId, 'general');
+      
+      // Filter tasks that belong to this book
+      const bookTasks = generalTasks.filter(task => task.bookId === bookId);
+      
+      // Convert to Task format for compatibility
+      tasks = bookTasks.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description || null,
+        status: task.status,
+        stepNumber: task.stepNumber || 1,
+        stepName: task.stepName || task.title,
+        bookId: task.bookId!,
+        bookTitle: task.bookTitle!,
+        isPictureBook: task.isPictureBook || false,
+        toolUsed: task.toolUsed,
+        estimatedDuration: task.estimatedDuration,
+        dependencies: task.dependencies || [],
+        metadata: task.metadata || {},
+        notes: task.notes,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        completedAt: task.completedAt,
+        approvedAt: task.approvedAt,
+        userId: task.userId,
+        taskType: task.taskType,
+        sessionId: task.sessionId,
+        parentTaskId: task.parentTaskId,
+        actualDuration: task.actualDuration,
+      }));
+      
+      console.log(`[getBookProgress] Found ${tasks.length} general tasks for book ${bookId}`);
+    } catch (error) {
+      console.error('[getBookProgress] Error fetching general tasks:', error);
+    }
+  }
   
   const totalSteps = tasks.length;
   const completedSteps = tasks.filter(t => t.status === 'completed' || t.status === 'approved').length;

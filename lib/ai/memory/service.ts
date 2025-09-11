@@ -304,7 +304,7 @@ export function createMemoryService(apiKey: string) {
         }
       });
 
-      console.log('[Memory DEBUG] Search response received:', JSON.stringify(response, null, 2));
+      //console.log('[Memory DEBUG] Search response received:', JSON.stringify(response, null, 2));
 
       // Use proper SearchResponse type structure  
       const memories: SearchResponse.Data.Memory[] = response.data?.memories || [];
@@ -314,7 +314,7 @@ export function createMemoryService(apiKey: string) {
         .filter(memory => memory.id) // Only keep memories with IDs
         .map((memory: SearchResponse.Data.Memory): FormattedMemory => {
           // Debug: Log the raw memory object structure from SDK
-          console.log('[Memory DEBUG] Raw SDK memory object:', JSON.stringify(memory, null, 2));
+          //console.log('[Memory DEBUG] Raw SDK memory object:', JSON.stringify(memory, null, 2));
           
           // Handle metadata using proper SDK types - check both metadata fields
           let combinedMetadata: Record<string, unknown> = {};
@@ -325,13 +325,13 @@ export function createMemoryService(apiKey: string) {
               try {
                 const parsedMetadata = JSON.parse(memory.metadata);
                 combinedMetadata = { ...combinedMetadata, ...parsedMetadata };
-                console.log('[Memory DEBUG] Parsed metadata from string:', parsedMetadata);
+                //console.log('[Memory DEBUG] Parsed metadata from string:', parsedMetadata);
               } catch (parseError) {
                 console.error('[Memory DEBUG] Failed to parse metadata JSON:', parseError);
               }
             } else if (typeof memory.metadata === 'object') {
               combinedMetadata = { ...combinedMetadata, ...memory.metadata };
-              console.log('[Memory DEBUG] Used metadata object:', memory.metadata);
+              //console.log('[Memory DEBUG] Used metadata object:', memory.metadata);
             }
           }
           
@@ -342,16 +342,16 @@ export function createMemoryService(apiKey: string) {
           }
           
           // Debug: Show key SDK fields
-          console.log('[Memory DEBUG] SDK fields for memory', memory.id, ':');
-          console.log('  - metadata:', typeof memory.metadata, memory.metadata ? JSON.stringify(memory.metadata).substring(0, 200) : 'null');
-          console.log('  - customMetadata:', typeof memory.customMetadata, memory.customMetadata ? JSON.stringify(memory.customMetadata).substring(0, 200) : 'null');
-          console.log('  - source_type:', memory.source_type);
-          console.log('  - source_url:', memory.source_url);
-          console.log('  - topics:', memory.topics);
-          console.log('  - tags:', memory.tags);
+          //console.log('[Memory DEBUG] SDK fields for memory', memory.id, ':');
+          //console.log('  - metadata:', typeof memory.metadata, memory.metadata ? JSON.stringify(memory.metadata).substring(0, 200) : 'null');
+          //console.log('  - customMetadata:', typeof memory.customMetadata, memory.customMetadata ? JSON.stringify(memory.customMetadata).substring(0, 200) : 'null');
+          //console.log('  - source_type:', memory.source_type);
+          //console.log('  - source_url:', memory.source_url);
+          //console.log('  - topics:', memory.topics);
+          //console.log('  - tags:', memory.tags);
           
           // Debug: Log final combined metadata
-          console.log('[Memory DEBUG] Final combined metadata for memory', memory.id, ':', JSON.stringify(combinedMetadata, null, 2));
+          //console.log('[Memory DEBUG] Final combined metadata for memory', memory.id, ':', JSON.stringify(combinedMetadata, null, 2));
 
           // Ensure createdAt is a string using proper SDK field
           const createdAt: string = memory.created_at || new Date().toISOString();
@@ -391,11 +391,11 @@ export function createMemoryService(apiKey: string) {
       .map((memory, index) => {
         const timestamp = memory.createdAt || 'unknown time';
         const content = memory.content || '';
-        return `Memory ${index + 1} [${timestamp}]: ${content}`;
+        return `${index + 1}. [${timestamp}] ${content}`;
       })
-      .join('\n\n');
+      .join('\n');
 
-    return `The user has the following relevant memories you should consider when responding:\n\n${formattedMemories}\n\nConsider these memories when responding to the user's current request.`;
+    return `**User preferences and cached memories:**\n${formattedMemories}\n\nUse this context to provide personalized assistance. Reference the user's preferences, ongoing projects, and previous work when relevant.`;
   };
 
   /**

@@ -22,6 +22,9 @@ import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { createBook } from '@/lib/ai/tools/create-book';
 import { searchBooks } from '@/lib/ai/tools/search-books';
+import { searchBookProps } from '@/lib/ai/tools/search-book-props';
+import { createBookImagePlan } from '@/lib/ai/tools/create-book-image-plan';
+import { createSingleBookImage } from '@/lib/ai/tools/create-single-book-image';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
 import { createImage } from '@/lib/ai/tools/create-image';
@@ -48,12 +51,86 @@ function extractDomainName(url: string): string {
     return 'Web Source';
   }
 }
+
+// Helper function to convert tool names to user-friendly descriptions
+function getFriendlyToolName(toolName: string): string {
+  const friendlyNames: Record<string, string> = {
+    // Memory tools
+    'searchMemories': 'Searching memories',
+    'addMemory': 'Saving to memory',
+    'updateMemory': 'Updating memory',
+    'deleteMemory': 'Removing from memory',
+    
+    // Document tools
+    'createDocument': 'Creating document',
+    'updateDocument': 'Updating document',
+    
+    // Book tools
+    'createBook': 'Creating book',
+    'searchBooks': 'Searching books',
+    'searchBookProps': 'Finding book assets',
+    'createBookImagePlan': 'Planning book images',
+    'createSingleBookImage': 'Generating book image',
+    'createStructuredBookImages': 'Creating book illustrations',
+    
+    // Task tools
+    'createTaskPlan': 'Creating task plan',
+    'updateTask': 'Updating task',
+    'completeTask': 'Completing task',
+    'getTaskStatus': 'Checking task status',
+    'addTask': 'Adding task',
+    
+    // Image tools
+    'createImage': 'Generating image',
+    
+    // Web search
+    'google_search': 'Searching the web',
+    
+    // GitHub tools
+    'listRepositories': 'Listing repositories',
+    'createProject': 'Creating project',
+    'getRepositoryFiles': 'Getting repository files',
+    'getFileContent': 'Reading file content',
+    'searchFiles': 'Searching files',
+    'openFileExplorer': 'Opening file explorer',
+    'createRepository': 'Creating repository',
+    
+    // Weather
+    'getWeather': 'Getting weather',
+    
+    // Enhanced book tools
+    'createBookPlan': 'Planning book structure',
+    'draftChapter': 'Drafting chapter',
+    'segmentChapterIntoScenes': 'Breaking chapter into scenes',
+    'createCharacterPortraits': 'Creating character portraits',
+    'createEnvironments': 'Creating environments',
+    'createSceneManifest': 'Creating scene manifest',
+    'renderScene': 'Rendering scene',
+    'completeBook': 'Completing book'
+  };
+  
+  return friendlyNames[toolName] || `Running ${toolName}`;
+}
+
 import { handleRateLimitWithRetry } from '@/lib/ai/rate-limit-handler';
 import { google } from '@ai-sdk/google';
 
 // Simple chat API that works with useChat hook
 export async function POST(request: Request) {
+  // 🕐 START TIMING TRACKING
+  const requestStartTime = Date.now();
+  const timings: Record<string, number> = {};
+  
+  const logTiming = (step: string, startTime: number) => {
+    const duration = Date.now() - startTime;
+    timings[step] = duration;
+    console.log(`[TIMING] ${step}: ${duration}ms`);
+    return duration;
+  };
+
   try {
+    // Parse request body
+    const parseStart = Date.now();
     const {
       id,
       messages,
@@ -63,6 +140,7 @@ export async function POST(request: Request) {
       messages: Array<ExtendedUIMessage>;
       selectedChatModel?: string;
     } = await request.json();
+    logTiming('Parse Request Body', parseStart);
 
     // Check web search enabled status from headers
     const webSearchHeaderValue = request.headers.get('X-Web-Search-Enabled');
@@ -80,13 +158,17 @@ export async function POST(request: Request) {
     console.log('[SIMPLE CHAT API] Using model:', modelToUse);
 
     // Get session first
+    const sessionStart = Date.now();
     const session = await auth();
     if (!session || !session.user || !session.user.id) {
       return new Response('Unauthorized', { status: 401 });
     }
+    logTiming('Auth Session', sessionStart);
 
     // Fast combined permission check (replaces 4+ separate DB queries with 1)
+    const permissionsStart = Date.now();
     const permissionCheck = await fastCheckChatPermissions(session.user.id, modelToUse);
+    logTiming('Permission Check', permissionsStart);
     
     if (!permissionCheck.allowed) {
       // Handle different error types
@@ -158,18 +240,22 @@ export async function POST(request: Request) {
     }
 
     // Get or create chat with user context (handles both new and existing chats)
+    const chatContextStart = Date.now();
     const { chatExists, userContext, contextString } = await getOrCreateChatContext(
       id,
       session.user.id,
       messages
     );
+    logTiming('Chat Context Creation', chatContextStart);
 
     if (chatExists) {
       // Verify ownership for existing chat
+      const ownershipStart = Date.now();
       const chat = await getChatById({ id });
       if (chat && chat.userId !== session.user.id) {
         return new Response('Unauthorized', { status: 401 });
       }
+      logTiming('Ownership Verification', ownershipStart);
     } else {
       //console.log('[SIMPLE CHAT API] Created new chat with user context');
     }
@@ -179,6 +265,7 @@ export async function POST(request: Request) {
     //console.log('[SIMPLE CHAT API] Message count:', messages.length);
 
     //console.log('[SIMPLE CHAT API] Saving user message to database...');
+    const saveMessageStart = Date.now();
     await saveMessages({
       messages: [
         {
@@ -196,6 +283,7 @@ export async function POST(request: Request) {
         }
       ]
     });
+    logTiming('Save User Message', saveMessageStart);
     //console.log('[SIMPLE CHAT API] User message saved to database');
 
     // Convert UI messages to model messages format with hardening against malformed parts
@@ -233,6 +321,8 @@ export async function POST(request: Request) {
       }
     };
     
+    // Set up tools
+    const toolsSetupStart = Date.now();
     const tools: any = {};
     
     // Always available tools
@@ -241,6 +331,9 @@ export async function POST(request: Request) {
     tools.updateDocument = updateDocument({ session, dataStream });
     tools.createBook = createBook({ session, dataStream });
     tools.searchBooks = searchBooks({ session });
+    tools.searchBookProps = searchBookProps({ session, dataStream });
+    tools.createBookImagePlan = createBookImagePlan({ session, dataStream });
+    tools.createSingleBookImage = createSingleBookImage({ session, dataStream });
     tools.requestSuggestions = requestSuggestions({ session, dataStream });
     tools.createImage = createImage({ session });
     tools.createWritingTools = createWritingTools({ session, dataStream });
@@ -314,19 +407,41 @@ export async function POST(request: Request) {
     //console.log('[SIMPLE CHAT API] Final tools available:', Object.keys(tools));
     //console.log('[SIMPLE CHAT API] Tools details:', JSON.stringify(Object.keys(tools).reduce((acc, key) => ({ ...acc, [key]: typeof tools[key] }), {}), null, 2));
     
+    logTiming('Tools Setup', toolsSetupStart);
 
     // Get system prompt (memory-enabled or regular)
     const apiKey = process.env.PAPR_MEMORY_API_KEY;
     let enhancedSystemPrompt: string;
     
     // Use system prompt with memory instructions if memory is enabled
-    const baseSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
+    let baseSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
     
     // Get chat history context for newly created chats only
     let chatHistoryContext = '';
     if (!chatExists && isMemoryEnabled && apiKey && session?.user?.id) {
       //console.log('[SIMPLE CHAT API] 🆕 New chat being created, loading chat history context');
       chatHistoryContext = await handleNewChatCreation(session.user.id, apiKey);
+    }
+    
+    // Enhance system prompt with user memories if memory is enabled
+    // Only do this for NEW chats to avoid searching memory on every message
+    if (isMemoryEnabled && apiKey && session?.user?.id && !chatExists) {
+      const { enhancePromptWithMemories } = await import('@/lib/ai/memory/middleware');
+      
+      try {
+        const memoryEnhanceStart = Date.now();
+        baseSystemPrompt = await enhancePromptWithMemories({
+          userId: session.user.id,
+          prompt: baseSystemPrompt,
+          apiKey,
+          maxMemories: 15,
+          searchQuery: 'user preferences and context'
+        });
+        logTiming('Memory Enhancement (New Chat Only)', memoryEnhanceStart);
+        console.log('[SIMPLE CHAT API] Enhanced system prompt with user memories for new chat');
+      } catch (error) {
+        console.error('[SIMPLE CHAT API] Failed to enhance prompt with memories:', error);
+      }
     }
     
     // Always include user context if available (regardless of memory toggle)
@@ -588,31 +703,33 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
         
         // Log detailed message content to understand what's being sent
-        console.log(`[SIMPLE CHAT API] DETAILED MESSAGE ANALYSIS:`);
-        console.log(`  - Total messages: ${adjustedModelMessages.length}`);
+        //console.log(`[SIMPLE CHAT API] DETAILED MESSAGE ANALYSIS:`);
+        //console.log(`  - Total messages: ${adjustedModelMessages.length}`);
         
         adjustedModelMessages.forEach((msg, index) => {
           const msgContent = JSON.stringify(msg);
           const msgLength = msgContent.length;
           const estimatedTokens = Math.ceil(msgLength / 4);
           
-          console.log(`  - Message ${index} (${msg.role}): ${msgLength} chars, ~${estimatedTokens} tokens`);
-          if (msgLength > 10000) {
+          //console.log(`  - Message ${index} (${msg.role}): ${msgLength} chars, ~${estimatedTokens} tokens`);
+          /*if (msgLength > 10000) {
             console.log(`    - LARGE MESSAGE DETECTED: ${msgContent.substring(0, 200)}...`);
-          }
+          }*/
         });
         
         // Log system prompt details
-        console.log(`[SIMPLE CHAT API] SYSTEM PROMPT ANALYSIS:`);
-        console.log(`  - System prompt length: ${finalSystemPrompt.length} chars`);
-        console.log(`  - System prompt preview: ${finalSystemPrompt.substring(0, 200)}...`);
+        //console.log(`[SIMPLE CHAT API] SYSTEM PROMPT ANALYSIS:`);
+        //console.log(`  - System prompt length: ${finalSystemPrompt.length} chars`);
+        //console.log(`  - System prompt preview: ${finalSystemPrompt.substring(0, 200)}...`);
         
 
-        console.log(`  - Model: ${modelProvider.modelId || 'unknown'}`);
-        console.log(`  - Tools count: ${Object.keys(tools).length}`);
-        console.log(`  - Reasoning enabled: ${supportsReasoning}`);
-        console.log(`  - Reasoning config:`, supportsReasoning ? { effort: 'medium', budgetTokens: 2000 } : 'none');
+        //console.log(`  - Model: ${modelProvider.modelId || 'unknown'}`);
+        //console.log(`  - Tools count: ${Object.keys(tools).length}`);
+        //console.log(`  - Reasoning enabled: ${supportsReasoning}`);
+        //console.log(`  - Reasoning config:`, supportsReasoning ? { effort: 'medium', budgetTokens: 2000 } : 'none');
 
+                const streamTextStart = Date.now();
+                console.log(`[TIMING] 🚀 Starting AI streamText call...`);
                 const streamResult = await streamText({
           model: modelProvider,
           stopWhen: [stepCountIs(5)], // Allow up to 5 steps for multi-step reasoning
@@ -625,19 +742,10 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
             'updateDocument',
             'createBook',
             'searchBooks',
+            'searchBookProps',
+            'createBookImagePlan',
+            'createSingleBookImage',
             'requestSuggestions',
-            'createImage',
-            'createStructuredBookImages',
-            'listRepositories',
-            'createProject',
-            'getRepositoryFiles',
-            'getFileContent',
-            'searchFiles',
-            'openFileExplorer',
-            'createRepository',
-            'updateStagedFile',
-            'getStagingState',
-            'clearStagedFiles',
             'createTaskPlan',
             'updateTask',
             'completeTask',
@@ -651,18 +759,34 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
               ? { reasoning: { effort: 'medium', budgetTokens: 2000 } }
               : {},
           },
-          temperature: 0.7,
+          temperature: 1,
           onStepFinish: (stepResult) => {
-            // Log tool calls for debugging
+            // 📊 PROGRESS TRACKING: Log detailed step information
+            const stepStartTime = Date.now();
+            
+            // Log tool calls with user-friendly names
             if (stepResult.toolCalls && stepResult.toolCalls.length > 0) {
-              //console.log('[SIMPLE CHAT API] Tool calls attempted:', JSON.stringify(stepResult.toolCalls, null, 2));
+              stepResult.toolCalls.forEach((toolCall: any) => {
+                const friendlyName = getFriendlyToolName(toolCall.toolName);
+                console.log(`[PROGRESS] 🔧 ${friendlyName}...`);
+                //console.log('[SIMPLE CHAT API] Tool calls attempted:', JSON.stringify(stepResult.toolCalls, null, 2));
+              });
             }
+            
+            // Log tool results with completion status
             if (stepResult.toolResults && stepResult.toolResults.length > 0) {
-              //console.log('[SIMPLE CHAT API] Tool results:', JSON.stringify(stepResult.toolResults, null, 2));
+              stepResult.toolResults.forEach((result: any) => {
+                const friendlyName = getFriendlyToolName(result.toolName);
+                const success = !result.result?.error;
+                const status = success ? '✅' : '❌';
+                console.log(`[PROGRESS] ${status} ${friendlyName} ${success ? 'completed' : 'failed'}`);
+                //console.log('[SIMPLE CHAT API] Tool results:', JSON.stringify(stepResult.toolResults, null, 2));
+              });
             }
             
             // Log collected data stream writes (these will be included in the message parts)
             if (dataStreamWrites.length > 0) {
+              console.log(`[PROGRESS] 📝 Processed ${dataStreamWrites.length} progress updates`);
               //console.log('[SIMPLE CHAT API] Collected data stream writes:', dataStreamWrites.length);
             }
             if (isWebSearchEnabled) {
@@ -709,6 +833,7 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           },
         });
 
+        logTiming('AI streamText Call', streamTextStart);
         return streamResult;
       }
     );
@@ -895,6 +1020,16 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
         }
       },
     });
+    
+    // 🕐 FINAL TIMING SUMMARY
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`\n[TIMING SUMMARY] 📊 Total Request Duration: ${totalDuration}ms`);
+    console.log('[TIMING BREAKDOWN]:');
+    Object.entries(timings).forEach(([step, duration]) => {
+      const percentage = ((duration / totalDuration) * 100).toFixed(1);
+      console.log(`  • ${step}: ${duration}ms (${percentage}%)`);
+    });
+    console.log('');
 
   } catch (error) {
     console.error('[SIMPLE CHAT API] ERROR:', error);

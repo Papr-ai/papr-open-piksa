@@ -54,10 +54,69 @@ const imageNode: NodeSpec = {
   },
 };
 
-const nodesWithImage = schema.spec.nodes.append({ image: imageNode });
+// Add scene node to the schema
+const sceneNode: NodeSpec = {
+  attrs: {
+    sceneId: {},
+    sceneNumber: { default: 1 },
+    synopsis: { default: null },
+    imageUrl: { default: null },
+    storyContext: { default: null },
+    environment: { default: null },
+    characters: { default: [] }
+  },
+  content: 'block*', // Can contain paragraphs, etc.
+  group: 'block',
+  draggable: true,
+  parseDOM: [{
+    tag: 'div[data-scene-id]',
+    getAttrs(dom: HTMLElement) {
+      const charactersStr = dom.getAttribute('data-characters');
+      let characters = [];
+      try {
+        characters = charactersStr ? JSON.parse(charactersStr) : [];
+      } catch (e) {
+        console.warn('Failed to parse scene characters:', e);
+        characters = [];
+      }
+      
+      return {
+        sceneId: dom.getAttribute('data-scene-id'),
+        sceneNumber: parseInt(dom.getAttribute('data-scene-number') || '1'),
+        synopsis: dom.getAttribute('data-synopsis'),
+        imageUrl: dom.getAttribute('data-image-url'),
+        storyContext: dom.getAttribute('data-story-context'),
+        environment: dom.getAttribute('data-environment'),
+        characters
+      };
+    }
+  }],
+  toDOM(node: any): DOMOutputSpec {
+    const attrs: any = {
+      'data-scene-id': node.attrs.sceneId,
+      'data-scene-number': node.attrs.sceneNumber?.toString() || '1',
+      'class': 'scene-block'
+    };
+    
+    if (node.attrs.synopsis) attrs['data-synopsis'] = node.attrs.synopsis;
+    if (node.attrs.imageUrl) attrs['data-image-url'] = node.attrs.imageUrl;
+    if (node.attrs.storyContext) attrs['data-story-context'] = node.attrs.storyContext;
+    if (node.attrs.environment) attrs['data-environment'] = node.attrs.environment;
+    if (node.attrs.characters && node.attrs.characters.length > 0) {
+      attrs['data-characters'] = JSON.stringify(node.attrs.characters);
+    }
+    
+    return ['div', attrs, 0]; // 0 means content goes here
+  }
+};
+
+const nodesWithImageAndScene = schema.spec.nodes.append({ 
+  image: imageNode,
+  scene: sceneNode
+});
 
 export const documentSchema = new Schema({
-  nodes: addListNodes(nodesWithImage, 'paragraph block*', 'block'),
+  nodes: addListNodes(nodesWithImageAndScene, 'paragraph block*', 'block'),
   marks: schema.spec.marks,
 });
 

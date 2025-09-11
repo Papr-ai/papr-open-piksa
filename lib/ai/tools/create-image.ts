@@ -33,7 +33,22 @@ export type CreateImageOutput = z.infer<typeof createImageOutput>;
 
 export const createImage = ({ session }: { session: Session }) =>
   tool({
-    description: `ENHANCED: Create images with automatic memory search, continuity management, and Gemini-optimized prompts.
+    description: `ENHANCED: Create general-purpose images with automatic memory search, continuity management, and Gemini-optimized prompts.
+
+    **⚠️ IMPORTANT: For book-related content (characters, environments, scenes), use 'createSingleBookImage' tool instead!**
+    **This tool does NOT save to the BookProp database table - book images will be lost if created here.**
+    
+    **Use this tool for:**
+    - General illustrations not part of a book project
+    - Standalone artwork or graphics
+    - Non-book creative content
+    
+    **Do NOT use this tool for:**
+    - Character portraits for books (use createSingleBookImage)
+    - Book environments or scenes (use createSingleBookImage) 
+    - Any content that should be saved as book assets
+    - **EDITING EXISTING IMAGES** (use editImage tool instead)
+    - Modifying height, colors, or elements in existing images (use editImage)
 
     🚨 **CRITICAL WORKFLOW CHANGE**:
     The AI assistant should ALWAYS use searchMemories BEFORE calling this tool to find existing assets and ask user approval!
@@ -136,6 +151,10 @@ export const createImage = ({ session }: { session: Session }) =>
           approach: result.approach,
           seedCount: result.seedImagesUsed?.length || 0
         });
+
+        // Note: If OpenAI fails to download the image URL for validation, 
+        // the image is still created and accessible via dataStream for the UI
+        console.log('[CREATE IMAGE] Returning result with imageUrl for display in UI');
 
         return result;
 

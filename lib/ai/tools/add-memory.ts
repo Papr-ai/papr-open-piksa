@@ -168,7 +168,8 @@ export const addMemory = ({ session }: AddMemoryProps): Tool<AddMemoryInput, Add
           paprUserId, 
           content,
           type as 'text' | 'code_snippet' | 'document',
-          metadata
+          metadata,
+          session.user.id // Pass app user ID for tracking
         );
 
         // Track memory addition usage

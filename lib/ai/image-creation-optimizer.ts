@@ -118,11 +118,18 @@ export async function optimizeImageCreation(
     if (validSeedImages.length > 1) {
       // Multiple seeds: mergeImages → editImage
       console.log('[ImageCreationOptimizer] Multiple seeds detected, using merge+edit approach');
+      console.log(`[ImageCreationOptimizer] Using ${Math.min(validSeedImages.length, 9)} out of ${validSeedImages.length} seed images`);
       
       // Convert imageUrls to the correct format for mergeImages tool
-      const imagesToMerge = validSeedImages.slice(0, 4).map((imageUrl, index) => {
-        // Create a 2x2 grid layout for up to 4 images
-        const positions = ['1x1', '1x2', '2x1', '2x2'];
+      // Support up to 9 images in a 3x3 grid layout for better seed utilization
+      const maxImages = Math.min(validSeedImages.length, 9);
+      const imagesToMerge = validSeedImages.slice(0, maxImages).map((imageUrl, index) => {
+        // Create a 3x3 grid layout for up to 9 images
+        const positions = [
+          '1x1', '1x2', '1x3',
+          '2x1', '2x2', '2x3', 
+          '3x1', '3x2', '3x3'
+        ];
         return {
           imageUrl,
           position: positions[index] || '1x1',
@@ -152,8 +159,8 @@ export async function optimizeImageCreation(
       return {
         imageUrl: (editResult as any).editedImageUrl,
         approach: 'merge_edit',
-        seedImagesUsed: validSeedImages.slice(0, 4),
-        reasoning: `Merged ${validSeedImages.length} seed images and edited with optimized prompt`,
+        seedImagesUsed: validSeedImages.slice(0, maxImages),
+        reasoning: `Merged ${maxImages} seed images (from ${validSeedImages.length} provided) and edited with optimized prompt`,
         actualPrompt: optimizedDescription
       };
       

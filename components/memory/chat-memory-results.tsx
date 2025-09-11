@@ -90,7 +90,7 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
 
   // Process memories to ensure consistent format
   const processMemories = (rawMemories: any[]): MemoryItem[] => {
-    console.log('[MEMORY] Processing raw memories:', JSON.stringify(rawMemories.slice(0, 2), null, 2));
+    //console.log('[MEMORY] Processing raw memories:', JSON.stringify(rawMemories.slice(0, 2), null, 2));
     return rawMemories.map(memory => {
       // Handle memory structure differences
       const processedMemory: MemoryItem = {
@@ -147,10 +147,10 @@ export function ChatMemoryResults({ message }: ChatMemoryResultsProps) {
     }
     
     console.log(`[MEMORY] Processing message ${messageId} for memories`);
-    console.log(`[MEMORY] Message object:`, message);
-    console.log(`[MEMORY] Message parts:`, message.parts);
-    console.log(`[MEMORY] Message toolInvocations:`, (message as any).toolInvocations);
-    console.log(`[MEMORY] Message tool_calls:`, (message as any).tool_calls);
+    //console.log(`[MEMORY] Message object:`, message);
+    //console.log(`[MEMORY] Message parts:`, message.parts);
+    //console.log(`[MEMORY] Message toolInvocations:`, (message as any).toolInvocations);
+    //console.log(`[MEMORY] Message tool_calls:`, (message as any).tool_calls);
     
     // Start loading
     setIsLoading(true);

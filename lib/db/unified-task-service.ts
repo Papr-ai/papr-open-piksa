@@ -206,6 +206,88 @@ export class UnifiedTaskService {
     return parsedTasks;
   }
 
+  /**
+   * Update or create general tasks for a session (upsert operation)
+   */
+  async upsertGeneralTasks(
+    sessionId: string,
+    userId: string,
+    tasks: Array<Omit<CreateGeneralTaskInput, 'sessionId' | 'userId'> & { id?: string; status?: UnifiedTaskStatus; completedAt?: Date | null; isPictureBook?: boolean }>
+  ): Promise<UnifiedTask[]> {
+    console.log(`[UnifiedTaskService] Upserting ${tasks.length} general tasks for session ${sessionId}`);
+    
+    const upsertedTasks = await Promise.all(
+      tasks.map(async (taskInput) => {
+        try {
+          // If task has an ID, try to update existing task first
+          if (taskInput.id) {
+            const existingTask = await this.getTaskById(taskInput.id, userId);
+            if (existingTask) {
+              // Update existing task
+              const [updatedTask] = await db
+                .update(task)
+                .set({
+                  title: taskInput.title,
+                  description: taskInput.description,
+                  status: taskInput.status || 'pending',
+                  dependencies: JSON.stringify(taskInput.dependencies || []),
+                  estimatedDuration: taskInput.estimatedDuration,
+                  completedAt: taskInput.completedAt,
+                  isPictureBook: taskInput.isPictureBook || false,
+                  updatedAt: new Date(),
+                })
+                .where(eq(task.id, taskInput.id))
+                .returning();
+              
+              return this.parseTaskDependencies(updatedTask);
+            }
+          }
+          
+          // Create new task (either no ID provided or existing task not found)
+          const [newTask] = await db
+            .insert(task)
+            .values({
+              title: taskInput.title,
+              description: taskInput.description,
+              taskType: 'general',
+              sessionId,
+              userId,
+              status: taskInput.status || 'pending',
+              dependencies: JSON.stringify(taskInput.dependencies || []),
+              estimatedDuration: taskInput.estimatedDuration,
+              parentTaskId: taskInput.parentTaskId,
+              toolUsed: taskInput.toolUsed,
+              metadata: taskInput.metadata || {},
+              completedAt: taskInput.completedAt,
+              isPictureBook: taskInput.isPictureBook || false,
+            })
+            .onConflictDoUpdate({
+              target: [task.sessionId, task.title],
+              set: {
+                description: taskInput.description,
+                status: taskInput.status || 'pending',
+                dependencies: JSON.stringify(taskInput.dependencies || []),
+                estimatedDuration: taskInput.estimatedDuration,
+                completedAt: taskInput.completedAt,
+                isPictureBook: taskInput.isPictureBook || false,
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+          
+          return this.parseTaskDependencies(newTask);
+        } catch (error) {
+          console.error(`Failed to upsert general task ${taskInput.title}:`, error);
+          return null;
+        }
+      })
+    );
+
+    const validTasks = upsertedTasks.filter(Boolean) as UnifiedTask[];
+    console.log(`[UnifiedTaskService] Successfully upserted ${validTasks.length} general tasks`);
+    return validTasks;
+  }
+
   // === UNIFIED TASK METHODS ===
 
   /**

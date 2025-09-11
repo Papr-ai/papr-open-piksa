@@ -47,8 +47,8 @@ export async function POST(request: Request) {
 
     // Log the request
     console.log(`[Memory] Received search request with query: "${query}"`);
-    console.log(`[Memory] User ID: ${userId}`);
-    console.log(`[Memory] Max results: ${maxResults}`);
+    //console.log(`[Memory] User ID: ${userId}`);
+    //console.log(`[Memory] Max results: ${maxResults}`);
 
     // Search for memories using the actual query
     const memories = await searchUserMemories({
@@ -60,12 +60,7 @@ export async function POST(request: Request) {
 
     // Process and return memories
     console.log(`[Memory] Found ${memories.length} memories`);
-    if (memories.length > 0) {
-      console.log(
-        '[Memory] Memory sample:',
-        memories[0].content?.substring(0, 100),
-      );
-    }
+ 
 
     return NextResponse.json({ memories });
   } catch (error) {

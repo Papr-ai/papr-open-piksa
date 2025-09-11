@@ -26,7 +26,6 @@ const genres = [
   'Comic Book',
   'Young Adult Fantasy',
   'Young Adult Romance',
-  'Adult Fiction',
   'Mystery/Thriller',
   'Science Fiction',
   'Historical Fiction',

@@ -163,7 +163,13 @@ export function TaskCard({ type, tasks, task, nextTask, progress, allCompleted, 
     taskCount
   });
   
+  // Additional debug for tasks array structure
+  if (tasks && tasks.length > 0) {
+    console.log('[TaskCard] First task structure:', tasks[0]);
+  }
+  
   // Show compact version for individual task updates/completions and empty task status
+  // But always show full list for task-plan-created
   const isCompact = type === 'task-updated' || type === 'task-completed' || 
     (type === 'task-status' && (!tasks || tasks.length === 0));
   

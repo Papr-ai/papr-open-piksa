@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useActionState, useEffect, useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, useSession } from 'next-auth/react';
 
 import { AuthForm } from '@/components/auth/auth-form';
 import { SubmitButton } from '@/components/common/submit-button';
@@ -14,6 +14,7 @@ import { toast } from '@/components/common/toast';
 
 export default function Page() {
   const router = useRouter();
+  const { update: updateSession } = useSession();
 
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
@@ -39,10 +40,16 @@ export default function Page() {
       toast({ type: 'success', description: 'Account created successfully!' });
 
       setIsSuccessful(true);
-      // Redirect to onboarding for new users
-      router.push('/onboarding');
+      
+      // Update the session on the client side to ensure proper hydration
+      updateSession().then(() => {
+        // Small delay to ensure session is fully updated
+        setTimeout(() => {
+          router.push('/onboarding');
+        }, 100);
+      });
     }
-  }, [state, router]);
+  }, [state, router, updateSession]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get('email') as string);

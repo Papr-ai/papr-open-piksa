@@ -28,7 +28,10 @@ export function CharactersPage() {
   const [characters, setCharacters] = useState<BookProp[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingCharacter, setEditingCharacter] = useState<BookProp | null>(null);
   const [newCharacter, setNewCharacter] = useState({
     name: '',
     role: '',
@@ -168,6 +171,65 @@ export function CharactersPage() {
       setIsCreating(false);
     }
   };
+
+  const handleEditCharacter = (character: BookProp) => {
+    setEditingCharacter(character);
+    setIsEditDialogOpen(true);
+    // Set image preview if character has an image
+    if (character.imageUrl) {
+      setImagePreview(character.imageUrl);
+    }
+  };
+
+  const handleUpdateCharacter = async () => {
+    if (!editingCharacter) return;
+    
+    setIsEditing(true);
+    try {
+      let imageUrl = editingCharacter.imageUrl;
+      
+      // Upload new image if selected
+      if (selectedImage) {
+        imageUrl = await uploadImage(selectedImage);
+        if (!imageUrl) {
+          console.error('Failed to upload image');
+          return;
+        }
+      }
+
+      const response = await fetch(`/api/book-props/${editingCharacter.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: editingCharacter.name,
+          description: editingCharacter.description,
+          metadata: editingCharacter.metadata,
+          imageUrl
+        }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setCharacters(prev => prev.map(char => 
+          char.id === editingCharacter.id ? data.prop : char
+        ));
+        
+        // Reset form
+        setEditingCharacter(null);
+        handleRemoveImage();
+        setIsEditDialogOpen(false);
+      } else {
+        console.error('Error updating character:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error updating character:', error);
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
   return (
     <div className="container mx-auto p-6 max-w-6xl">
       {/* Header */}
@@ -315,6 +377,151 @@ export function CharactersPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Edit Character Dialog */}
+        <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Edit Character</DialogTitle>
+              <DialogDescription>
+                Update character details and image.
+              </DialogDescription>
+            </DialogHeader>
+            {editingCharacter && (
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-name">Character Name</Label>
+                  <Input
+                    id="edit-name"
+                    value={editingCharacter.name}
+                    onChange={(e) => setEditingCharacter(prev => prev ? { ...prev, name: e.target.value } : null)}
+                    placeholder="Character name"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-role">Role</Label>
+                  <Input
+                    id="edit-role"
+                    value={editingCharacter.metadata?.role || ''}
+                    onChange={(e) => setEditingCharacter(prev => prev ? { 
+                      ...prev, 
+                      metadata: { ...prev.metadata, role: e.target.value }
+                    } : null)}
+                    placeholder="Protagonist, antagonist, sidekick..."
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-description">Description/Personality</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={editingCharacter.description || ''}
+                    onChange={(e) => setEditingCharacter(prev => prev ? { ...prev, description: e.target.value } : null)}
+                    placeholder="Character's personality, traits..."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-physical">Physical Description</Label>
+                  <Textarea
+                    id="edit-physical"
+                    value={editingCharacter.metadata?.physicalDescription || ''}
+                    onChange={(e) => setEditingCharacter(prev => prev ? { 
+                      ...prev, 
+                      metadata: { ...prev.metadata, physicalDescription: e.target.value }
+                    } : null)}
+                    placeholder="Height, hair color, clothing style..."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-backstory">Backstory (Optional)</Label>
+                  <Textarea
+                    id="edit-backstory"
+                    value={editingCharacter.metadata?.backstory || ''}
+                    onChange={(e) => setEditingCharacter(prev => prev ? { 
+                      ...prev, 
+                      metadata: { ...prev.metadata, backstory: e.target.value }
+                    } : null)}
+                    placeholder="Character's background, history..."
+                    rows={2}
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Character Image</Label>
+                  <div className="flex items-center gap-4">
+                    {imagePreview ? (
+                      <div className="relative">
+                        <Image
+                          src={imagePreview}
+                          alt="Character preview"
+                          width={80}
+                          height={80}
+                          className="rounded-lg object-cover"
+                        />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="absolute -top-2 -right-2 h-6 w-6 rounded-full p-0"
+                          onClick={handleRemoveImage}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="w-20 h-20 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center">
+                        <Upload className="h-6 w-6 text-gray-400" />
+                      </div>
+                    )}
+                    
+                    <div className="flex-1">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageSelect}
+                        className="hidden"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full"
+                      >
+                        {imagePreview ? 'Change Image' : 'Upload Image'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setIsEditDialogOpen(false);
+                  setEditingCharacter(null);
+                  handleRemoveImage();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleUpdateCharacter}
+                disabled={isEditing}
+              >
+                {isEditing ? 'Updating...' : 'Update Character'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Characters Grid */}
@@ -352,63 +559,77 @@ export function CharactersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {characters.map((character) => (
             <Card key={character.id} className="hover:shadow-md transition-shadow">
-              <CardHeader>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <CardTitle className="text-lg">{character.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        {character.bookTitle}
-                      </Badge>
-                    </CardDescription>
+              <CardContent className="p-0">
+                {character.imageUrl ? (
+                  <div className="aspect-square w-full overflow-hidden rounded-t-lg bg-muted">
+                    <img 
+                      src={character.imageUrl} 
+                      alt={character.name}
+                      className="w-full h-full object-cover hover:scale-105 transition-transform"
+                    />
                   </div>
-                  {character.imageUrl && (
-                    <div className="w-12 h-12 rounded-lg overflow-hidden bg-muted">
-                      <img 
-                        src={character.imageUrl} 
-                        alt={character.name}
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
-                  {character.description || 'No description available'}
-                </p>
-                {character.metadata && (
-                  <div className="space-y-2">
-                    {character.metadata.role && (
-                      <div className="text-xs">
-                        <span className="font-medium">Role:</span> {character.metadata.role}
-                      </div>
-                    )}
-                    {character.metadata.personality && (
-                      <div className="text-xs">
-                        <span className="font-medium">Personality:</span> {character.metadata.personality}
-                      </div>
-                    )}
+                ) : (
+                  <div className="aspect-square w-full bg-muted rounded-t-lg flex items-center justify-center">
+                    <Users className="w-12 h-12 text-muted-foreground" />
                   </div>
                 )}
-                <div className="flex justify-between items-center mt-4">
-                  <div className="text-xs text-muted-foreground">
-                    Created {new Date(character.createdAt).toLocaleDateString()}
+                <div className="p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="font-semibold text-lg mb-1">{character.name}</h3>
+                      <Badge variant="outline" className="text-xs mb-2">
+                        {character.bookTitle}
+                      </Badge>
+                    </div>
                   </div>
-                  {character.metadata?.isStandalone ? (
-                    <Button variant="outline" size="sm" disabled>
-                      Standalone Character
-                    </Button>
-                  ) : (
-                    <Link href={`/books/${character.bookId}`}>
-                      <Button variant="outline" size="sm">
-                        View Book
-                      </Button>
-                    </Link>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+                    {character.description || 'No description available'}
+                  </p>
+                  
+                  {character.metadata && (
+                    <div className="space-y-1 mb-3">
+                      {character.metadata.role && (
+                        <div className="text-xs">
+                          <span className="font-medium text-gray-600">Role:</span> <span className="text-gray-800">{character.metadata.role}</span>
+                        </div>
+                      )}
+                      {character.metadata.personality && (
+                        <div className="text-xs">
+                          <span className="font-medium text-gray-600">Personality:</span> <span className="text-gray-800">{character.metadata.personality}</span>
+                        </div>
+                      )}
+                    </div>
                   )}
+                  
+                  <div className="flex justify-between items-center mt-auto pt-2 border-t">
+                    <div className="text-xs text-muted-foreground">
+                      {new Date(character.createdAt).toLocaleDateString()}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleEditCharacter(character)}
+                        className="text-xs"
+                      >
+                        Edit
+                      </Button>
+                      {character.metadata?.isStandalone ? (
+                        <Badge variant="secondary" className="text-xs">
+                          Standalone
+                        </Badge>
+                      ) : (
+                        <Link href={`/books/${character.bookId}`}>
+                          <Button variant="outline" size="sm" className="text-xs">
+                            View Book
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

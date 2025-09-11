@@ -22,6 +22,8 @@ export interface Task {
   actualDuration?: string | null;
   taskType?: 'workflow' | 'general';
   sessionId?: string | null;
+  stepNumber?: number;
+  stepName?: string;
 }
 
 // Helper to convert UnifiedTask to Task interface
@@ -38,6 +40,8 @@ function unifiedTaskToTask(unifiedTask: UnifiedTask): Task {
     actualDuration: unifiedTask.actualDuration,
     taskType: unifiedTask.taskType as 'workflow' | 'general',
     sessionId: unifiedTask.sessionId,
+    stepNumber: unifiedTask.stepNumber || undefined,
+    stepName: unifiedTask.stepName || undefined,
   };
 }
 
@@ -97,34 +101,78 @@ export type AddTaskOutput = {
 // In-memory task store (in a real app, this would be persistent)
 const taskStore = new Map<string, Task[]>();
 
-// Get tasks for a session (unified database + in-memory cache)
-async function getTasks(sessionId: string, userId: string): Promise<Task[]> {
-  // First check in-memory cache for performance
-  const cachedTasks = taskStore.get(sessionId) || [];
-  
-  if (cachedTasks.length > 0) {
-    console.log(`[Task Tracker] Found ${cachedTasks.length} cached tasks for session ${sessionId}`);
-    return cachedTasks;
+// Track memory IDs for task plans to enable proper updates
+const taskMemoryStore = new Map<string, string>(); // sessionId -> memoryId
+
+// Load memory ID from existing task plan memory (for restoration after server restart)
+async function loadMemoryIdFromDatabase(sessionId: string, userId: string): Promise<string | null> {
+  if (taskMemoryStore.has(sessionId)) {
+    return taskMemoryStore.get(sessionId) || null;
   }
   
-  // Fallback to database
+  const apiKey = process.env.PAPR_MEMORY_API_KEY;
+  if (!apiKey) {
+    return null;
+  }
+
   try {
-    console.log(`[Task Tracker] Cache miss, fetching from database for session ${sessionId}`);
+    const paprUserId = await ensurePaprUser(userId, apiKey);
+    if (!paprUserId) {
+      return null;
+    }
+
+    const memoryService = createMemoryService(apiKey);
+    const existingMemories = await memoryService.searchMemories(
+      paprUserId,
+      `task plan chat_id:${sessionId}`,
+      5
+    );
+    
+    const existingTaskMemory = existingMemories.find(mem => {
+      const customMeta = mem.metadata?.customMetadata as any;
+      return (customMeta?.chat_id === sessionId && customMeta?.content_type === 'task_plan') ||
+             (mem.metadata?.sourceType === 'PaprChat_TaskPlan' && customMeta?.chat_id === sessionId);
+    });
+    
+    if (existingTaskMemory) {
+      taskMemoryStore.set(sessionId, existingTaskMemory.id);
+      return existingTaskMemory.id;
+    }
+  } catch (error) {
+    console.error(`[Task Tracker] Failed to load memory ID for session ${sessionId}:`, error);
+  }
+  
+  return null;
+}
+
+// Get tasks for a session (unified database + in-memory cache)
+async function getTasks(sessionId: string, userId: string): Promise<Task[]> {
+  console.log(`[Task Tracker] Getting tasks for session ${sessionId}`);
+  
+  // Always try database first to ensure we have the latest state
+  try {
     const unifiedTasks = await unifiedTaskService.getGeneralTasks(sessionId, userId);
     const tasks = unifiedTasks.map(unifiedTaskToTask);
     
-    // Cache the results for future use
     if (tasks.length > 0) {
+      // Update cache with latest database state
       taskStore.set(sessionId, tasks);
-      console.log(`[Task Tracker] Cached ${tasks.length} tasks from database for session ${sessionId}`);
+      console.log(`[Task Tracker] Found ${tasks.length} tasks from database for session ${sessionId}`);
+      return tasks;
     }
-    
-    return tasks;
   } catch (error) {
-    console.error(`[Task Tracker] Database fallback failed for session ${sessionId}:`, error);
-    console.log(`[Task Tracker] Available cached sessions:`, Array.from(taskStore.keys()));
-    return [];
+    console.error(`[Task Tracker] Database query failed for session ${sessionId}:`, error);
   }
+  
+  // Fallback to cache if database fails or returns no results
+  const cachedTasks = taskStore.get(sessionId) || [];
+  if (cachedTasks.length > 0) {
+    console.log(`[Task Tracker] Using ${cachedTasks.length} cached tasks for session ${sessionId} (database fallback)`);
+    return cachedTasks;
+  }
+  
+  console.log(`[Task Tracker] No tasks found for session ${sessionId} (neither database nor cache)`);
+  return [];
 }
 
 // Synchronous version for backward compatibility (uses cache only)
@@ -140,6 +188,63 @@ function getTasksSync(sessionId: string): Task[] {
   return tasks;
 }
 
+// Detect if a session is related to a picture book by analyzing task content and memory
+async function detectPictureBookContext(sessionId: string, tasks: Task[], userId: string): Promise<boolean> {
+  try {
+    // Check task titles and descriptions for picture book indicators
+    const pictureBookKeywords = [
+      'picture book', 'illustration', 'illustrated', 'scene', 'character portrait', 
+      'environment', 'visual', 'image', 'drawing', 'art', 'spread', 'page layout',
+      'character creation', 'environment creation', 'scene creation', 'scene manifest',
+      'render scene', 'visual continuity'
+    ];
+    
+    const hasPictureBookTasks = tasks.some(task => {
+      const text = `${task.title} ${task.description || ''}`.toLowerCase();
+      return pictureBookKeywords.some(keyword => text.includes(keyword));
+    });
+    
+    if (hasPictureBookTasks) {
+      console.log(`[Task Tracker] Detected picture book context from task content for session ${sessionId}`);
+      return true;
+    }
+    
+    // Check memory for picture book context
+    const apiKey = process.env.PAPR_MEMORY_API_KEY;
+    if (apiKey) {
+      const paprUserId = await ensurePaprUser(userId, apiKey);
+      if (paprUserId) {
+        const memoryService = createMemoryService(apiKey);
+        
+        // Search for book-related memories in this session
+        const bookMemories = await memoryService.searchMemories(
+          paprUserId,
+          `picture book illustration visual scene character environment ${sessionId}`,
+          5
+        );
+        
+        const hasPictureBookMemory = bookMemories.some(mem => {
+          const customMeta = mem.metadata?.customMetadata as any;
+          return customMeta?.is_picture_book === true || 
+                 customMeta?.isPictureBook === true ||
+                 mem.content?.toLowerCase().includes('picture book') ||
+                 mem.content?.toLowerCase().includes('illustration');
+        });
+        
+        if (hasPictureBookMemory) {
+          console.log(`[Task Tracker] Detected picture book context from memory for session ${sessionId}`);
+          return true;
+        }
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error(`[Task Tracker] Error detecting picture book context for session ${sessionId}:`, error);
+    return false;
+  }
+}
+
 // Save tasks for a session (both in-memory and database)
 async function saveTasks(sessionId: string, tasks: Task[], userId: string): Promise<void> {
   console.log(`[Task Tracker] Saving ${tasks.length} tasks for session ${sessionId}`);
@@ -147,19 +252,58 @@ async function saveTasks(sessionId: string, tasks: Task[], userId: string): Prom
   // Save to in-memory cache for performance
   taskStore.set(sessionId, tasks);
   
-  // Persist to database
+  // Save to database immediately with default isPictureBook=false for fast response
   try {
     const taskInputs = tasks.map(task => ({
+      id: task.id, // Include ID for proper updates
       title: task.title,
       description: task.description || undefined,
       dependencies: task.dependencies || [],
       estimatedDuration: task.estimatedDuration || undefined,
+      status: task.status,
+      completedAt: task.completedAt,
+      isPictureBook: false, // Default to false for immediate save
+      stepNumber: task.stepNumber,
+      stepName: task.stepName,
     }));
     
-    await unifiedTaskService.createGeneralTasks(sessionId, userId, taskInputs);
+    await unifiedTaskService.upsertGeneralTasks(sessionId, userId, taskInputs);
     console.log(`[Task Tracker] Successfully persisted ${tasks.length} tasks to database`);
+    
+    // Detect picture book context and update asynchronously (don't block response)
+    updatePictureBookFlagAsync(sessionId, tasks, userId);
+    
   } catch (error) {
     console.error(`[Task Tracker] Failed to persist tasks to database:`, error);
+  }
+}
+
+/**
+ * Asynchronously detect and update picture book flag without blocking response
+ */
+async function updatePictureBookFlagAsync(sessionId: string, tasks: Task[], userId: string): Promise<void> {
+  try {
+    const isPictureBook = await detectPictureBookContext(sessionId, tasks, userId);
+    
+    if (isPictureBook) {
+      // Update the tasks with the correct isPictureBook flag
+      const taskInputs = tasks.map(task => ({
+        id: task.id,
+        title: task.title,
+        description: task.description || undefined,
+        dependencies: task.dependencies || [],
+        estimatedDuration: task.estimatedDuration || undefined,
+        status: task.status,
+        completedAt: task.completedAt,
+        isPictureBook: true, // Update with correct flag
+      }));
+      
+      await unifiedTaskService.upsertGeneralTasks(sessionId, userId, taskInputs);
+      console.log(`[Task Tracker] Updated ${tasks.length} tasks with isPictureBook=true`);
+    }
+  } catch (error) {
+    console.error(`[Task Tracker] Failed to update picture book flag:`, error);
+    // Don't throw - this is async and shouldn't affect the main response
   }
 }
 
@@ -250,20 +394,25 @@ Progress: ${taskData.progress.percentage}% complete`;
     let existingTaskMemory = null;
     if (!existingMemoryId) {
       try {
+        // Search more specifically for task plan memories
         const existingMemories = await memoryService.searchMemories(
           paprUserId,
-          `task plan session ${sessionId}`,
-          5
+          `task plan chat_id:${sessionId}`,
+          10
         );
         
-        // Look for task plan memory for this specific session
+        // Look for task plan memory for this specific session with better matching
         existingTaskMemory = existingMemories.find(mem => {
           const customMeta = mem.metadata?.customMetadata as any;
-          return customMeta?.chat_id === sessionId && customMeta?.content_type === 'task_plan';
+          // More robust matching - check both chat_id and content_type
+          return (customMeta?.chat_id === sessionId && customMeta?.content_type === 'task_plan') ||
+                 (mem.metadata?.sourceType === 'PaprChat_TaskPlan' && customMeta?.chat_id === sessionId);
         });
         
         if (existingTaskMemory) {
-          console.log(`[Task Memory] Found existing task plan memory for session: ${sessionId}`);
+          console.log(`[Task Memory] Found existing task plan memory for session: ${sessionId}, memory ID: ${existingTaskMemory.id}`);
+        } else {
+          console.log(`[Task Memory] No existing task plan memory found for session: ${sessionId}`);
         }
       } catch (error) {
         console.error('[Task Memory] Error searching for existing memories:', error);
@@ -274,10 +423,22 @@ Progress: ${taskData.progress.percentage}% complete`;
 
     if (targetMemoryId) {
       // Update existing memory
+      console.log(`[Task Memory] Attempting to update existing memory: ${targetMemoryId}`);
       const success = await memoryService.updateMemory(targetMemoryId, {
         content,
         metadata: {
-          customMetadata: metadata.customMetadata
+          // Include all metadata fields for proper update
+          sourceType: metadata.sourceType,
+          sourceUrl: metadata.sourceUrl,
+          user_id: metadata.user_id,
+          external_user_id: metadata.external_user_id,
+          'emoji tags': metadata['emoji tags'],
+          topics: metadata.topics,
+          createdAt: metadata.createdAt,
+          customMetadata: {
+            ...metadata.customMetadata,
+            updatedAt: new Date().toISOString(), // Track when it was last updated
+          }
         }
       });
       
@@ -285,10 +446,16 @@ Progress: ${taskData.progress.percentage}% complete`;
         console.log(`[Task Memory] ✅ Updated existing task plan memory: ${targetMemoryId}`);
         return targetMemoryId;
       } else {
-        console.error(`[Task Memory] ❌ Failed to update memory: ${targetMemoryId}`);
+        console.error(`[Task Memory] ❌ Failed to update memory: ${targetMemoryId}, falling back to creating new memory`);
+        // Fall through to create new memory if update fails
       }
-    } else {
-      // Create new memory
+    }
+    
+    // Create new memory (either no existing memory found or update failed)
+    console.log(`[Task Memory] Creating new task plan memory for session: ${sessionId}`);
+    
+    try {
+      // Use storeContent to save memory
       const success = await memoryService.storeContent(
         paprUserId,
         content,
@@ -298,17 +465,51 @@ Progress: ${taskData.progress.percentage}% complete`;
       );
 
       if (success) {
-        console.log('[Task Memory] ✅ Created new task plan memory');
-        return 'new_memory_created';
+        console.log(`[Task Memory] ✅ Created new task plan memory for session: ${sessionId}`);
+        // Return a placeholder since storeContent doesn't return the actual memory ID
+        return 'memory_created_successfully';
       } else {
         console.error('[Task Memory] ❌ Failed to save task plan to memory');
+        return null;
       }
+    } catch (error) {
+      console.error('[Task Memory] ❌ Error creating new task plan memory:', error);
+      return null;
     }
-
-    return null;
   } catch (error) {
     console.error('[Task Memory] Failed to save tasks to memory:', error);
     return null;
+  }
+}
+
+/**
+ * Asynchronously save tasks to memory without blocking the main response
+ */
+async function saveTasksToMemoryAsync(
+  sessionId: string,
+  tasks: Task[],
+  session: Session,
+  chatTitle?: string
+): Promise<void> {
+  try {
+    // Load existing memory ID if available
+    const userId = session.user?.id;
+    if (!userId) {
+      console.error('[Task Memory Async] No user ID available');
+      return;
+    }
+    
+    const existingMemoryId = taskMemoryStore.get(sessionId) || 
+                            await loadMemoryIdFromDatabase(sessionId, userId);
+    
+    const memoryId = await saveTasksToMemory(sessionId, tasks, session, chatTitle, existingMemoryId || undefined);
+    
+    if (memoryId && memoryId !== existingMemoryId) {
+      taskMemoryStore.set(sessionId, memoryId);
+    }
+  } catch (error) {
+    console.error('[Task Memory Async] Failed to save tasks to memory:', error);
+    // Don't throw - this is async and shouldn't affect the main response
   }
 }
 
@@ -440,7 +641,7 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: 
         };
       }
       
-      const newTasks: Task[] = tasks.map((task: any) => ({
+      const newTasks: Task[] = tasks.map((task: any, index: number) => ({
         id: generateTaskId(),
         title: task.title,
         description: task.description || '',
@@ -450,13 +651,15 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: 
         estimatedDuration: task.estimatedDuration || '',
         taskType: 'general',
         sessionId: effectiveSessionId,
+        stepNumber: index + 1,
+        stepName: getStepNameFromTitle(task.title, index + 1),
       }));
       
       // Save to both cache and database
       await saveTasks(effectiveSessionId, newTasks, session.user.id);
       
-      // Save to persistent memory (optional - for searchability)
-      await saveTasksToMemory(effectiveSessionId, newTasks, session, 'Task Plan');
+      // Save to persistent memory asynchronously (don't block user response)
+      saveTasksToMemoryAsync(effectiveSessionId, newTasks, session, 'Task Plan');
       
       const planNextTask = getNextAvailableTask(newTasks);
       const planProgress = getTaskProgress(newTasks);
@@ -464,7 +667,8 @@ export function createCreateTaskPlanTool(dataStream: DataStreamWriter, session: 
       return {
         success: true,
         type: 'task-plan-created',
-        tasks: newTasks,
+        plan: newTasks,
+        tasks: newTasks, // Include tasks for UI display
         nextTask: planNextTask,
         progress: planProgress,
         allCompleted: areAllTasksCompleted(newTasks),
@@ -523,8 +727,8 @@ export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Sess
       
       await saveTasks(effectiveSessionId, updatedTasks, session.user.id);
       
-      // Update persistent memory
-      await saveTasksToMemory(effectiveSessionId, updatedTasks, session, 'Task Plan');
+      // Update persistent memory asynchronously
+      saveTasksToMemoryAsync(effectiveSessionId, updatedTasks, session, 'Task Plan');
       
       const updateNextTask = getNextAvailableTask(updatedTasks);
       const updateProgress = getTaskProgress(updatedTasks);
@@ -532,7 +736,7 @@ export function createUpdateTaskTool(dataStream: DataStreamWriter, session: Sess
       return {
         success: true,
         type: 'task-updated',
-        tasks: updatedTasks,
+        tasks: updatedTasks, // Include full task list for UI display
         task: updatedTasks[taskIndex],
         nextTask: updateNextTask,
         progress: updateProgress,
@@ -590,8 +794,8 @@ export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Se
       
       await saveTasks(effectiveSessionId, completedTasks, session.user.id);
       
-      // Update persistent memory
-      await saveTasksToMemory(effectiveSessionId, completedTasks, session, 'Task Plan');
+      // Update persistent memory asynchronously
+      saveTasksToMemoryAsync(effectiveSessionId, completedTasks, session, 'Task Plan');
       
       const completedTask = completedTasks[completeTaskIndex];
       const completeNextTask = getNextAvailableTask(completedTasks);
@@ -600,7 +804,7 @@ export function createCompleteTaskTool(dataStream: DataStreamWriter, session: Se
       return {
         success: true,
         type: 'task-completed',
-        tasks: completedTasks,
+        tasks: completedTasks, // Include full task list for UI display
         task: completedTask,
         nextTask: completeNextTask,
         progress: completeProgress,
@@ -702,8 +906,8 @@ export function createAddTaskTool(dataStream: DataStreamWriter, session: Session
       const allTasks = [...currentTasks, ...additionalTasks];
       await saveTasks(effectiveSessionId, allTasks, session.user.id);
       
-      // Update persistent memory
-      await saveTasksToMemory(effectiveSessionId, allTasks, session, 'Task Plan');
+      // Update persistent memory asynchronously
+      saveTasksToMemoryAsync(effectiveSessionId, allTasks, session, 'Task Plan');
       
       const addProgress = getTaskProgress(allTasks);
       
@@ -730,4 +934,40 @@ export function createTaskTrackerTools(dataStream: DataStreamWriter, session: Se
     getTaskStatus: createGetTaskStatusTool(dataStream, session, chatId),
     addTask: createAddTaskTool(dataStream, session, chatId),
   };
+}
+
+/**
+ * Derive step name from task title
+ */
+function getStepNameFromTitle(title: string, stepNumber: number): string {
+  const lowerTitle = title.toLowerCase();
+  
+  if (lowerTitle.includes('plan') || lowerTitle.includes('outline')) {
+    return 'Story Planning';
+  } else if (lowerTitle.includes('chapter') || lowerTitle.includes('draft')) {
+    return 'Chapter Drafting';
+  } else if (lowerTitle.includes('scene') && lowerTitle.includes('segment')) {
+    return 'Scene Segmentation';
+  } else if (lowerTitle.includes('character')) {
+    return 'Character Creation';
+  } else if (lowerTitle.includes('environment') || lowerTitle.includes('setting')) {
+    return 'Environment Creation';
+  } else if (lowerTitle.includes('scene') && lowerTitle.includes('image')) {
+    return 'Scene Creation';
+  } else if (lowerTitle.includes('complete') || lowerTitle.includes('final')) {
+    return 'Book Completion';
+  }
+  
+  // Default step names based on step number
+  const defaultSteps = [
+    'Story Planning',
+    'Chapter Drafting', 
+    'Scene Segmentation',
+    'Character Creation',
+    'Environment Creation',
+    'Scene Creation',
+    'Book Completion'
+  ];
+  
+  return defaultSteps[stepNumber - 1] || `Step ${stepNumber}`;
 } 

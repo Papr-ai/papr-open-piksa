@@ -7,7 +7,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
-import { useRealtimeUpdates } from '@/lib/db/realtime-client';
+import { useWebSocketUpdates } from '@/lib/websocket/client';
 import type { SubscriptionPlan } from '@/lib/subscription/types';
 
 interface SubscriptionData {
@@ -72,10 +72,24 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   
   // Track sync attempts to avoid duplicate Stripe syncs
   const syncAttemptedRef = useRef(false);
+  
+  // Add caching to prevent redundant API calls
+  const lastFetchTime = useRef<{ subscription: number; usage: number }>({
+    subscription: 0,
+    usage: 0
+  });
+  const CACHE_DURATION = 30000; // 30 seconds cache
 
   // Fetch subscription data
   const fetchSubscription = async (shouldSync: boolean = false) => {
     if (!session?.user) return;
+
+    // Check cache unless forced
+    const now = Date.now();
+    if (!shouldSync && (now - lastFetchTime.current.subscription) < CACHE_DURATION) {
+      console.log('[Subscription Context] Using cached subscription data');
+      return;
+    }
 
     try {
       setSubscriptionLoading(true);
@@ -99,6 +113,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       
       const data = await response.json();
       setSubscription(data);
+      lastFetchTime.current.subscription = now;
       console.log('[Subscription Context] Updated subscription data:', data);
       
       // Trigger a refresh of the subscription data in other parts of the app
@@ -116,6 +131,13 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
   const fetchUsage = async () => {
     if (!session?.user) return;
 
+    // Check cache
+    const now = Date.now();
+    if ((now - lastFetchTime.current.usage) < CACHE_DURATION) {
+      console.log('[Subscription Context] Using cached usage data');
+      return;
+    }
+
     try {
       setUsageLoading(true);
       setUsageError(undefined);
@@ -127,6 +149,7 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
       
       const data = await response.json();
       setUsage(data);
+      lastFetchTime.current.usage = now;
       console.log('[Subscription Context] Updated usage data:', data);
     } catch (error) {
       console.error('[Subscription Context] Error fetching usage:', error);
@@ -163,9 +186,10 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     fetchUsage();
   }, [session?.user, sessionStatus]);
 
-  // Real-time updates
-  const { isConnected } = useRealtimeUpdates((update) => {
-    console.log('[Subscription Context] Received real-time update:', update);
+  // Real-time updates via WebSocket (replaces expensive SSE)
+  // Only connects when user is authenticated - no WebSocket for landing/login/register pages
+  const { isConnected } = useWebSocketUpdates((update) => {
+    console.log('[Subscription Context] Received WebSocket update:', update);
     
     if (update.table === 'subscription') {
       // Refresh subscription data when subscription changes

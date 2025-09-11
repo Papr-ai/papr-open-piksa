@@ -145,6 +145,11 @@ Write the actual story content for this chapter.`;
             // Generate or use existing bookId
             bookId = existingBook.length > 0 ? String(existingBook[0].bookId) : generateUUID();
             console.log(`[createBook] ${existingBook.length > 0 ? 'Found existing' : 'Generated new'} bookId: ${bookId}`);
+            
+            // Link existing tasks to this book if it's a new book
+            if (existingBook.length === 0) {
+              await linkTasksToBook(bookId, bookTitle, session.user.id);
+            }
           }
 
           // Check if this specific chapter already exists (latest version)
@@ -389,4 +394,98 @@ Status: Active writing project`;
       console.error('[createBook] Error saving book metadata to memory:', error);
     }
   });
+}
+
+/**
+ * Link existing general tasks to a newly created book
+ */
+async function linkTasksToBook(bookId: string, bookTitle: string, userId: string): Promise<void> {
+  try {
+    console.log(`[linkTasksToBook] Linking tasks to book: ${bookTitle} (${bookId})`);
+    
+    const { unifiedTaskService } = await import('@/lib/db/unified-task-service');
+    
+    // Get recent general tasks for this user that don't have a bookId
+    const recentTasks = await unifiedTaskService.getAllTasks(userId, 'general');
+    
+    // Filter tasks from the last 24 hours that don't have bookId
+    const cutoffTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const tasksToLink = recentTasks.filter(task => 
+      !task.bookId && 
+      task.createdAt > cutoffTime &&
+      (task.title.toLowerCase().includes('book') || 
+       task.title.toLowerCase().includes('story') ||
+       task.title.toLowerCase().includes('chapter') ||
+       task.title.toLowerCase().includes('character') ||
+       task.title.toLowerCase().includes('scene'))
+    );
+    
+    if (tasksToLink.length === 0) {
+      console.log(`[linkTasksToBook] No recent general tasks found to link to book`);
+      return;
+    }
+    
+    console.log(`[linkTasksToBook] Found ${tasksToLink.length} tasks to link to book`);
+    
+    // Update tasks with bookId, bookTitle, and assign step numbers
+    const updatedTasks = tasksToLink.map((task, index) => ({
+      id: task.id,
+      title: task.title,
+      description: task.description || undefined,
+      status: task.status as any,
+      dependencies: task.dependencies,
+      estimatedDuration: task.estimatedDuration || undefined,
+      completedAt: task.completedAt,
+      bookId,
+      bookTitle,
+      stepNumber: index + 1,
+      stepName: getStepNameFromTitle(task.title, index + 1),
+      isPictureBook: task.isPictureBook || false,
+    }));
+    
+    // Update the tasks in the database
+    await unifiedTaskService.upsertGeneralTasks('', userId, updatedTasks);
+    
+    console.log(`[linkTasksToBook] ✅ Successfully linked ${updatedTasks.length} tasks to book: ${bookTitle}`);
+    
+  } catch (error) {
+    console.error(`[linkTasksToBook] Error linking tasks to book:`, error);
+    // Don't throw - this is a nice-to-have feature
+  }
+}
+
+/**
+ * Derive step name from task title
+ */
+function getStepNameFromTitle(title: string, stepNumber: number): string {
+  const lowerTitle = title.toLowerCase();
+  
+  if (lowerTitle.includes('plan') || lowerTitle.includes('outline')) {
+    return 'Story Planning';
+  } else if (lowerTitle.includes('chapter') || lowerTitle.includes('draft')) {
+    return 'Chapter Drafting';
+  } else if (lowerTitle.includes('scene') && lowerTitle.includes('segment')) {
+    return 'Scene Segmentation';
+  } else if (lowerTitle.includes('character')) {
+    return 'Character Creation';
+  } else if (lowerTitle.includes('environment') || lowerTitle.includes('setting')) {
+    return 'Environment Creation';
+  } else if (lowerTitle.includes('scene') && lowerTitle.includes('image')) {
+    return 'Scene Creation';
+  } else if (lowerTitle.includes('complete') || lowerTitle.includes('final')) {
+    return 'Book Completion';
+  }
+  
+  // Default step names based on step number
+  const defaultSteps = [
+    'Story Planning',
+    'Chapter Drafting', 
+    'Scene Segmentation',
+    'Character Creation',
+    'Environment Creation',
+    'Scene Creation',
+    'Book Completion'
+  ];
+  
+  return defaultSteps[stepNumber - 1] || `Step ${stepNumber}`;
 }

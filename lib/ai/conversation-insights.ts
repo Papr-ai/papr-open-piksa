@@ -113,7 +113,7 @@ Extract key insights, goals, preferences, expertise, and outcomes. Be concise an
       system: systemPrompt,
       prompt: userPrompt,
       schema: ConversationInsightsSchema,
-      maxOutputTokens: 300,
+      maxOutputTokens: 2500, // Increased from 300 to prevent length truncation
     });
 
     console.log('[Conversation Insights] Analysis complete:', {

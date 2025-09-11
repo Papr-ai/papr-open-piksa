@@ -1357,6 +1357,17 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
       };
     }, [content]); // Removed setMetadata from dependencies to prevent infinite loop
 
+    // Initialize currentChapter to 1 if not set (in useEffect to avoid render-time setState)
+    useEffect(() => {
+      if (!metadata?.currentChapter && setMetadata && metadata?.chapters && metadata.chapters.length > 0) {
+        console.log('🔍 [BOOK ARTIFACT] INITIALIZING METADATA CURRENTCHAPTER TO 1 (FIRST CHAPTER)');
+        setMetadata((prev: BookArtifactMetadata | undefined) => ({ 
+          ...prev, 
+          currentChapter: 1 
+        } as BookArtifactMetadata));
+      }
+    }, [metadata?.chapters, metadata?.currentChapter, setMetadata]);
+
     // Show loading skeleton if loading or if we only have JSON content without chapters loaded
     const hasOnlyJsonContent = (() => {
       try {
@@ -1391,14 +1402,7 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
     // The key is to ensure metadata.currentChapter always reflects what's actually visible
     let currentChapter = metadata?.currentChapter || 1;
     
-    // IMPORTANT: If metadata doesn't have currentChapter, initialize it to 1 (first chapter view)
-    if (!metadata?.currentChapter && setMetadata) {
-      console.log('🔍 [BOOK ARTIFACT] INITIALIZING METADATA CURRENTCHAPTER TO 1 (FIRST CHAPTER)');
-      setMetadata((prev: BookArtifactMetadata | undefined) => ({ 
-        ...prev, 
-        currentChapter: 1 
-      } as BookArtifactMetadata));
-    }
+    // Initialize currentChapter to 1 if not set (moved to useEffect to avoid render-time setState)
     
     console.log('🔍 [BOOK ARTIFACT] CHAPTER STATE TRACKING:', {
       metadataCurrentChapter: metadata?.currentChapter,

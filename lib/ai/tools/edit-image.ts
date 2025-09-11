@@ -183,7 +183,21 @@ async function editImageWithGemini(
 
 export const editImage = ({ session, dataStream }: EditImageProps) =>
   tool({
-    description: 'Edit an existing image using Gemini 2.5 Flash Image Preview. Accepts both image URLs and base64 data URLs - URLs will be automatically converted to base64. This tool can modify, add elements to, remove elements from, replace parts of, or change the style of existing images while preserving the original composition and quality.',
+    description: `Edit an existing image using Gemini 2.5 Flash Image Preview. 
+
+**WHEN TO USE THIS TOOL:**
+- User wants to modify an EXISTING image (e.g., "make the boy taller", "change the hair color", "add a hat")
+- User refers to "the image", "this picture", "the character in the image"
+- User wants targeted edits to specific elements while preserving the rest
+- User provides an image URL or the conversation shows a recently created image
+
+**CRITICAL: Use this tool instead of createImage when:**
+- Editing height, size, or proportions of existing characters
+- Changing colors, clothing, or accessories on existing images  
+- Adding or removing specific elements from existing compositions
+- Making style adjustments to existing artwork
+
+Accepts both image URLs and base64 data URLs - URLs will be automatically converted to base64. This tool can modify, add elements to, remove elements from, replace parts of, or change the style of existing images while preserving the original composition and quality.`,
     inputSchema: editImageSchema,
     execute: async (input: EditImageInput): Promise<EditImageOutput> => {
       const { imageUrl, prompt, editType, preserveOriginal, context } = input;

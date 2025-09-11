@@ -28,9 +28,39 @@ import { TextPart } from './text-part';
 import { ToolInvocation } from './tool-invocation';
 import { AttachmentGrid } from './attachment-grid';
 import { MemorySection } from './memory-section';
+import { Weather } from '../weather';
+import { DocumentToolResult } from '@/components/document/document';
+import { BookToolResult } from '@/components/book/book-tool-result';
+import { AddMemoryResults } from '@/components/memory/add-memory-results';
+import { SearchBooksResults } from '@/components/book/search-books-results';
+import { TaskCard } from '@/components/task-card';
+import { ImageResult } from '@/components/common/image-result';
+import { MergedImagesResult } from '@/components/message/merged-images-result';
+import { ImageEditResult } from '@/components/common/image-edit-result';
+import { CreateImageResult } from './create-image-result';
+import { StructuredBookImageResults } from './structured-book-image-results';
+import { BookImagePlanResult } from './book-image-plan-result';
+import { SingleBookImageResult } from './single-book-image-result';
+import { SearchBookPropsResult } from './search-book-props-result';
+import { ChatMemoryResults } from '../memory/chat-memory-results';
 import { MessageActions } from './message-actions';
 import { MessageEditor } from './message-editor';
 import { MessageReasoning } from './message-reasoning';
+
+// Tool input/output types
+import type { 
+  WeatherAtLocation,
+  DocumentToolOutput, 
+  CreateBookOutput,
+  SearchBooksOutput,
+  AddMemoryOutput,
+  AddMemoryInput,
+  GenerateImageOutput,
+  EditImageOutput,
+  ToolUIPart,
+  MessagePart,
+  TextPart as TextPartType
+} from '@/lib/types';
 
 // Helper function to find the user query that preceded this assistant message
 function findUserQuery(message: UIMessage): string {
@@ -117,6 +147,7 @@ interface PreviewMessageProps {
   isReadonly: boolean;
   selectedModelId?: string;
   enableUniversalReasoning?: boolean;
+  sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
 }
 
 function PurePreviewMessage({
@@ -129,6 +160,7 @@ function PurePreviewMessage({
   isReadonly,
   selectedModelId,
   enableUniversalReasoning,
+  sendMessage,
 }: PreviewMessageProps) {
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   const { data: session, status: sessionStatus } = useSession();
@@ -243,14 +275,15 @@ function PurePreviewMessage({
                 )}
 
                 {message.parts?.map((part, index) => {
-                  const typedPart = part as any;
+                  const typedPart = part as MessagePart;
+                  const { type } = typedPart;
                   const key = `message-${message.id}-part-${index}`;
 
-                  if (typedPart.type === 'text') {
+                  if (type === 'text') {
                     return (
                       <TextPart
                         key={key}
-                        content={typedPart.text}
+                        content={(typedPart as TextPartType).text}
                         isAssistant={message.role === 'assistant'}
                         isReadonly={isReadonly}
                         onEdit={() => setMode('edit')}
@@ -258,15 +291,159 @@ function PurePreviewMessage({
                     );
                   }
 
-                  if (typedPart.type === 'tool-invocation') {
+                  // Handle AI SDK v5 tool parts (format: tool-{toolName})
+                  if (type.startsWith('tool-')) {
+                    const toolName = type.replace('tool-', '');
+                    
+                    // Cast to ToolUIPart for AI SDK v5 tool handling
+                    const toolPart = typedPart as ToolUIPart;
+                    if (toolPart.toolCallId) {
+                      const { toolCallId, state, input, output } = toolPart;
+
+                      // Handle tool call results (state: 'output-available')
+                      if (state === 'output-available' && output) {
+                        return (
+                        <div key={toolCallId || key}>
+                          {toolName === 'getWeather' ? (
+                            <Weather weatherAtLocation={output as any} />
+                          ) : toolName === 'createDocument' ? (
+                            <DocumentToolResult
+                              type="create"
+                              result={output as DocumentToolOutput}
+                              isReadonly={isReadonly}
+                              chatId={chatId}
+                            />
+                          ) : toolName === 'updateDocument' ? (
+                            <DocumentToolResult
+                              type="update"
+                              result={output as DocumentToolOutput}
+                              isReadonly={isReadonly}
+                              chatId={chatId}
+                            />
+                          ) : toolName === 'requestSuggestions' ? (
+                            <DocumentToolResult
+                              type="request-suggestions"
+                              result={output as DocumentToolOutput}
+                              isReadonly={isReadonly}
+                              chatId={chatId}
+                            />
+                          ) : toolName === 'searchMemories' ? (
+                            <ChatMemoryResults message={message} />
+                          ) : toolName === 'createBook' ? (
+                            <BookToolResult
+                              result={output as CreateBookOutput}
+                              isReadonly={isReadonly}
+                              chatId={chatId}
+                            />
+                          ) : toolName === 'searchBooks' ? (
+                            <SearchBooksResults
+                              searchResult={output as SearchBooksOutput}
+                            />
+                          ) : toolName === 'createImage' ? (
+                            <CreateImageResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createStructuredBookImages' ? (
+                            <StructuredBookImageResults
+                              result={output as any}
+                              isReadonly={isReadonly}
+                              sendMessage={sendMessage}
+                            />
+                          ) : toolName === 'createBookImagePlan' ? (
+                            <BookImagePlanResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createSingleBookImage' ? (
+                            <SingleBookImageResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'searchBookProps' ? (
+                            <SearchBookPropsResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'generateImage' ? (
+                            <ImageResult
+                              result={output as GenerateImageOutput}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'editImage' ? (
+                            <ImageEditResult
+                              result={output as EditImageOutput}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'mergeImages' ? (
+                            <MergedImagesResult
+                              mergedImageUrl={(output as any).mergedImageUrl}
+                              gridLayout={(input as any).images || []} // Use input images since output gridLayout might be truncated
+                              dimensions={(output as any).dimensions || { width: 1024, height: 1024 }}
+                              processedImages={(output as any).processedImages || (input as any).images?.length || 0}
+                              format={(output as any).format || "png"}
+                            />
+                          ) : toolName === 'addMemory' ? (
+                            <AddMemoryResults
+                              memoryResult={{
+                                success: (output as AddMemoryOutput)?.success || false,
+                                message: (output as AddMemoryOutput)?.message,
+                                memoryId: (output as AddMemoryOutput)?.memoryId,
+                                error: (output as AddMemoryOutput)?.error,
+                                category: (input as AddMemoryInput)?.category || (input as AddMemoryInput)?.type,
+                                content: (input as AddMemoryInput)?.content,
+                              }}
+                            />
+                          ) : ['createTaskPlan', 'updateTask', 'completeTask', 'getTaskStatus', 'addTask'].includes(toolName) ? (
+                            <TaskCard 
+                              type={(output as any)?.type || 'task-status'}
+                              tasks={(output as any)?.tasks}
+                              task={(output as any)?.task}
+                              nextTask={(output as any)?.nextTask}
+                              progress={(output as any)?.progress}
+                              allCompleted={(output as any)?.allCompleted}
+                              message={(output as any)?.message}
+                            />
+                          ) : (
+                            // Fallback to generic ToolInvocation for unhandled tools
+                            <ToolInvocation
+                              toolName={toolName}
+                              state={state === 'output-available' || state === 'output-error' ? 'result' : 'call'}
+                              toolCallId={toolCallId}
+                              args={input}
+                              result={output}
+                              isReadonly={isReadonly}
+                            />
+                          )}
+                        </div>
+                        );
+                      }
+
+                      // Handle tool calls in progress (state: 'call' or 'partial-call')
+                      return (
+                        <ToolInvocation
+                          key={toolCallId || key}
+                          toolName={toolName}
+                          state={state === 'input-streaming' || state === 'input-available' || state === 'output-available' || state === 'output-error' ? (state.startsWith('output') ? 'result' : 'call') : 'call'}
+                          toolCallId={toolCallId}
+                          args={input}
+                          result={output}
+                          isReadonly={isReadonly}
+                        />
+                      );
+                    }
+                  }
+
+                  // Handle legacy tool-invocation format (fallback for older messages)
+                  if (type === 'tool-invocation') {
                     return (
                       <ToolInvocation
                         key={key}
-                        toolName={typedPart.toolInvocation.toolName}
-                        state={typedPart.toolInvocation.state}
-                        toolCallId={typedPart.toolInvocation.toolCallId}
-                        args={typedPart.toolInvocation.args}
-                        result={typedPart.toolInvocation.result}
+                        toolName={(typedPart as any).toolInvocation.toolName}
+                        state={(typedPart as any).toolInvocation.state}
+                        toolCallId={(typedPart as any).toolInvocation.toolCallId}
+                        args={(typedPart as any).toolInvocation.args}
+                        result={(typedPart as any).toolInvocation.result}
                         isReadonly={isReadonly}
                       />
                     );
@@ -274,6 +451,9 @@ function PurePreviewMessage({
 
                   return null;
                 })}
+
+                {/* Removed duplicate "Working on your request..." placeholder */}
+                {/* The global "Thinking..." indicator in messages.tsx handles this */}
 
                 {/* Memory Results */}
                 <MemorySection message={message} />
@@ -342,7 +522,7 @@ export function ThinkingMessage({ selectedModelId }: { selectedModelId?: string 
       return message;
     }
     
-    return `Processing${dots}`;
+    return `Thinking${dots}`;
   };
 
   const displayText = getDisplayText();
@@ -351,8 +531,8 @@ export function ThinkingMessage({ selectedModelId }: { selectedModelId?: string 
     <motion.div
       data-testid="message-assistant-loading"
       className="relative mb-4 flex flex-col w-full"
-      initial={{ opacity: 1 }}
-      animate={{ opacity: 1 }}
+      initial={{ opacity: 0, y: 10 }} // Start slightly below and transparent
+      animate={{ opacity: 1, y: 0 }} // Fade in and slide up
       exit={{ opacity: 0, transition: { duration: 0.3 } }}
       data-role={role}
       layout
@@ -374,7 +554,13 @@ export function ThinkingMessage({ selectedModelId }: { selectedModelId?: string 
           </div>
 
           <div className="flex-1 flex flex-col gap-3 w-full">
-            <div className="flex flex-row items-center mt-2">
+            <div className="flex flex-row items-center gap-2 mt-2">
+              {/* Animated thinking dots */}
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full thinking-dot" />
+                <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full thinking-dot" />
+                <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full thinking-dot" />
+              </div>
               <div className="font-medium text-sm text-muted-foreground">{displayText}</div>
             </div>
           </div>

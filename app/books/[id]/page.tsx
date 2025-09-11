@@ -36,7 +36,23 @@ export default async function BookPage({ params }: BookPageProps) {
 
   // Get book details for breadcrumb
   const chapters = await getBookChaptersByBookId(bookId, dbUser.id);
-  const bookTitle = chapters.length > 0 ? chapters[0].bookTitle : 'Unknown Book';
+  
+  // If no chapters found, try to get book title from book_props
+  let bookTitle = 'Unknown Book';
+  if (chapters.length > 0) {
+    bookTitle = chapters[0].bookTitle;
+  } else {
+    // Try to get book title from book_props table
+    try {
+      const { getBookPropsByBookId } = await import('@/lib/db/book-queries');
+      const bookProps = await getBookPropsByBookId(bookId);
+      if (bookProps.length > 0) {
+        bookTitle = bookProps[0].bookTitle;
+      }
+    } catch (error) {
+      console.error('Error fetching book props for title:', error);
+    }
+  }
 
   // Create or get a chat for this book
   // Use the bookId directly as the chatId since it's already a UUID
@@ -60,11 +76,13 @@ export default async function BookPage({ params }: BookPageProps) {
       parts: [
         {
           type: 'text' as const,
-          text: `I'll help you work on "${bookTitle}". Let me open your book for editing.`
+          text: chapters.length > 0 
+            ? `I'll help you work on "${bookTitle}". Let me open your book for editing.`
+            : `I found "${bookTitle}" but it doesn't have any chapters yet. Would you like me to help you create the first chapter?`
         }
       ],
       createdAt: new Date(),
-      experimental_artifacts: [
+      experimental_artifacts: chapters.length > 0 ? [
         {
           kind: 'book' as const,
           title: bookTitle,
@@ -72,10 +90,10 @@ export default async function BookPage({ params }: BookPageProps) {
             bookId,
             bookTitle,
             chapterNumber: 1,
-            content: chapters.length > 0 ? chapters[0].content : ''
+            content: chapters[0].content
           })
         }
-      ]
+      ] : []
     }
   ];
 

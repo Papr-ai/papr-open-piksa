@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Image, Users, MapPin, Sparkles, Palette, Check, X, Eye, Copy, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useChat } from '@ai-sdk/react';
 
 interface CreationResult {
   step: string;
@@ -42,9 +43,10 @@ interface StructuredBookImageResult {
 interface StructuredBookImageResultsProps {
   result: StructuredBookImageResult;
   isReadonly?: boolean;
+  sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
 }
 
-export function StructuredBookImageResults({ result, isReadonly }: StructuredBookImageResultsProps) {
+export function StructuredBookImageResults({ result, isReadonly, sendMessage }: StructuredBookImageResultsProps) {
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
   if (!result.success) {
@@ -334,8 +336,16 @@ export function StructuredBookImageResults({ result, isReadonly }: StructuredBoo
               size="sm" 
               className="bg-green-600 hover:bg-green-700 text-white"
               onClick={() => {
-                // This would trigger the next phase
-                console.log(`Approved ${result.needsApproval}`);
+                if (sendMessage) {
+                  const nextPhase = result.needsApproval === 'characters' ? 'environments' : 'scenes';
+                  const approvalMessage = `I approve the ${result.needsApproval}. Please continue to create the ${nextPhase} using the createStructuredBookImages tool with approved${result.needsApproval === 'characters' ? 'Characters' : 'Environments'}: true.`;
+                  sendMessage({
+                    role: 'user',
+                    parts: [{ type: 'text', text: approvalMessage }]
+                  });
+                } else {
+                  console.log(`Approved ${result.needsApproval}`);
+                }
               }}
             >
               <Check className="w-4 h-4 mr-1" />
@@ -346,8 +356,15 @@ export function StructuredBookImageResults({ result, isReadonly }: StructuredBoo
               variant="outline"
               className="border-red-200 text-red-600 hover:bg-red-50"
               onClick={() => {
-                // This would cancel or request changes
-                console.log(`Rejected ${result.needsApproval}`);
+                if (sendMessage) {
+                  const changeMessage = `Please make changes to the ${result.needsApproval}. I would like you to revise them before proceeding.`;
+                  sendMessage({
+                    role: 'user',
+                    parts: [{ type: 'text', text: changeMessage }]
+                  });
+                } else {
+                  console.log(`Rejected ${result.needsApproval}`);
+                }
               }}
             >
               <X className="w-4 h-4 mr-1" />

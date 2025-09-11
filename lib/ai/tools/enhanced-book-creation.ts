@@ -43,7 +43,9 @@ const chapterDraftSchema = z.object({
   chapterTitle: z.string().describe('Chapter title'),
   chapterText: z.string().describe('Full chapter text content'),
   wordCount: z.number().describe('Word count of the chapter'),
-  keyEvents: z.array(z.string()).describe('Key story events in this chapter')
+  keyEvents: z.array(z.string()).describe('Key story events in this chapter'),
+  isPictureBook: z.boolean().optional().describe('Whether this is a picture book requiring scene structure - if true, the tool will automatically break the chapter into scenes'),
+  bookContext: z.string().optional().describe('Additional context about the book, characters, and story style for scene generation')
 });
 
 const sceneSegmentationSchema = z.object({
@@ -411,13 +413,15 @@ ${styleBible}`;
 // Step 2: Chapter Text Drafting Tool
 export const draftChapter = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
   tool({
-    description: `Step 2 of Enhanced Book Creation: Draft full chapter text.
+    description: `Step 2 of Enhanced Book Creation: Draft chapter content.
     
-    Creates complete chapter content based on the approved book plan.
-    Requires approval before proceeding to Step 3 (Scene Segmentation for picture books).`,
+    For regular books: Creates traditional chapter text content
+    For picture books: Creates scene-structured content with scene nodeviews
+    
+    This eliminates the need for separate scene segmentation step for picture books.`,
     inputSchema: chapterDraftSchema,
     execute: async (input) => {
-      const { bookId, chapterNumber, chapterTitle, chapterText, wordCount, keyEvents } = input;
+      const { bookId, chapterNumber, chapterTitle, chapterText, wordCount, keyEvents, isPictureBook, bookContext } = input;
       
       dataStream.write?.({
         type: 'kind',
@@ -426,13 +430,75 @@ export const draftChapter = ({ session, dataStream }: { session: Session; dataSt
 
       dataStream.write?.({
         type: 'title',
-        content: `Chapter ${chapterNumber}: ${chapterTitle}`,
+        content: `Chapter ${chapterNumber}: ${chapterTitle}${isPictureBook ? ' (Picture Book)' : ''}`,
       });
 
       dataStream.write?.({
         type: 'id',
         content: `${bookId}_chapter_${chapterNumber}`,
       });
+
+      let finalContent = chapterText;
+      let sceneData: Array<{
+        sceneId: string;
+        sceneNumber: number;
+        synopsis: string;
+        environment: string;
+        characters: string[];
+      }> = [];
+
+      // If this is a picture book, generate scene structure and create scene-structured content
+      if (isPictureBook) {
+        console.log(`[draftChapter] Generating scenes for picture book chapter: ${chapterTitle}`);
+        
+        dataStream.write?.({
+          type: 'text',
+          content: 'Analyzing chapter content and generating scene structure for picture book...\n\n',
+        });
+        
+        // Generate scenes using AI
+        const generatedScenes = await generateScenesFromChapter(
+          chapterText, 
+          chapterTitle, 
+          bookContext, 
+          bookId,
+          dataStream
+        );
+        
+        if (generatedScenes && generatedScenes.length > 0) {
+          console.log(`[draftChapter] Generated ${generatedScenes.length} scenes`);
+          
+          // Create proper ProseMirror document with scene nodes
+          const { buildContentFromScenes } = await import('@/lib/editor/server-functions');
+          
+          try {
+            finalContent = await buildContentFromScenes(generatedScenes);
+            console.log(`[draftChapter] Successfully created scene-structured content`);
+          } catch (error) {
+            console.error('[draftChapter] Error creating scene content, falling back to markdown:', error);
+            // Fallback to markdown if scene node creation fails
+            finalContent = '';
+            for (const scene of generatedScenes) {
+              const sceneMarkdown = createSceneMarkdown(scene, scene.content);
+              finalContent += sceneMarkdown + '\n\n';
+            }
+          }
+          
+          // Store scene data for memory
+          for (const scene of generatedScenes) {
+            sceneData.push({
+              sceneId: scene.sceneId,
+              sceneNumber: scene.sceneNumber,
+              synopsis: scene.synopsis,
+              environment: scene.environment.location,
+              characters: scene.requiredCharacters
+            });
+          }
+        } else {
+          console.warn('[draftChapter] No scenes generated, falling back to regular content');
+          finalContent = chapterText;
+        }
+      }
 
       // Save chapter draft to memory and database
       if (session?.user?.id) {
@@ -447,17 +513,23 @@ export const draftChapter = ({ session, dataStream }: { session: Session; dataSt
             const paprUserId = await ensurePaprUser(session.user.id, apiKey);
             
             if (paprUserId) {
+              const memoryContent = isPictureBook && sceneData.length > 0
+                ? `Chapter ${chapterNumber}: ${chapterTitle}\n\nPicture Book with ${sceneData.length} scenes:\n${sceneData.map(s => `- Scene ${s.sceneNumber}: ${s.synopsis}`).join('\n')}\n\n${finalContent}`
+                : `Chapter ${chapterNumber}: ${chapterTitle}\n\n${chapterText}\n\nKey Events: ${keyEvents.join(', ')}`;
+
               await memoryService.storeContent(
                 paprUserId,
-                `Chapter ${chapterNumber}: ${chapterTitle}\n\n${chapterText}\n\nKey Events: ${keyEvents.join(', ')}`,
+                memoryContent,
                 'text',
                 {
-                  kind: 'chapter_draft',
+                  kind: isPictureBook ? 'scene_based_chapter_draft' : 'chapter_draft',
                   book_id: bookId,
                   chapter_number: chapterNumber,
                   chapter_title: chapterTitle,
                   word_count: wordCount,
                   key_events: keyEvents,
+                  is_picture_book: isPictureBook || false,
+                  scene_count: sceneData.length,
                   step: 'chapter_drafting',
                   status: 'pending_approval'
                 },
@@ -477,8 +549,8 @@ export const draftChapter = ({ session, dataStream }: { session: Session; dataSt
             bookTitle: `Book ${bookId}`, // We'll need to retrieve this from memory
             chapterTitle,
             chapterNumber,
-            description: `Draft chapter with ${wordCount} words`,
-            bookContext: chapterText
+            description: `${isPictureBook ? 'Picture book chapter' : 'Chapter'} with ${wordCount} words`,
+            bookContext: finalContent
           }, { toolCallId: 'book-save-' + Date.now(), messages: [] } as ToolCallOptions);
           }
 
@@ -492,13 +564,151 @@ export const draftChapter = ({ session, dataStream }: { session: Session; dataSt
         bookId,
         chapterNumber,
         chapterTitle,
+        content: finalContent,
         wordCount,
         keyEvents,
-        nextStep: 'Approval Gate 2: Please review and approve the chapter draft. If approved and this is a picture book, we\'ll proceed to scene segmentation.',
+        scenes: isPictureBook ? sceneData : undefined,
+        nextStep: isPictureBook 
+          ? `Picture book chapter created with ${sceneData.length} scene${sceneData.length !== 1 ? 's' : ''}. Ready for character and environment creation.`
+          : 'Chapter draft created. Ready for approval.',
         approvalRequired: true
       };
     },
   });
+
+// Helper function to create scene markdown with proper structure
+function createSceneMarkdown(scene: any, content: string): string {
+  // Create scene node with attributes
+  const sceneAttributes = {
+    'data-scene-id': scene.sceneId,
+    'data-scene-number': scene.sceneNumber.toString(),
+    'data-synopsis': scene.synopsis,
+    'data-environment': scene.environment.location,
+    'data-characters': JSON.stringify(scene.requiredCharacters)
+  };
+
+  const attributeString = Object.entries(sceneAttributes)
+    .map(([key, value]) => `${key}="${value}"`)
+    .join(' ');
+
+  return `<div class="scene-block" ${attributeString}>
+
+${content}
+
+</div>`;
+}
+
+// AI-powered scene generation function
+async function generateScenesFromChapter(
+  chapterText: string,
+  chapterTitle: string,
+  bookContext?: string,
+  bookId?: string,
+  dataStream?: DataStreamWriter
+): Promise<Array<{
+  sceneId: string;
+  sceneNumber: number;
+  synopsis: string;
+  content: string;
+  environment: {
+    location: string;
+    timeOfDay: 'dawn' | 'morning' | 'midday' | 'afternoon' | 'evening' | 'night';
+    weather: string;
+    mood: string;
+    description: string;
+  };
+  requiredCharacters: string[];
+  requiredProps: string[];
+  continuityNotes?: string;
+}> | null> {
+  try {
+    const { streamText } = await import('ai');
+    const { openai } = await import('@ai-sdk/openai');
+
+    const sceneGenerationPrompt = `Analyze this chapter content and break it into 2-4 natural scenes for a picture book.
+
+Chapter Title: ${chapterTitle}
+Chapter Content:
+${chapterText}
+
+${bookContext ? `Book Context: ${bookContext}` : ''}
+
+For each scene, provide:
+1. A unique scene ID (format: scene-N-${chapterTitle.toLowerCase().replace(/\s+/g, '-')})
+2. Scene number (1, 2, 3, etc.)
+3. Brief synopsis (1-2 sentences)
+4. The actual text content for that scene (2-3 paragraphs from the chapter)
+5. Environment details (location, time of day, weather, mood)
+6. Required characters in the scene
+7. Any props or objects needed
+
+Respond with a JSON array of scenes. Each scene should have this structure:
+{
+  "sceneId": "scene-1-chapter-title",
+  "sceneNumber": 1,
+  "synopsis": "Brief description of what happens",
+  "content": "The actual text content for this scene",
+  "environment": {
+    "location": "Location name",
+    "timeOfDay": "morning|afternoon|evening|night",
+    "weather": "clear|cloudy|rainy|etc",
+    "mood": "cheerful|mysterious|adventurous|etc",
+    "description": "Detailed environment description"
+  },
+  "requiredCharacters": ["Character 1", "Character 2"],
+  "requiredProps": ["prop1", "prop2"],
+  "continuityNotes": "Important notes for visual consistency"
+}
+
+Make sure the scenes flow naturally and cover the entire chapter content. Focus on visual moments that would work well as illustrations.`;
+
+    let sceneResponse = '';
+    
+    const streamResult = streamText({
+      model: openai('gpt-4o'),
+      system: 'You are an expert at breaking down children\'s book chapters into visual scenes. Respond only with valid JSON.',
+      prompt: sceneGenerationPrompt,
+    });
+
+    for await (const textDelta of streamResult.textStream) {
+      sceneResponse += textDelta;
+      dataStream?.write?.({
+        type: 'text-delta',
+        content: textDelta,
+      });
+    }
+
+    // Parse the JSON response
+    const cleanResponse = sceneResponse.trim();
+    let scenes;
+    
+    try {
+      // Try to extract JSON from the response
+      const jsonMatch = cleanResponse.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        scenes = JSON.parse(jsonMatch[0]);
+      } else {
+        scenes = JSON.parse(cleanResponse);
+      }
+    } catch (parseError) {
+      console.error('[generateScenesFromChapter] JSON parse error:', parseError);
+      console.log('[generateScenesFromChapter] Raw response:', cleanResponse);
+      return null;
+    }
+
+    if (!Array.isArray(scenes) || scenes.length === 0) {
+      console.error('[generateScenesFromChapter] Invalid scenes format:', scenes);
+      return null;
+    }
+
+    console.log(`[generateScenesFromChapter] Successfully generated ${scenes.length} scenes`);
+    return scenes;
+
+  } catch (error) {
+    console.error('[generateScenesFromChapter] Error generating scenes:', error);
+    return null;
+  }
+}
 
 // Step 3: Scene Segmentation and Environment Mapping Tool
 export const segmentChapterIntoScenes = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>

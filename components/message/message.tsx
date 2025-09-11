@@ -103,7 +103,11 @@ import { MergedImagesResult } from '@/components/message/merged-images-result';
 import { ImageEditResult } from '@/components/common/image-edit-result';
 import { CreateImageResult } from './create-image-result';
 import { StructuredBookImageResults } from './structured-book-image-results';
+import { BookImagePlanResult } from './book-image-plan-result';
+import { SingleBookImageResult } from './single-book-image-result';
+import { SearchBookPropsResult } from './search-book-props-result';
 import { StructuredBookImageStart, StructuredBookImageProgress, StructuredBookImageResult } from './structured-book-image-result';
+import { SceneImageAutoInsertedResult } from './scene-image-auto-inserted-result';
 
 // Tool input/output types
 type CreateBookInput = {
@@ -1010,8 +1014,8 @@ const PurePreviewMessage = ({
            !text.startsWith('Processing step');
   });
   
-  // REMOVED: Custom reasoning component - let AI SDK handle everything natively
-  const shouldShowReasoning = false;
+  // Simplified: Only show reasoning for models that actually support it and have meaningful content
+  const shouldShowReasoning = modelSupportsReasoningCapability && hasMeaningfulReasoning;
   
   // Determine if reasoning is complete based on events
   const isReasoningComplete = !isLoading || 
@@ -1265,6 +1269,22 @@ const PurePreviewMessage = ({
                             />
                           ) : toolName === 'createStructuredBookImages' ? (
                             <StructuredBookImageResults
+                              result={output as any}
+                              isReadonly={isReadonly}
+                              sendMessage={sendMessage}
+                            />
+                          ) : toolName === 'createBookImagePlan' ? (
+                            <BookImagePlanResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createSingleBookImage' ? (
+                            <SingleBookImageResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'searchBookProps' ? (
+                            <SearchBookPropsResult
                               result={output as any}
                               isReadonly={isReadonly}
                             />
@@ -1606,6 +1626,60 @@ const PurePreviewMessage = ({
                         </div>
                       );
                     }
+
+                    // Handle scene image auto-insertion results
+                    if (dataType === 'single-book-image-auto-inserted' && dataContent) {
+                      return (
+                        <div key={key}>
+                          <SceneImageAutoInsertedResult
+                            imageType={dataContent.imageType}
+                            imageId={dataContent.imageId}
+                            name={dataContent.name}
+                            imageUrl={dataContent.imageUrl}
+                            bookTitle={dataContent.bookTitle}
+                            chapterNumber={dataContent.chapterNumber}
+                            sceneId={dataContent.sceneId}
+                            insertedSuccessfully={true}
+                          />
+                        </div>
+                      );
+                    }
+
+                    if (dataType === 'single-book-image-auto-insert-failed' && dataContent) {
+                      return (
+                        <div key={key}>
+                          <SceneImageAutoInsertedResult
+                            imageType={dataContent.imageType}
+                            imageId={dataContent.imageId}
+                            name={dataContent.name}
+                            imageUrl={dataContent.imageUrl}
+                            bookTitle="Unknown Book"
+                            chapterNumber={1}
+                            sceneId={dataContent.name}
+                            insertedSuccessfully={false}
+                            error={dataContent.error}
+                          />
+                        </div>
+                      );
+                    }
+
+                    if (dataType === 'single-book-image-auto-insert-error' && dataContent) {
+                      return (
+                        <div key={key}>
+                          <SceneImageAutoInsertedResult
+                            imageType="scene"
+                            imageId={dataContent.imageId || 'unknown'}
+                            name={dataContent.name}
+                            imageUrl={dataContent.imageUrl || ''}
+                            bookTitle="Unknown Book"
+                            chapterNumber={1}
+                            sceneId={dataContent.name}
+                            insertedSuccessfully={false}
+                            error={dataContent.error}
+                          />
+                        </div>
+                      );
+                    }
                   }
 
                   return null;
@@ -1733,7 +1807,7 @@ export const ThinkingMessage = ({ selectedModelId }: { selectedModelId?: string 
     }
     
     // Show appropriate loading text for the initial processing phase
-    return `Processing${dots}`;
+    return `Thinking${dots}`;
   };
 
   const displayText = getDisplayText();
@@ -1742,8 +1816,8 @@ export const ThinkingMessage = ({ selectedModelId }: { selectedModelId?: string 
     <motion.div
       data-testid="message-assistant-loading"
       className="relative mb-4 flex flex-col w-full"
-      initial={{ opacity: 1 }} // Start fully visible
-      animate={{ opacity: 1 }}
+      initial={{ opacity: 0, y: 10 }} // Start slightly below and transparent
+      animate={{ opacity: 1, y: 0 }} // Fade in and slide up
       exit={{ opacity: 0, transition: { duration: 0.3 } }} // Fade out smoothly
       data-role={role}
       layout // Add layout prop for smoother transitions
@@ -1765,7 +1839,13 @@ export const ThinkingMessage = ({ selectedModelId }: { selectedModelId?: string 
           </div>
 
           <div className="flex-1 flex flex-col gap-3 w-full">
-            <div className="flex flex-row items-center mt-2">
+            <div className="flex flex-row items-center gap-2 mt-2">
+              {/* Animated thinking dots */}
+              <div className="flex items-center gap-1">
+                <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full thinking-dot" />
+                <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full thinking-dot" />
+                <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full thinking-dot" />
+              </div>
               <div className="font-medium text-sm text-muted-foreground">{displayText}</div>
             </div>
           </div>
