@@ -1,7 +1,9 @@
 import React from 'react';
+import NextImage from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { CheckCircle, XCircle, Image, Users, MapPin, Film, Database, Brain, Download, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -108,24 +110,34 @@ export function SingleBookImageResult({ result, isReadonly = false }: SingleBook
 
   return (
     <Card className={`${getTypeColor(result.imageType)}`}>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2">
-          {getTypeIcon(result.imageType)}
-          {result.imageType.charAt(0).toUpperCase() + result.imageType.slice(1)} Created
-        </CardTitle>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            {getTypeIcon(result.imageType)}
+            {result.imageType.charAt(0).toUpperCase() + result.imageType.slice(1)} Created
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            {result.approach && (
+              <Badge variant="secondary" className="text-xs capitalize">
+                {result.approach === 'merge_edit' ? 'Merge + Edit' : result.approach}
+              </Badge>
+            )}
+            {result.currentStep && result.totalSteps && (
+              <Badge variant="outline" className="text-xs">
+                {result.currentStep}/{result.totalSteps}
+              </Badge>
+            )}
+          </div>
+        </div>
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="bg-white">
+          <Badge variant="outline" className="bg-white text-xs">
             {result.bookTitle}
           </Badge>
-          {result.currentStep && result.totalSteps && (
-            <Badge variant="secondary">
-              {result.currentStep}/{result.totalSteps}
-            </Badge>
-          )}
+          <span className="text-sm font-medium text-gray-900">{result.name}</span>
         </div>
       </CardHeader>
       
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-3">
         {/* Image Display */}
         {result.imageUrl && (
           <div className="relative group">
@@ -133,7 +145,7 @@ export function SingleBookImageResult({ result, isReadonly = false }: SingleBook
               src={result.imageUrl}
               alt={`${result.imageType}: ${result.name}`}
               className="w-full rounded-lg shadow-md border-2 border-white"
-              style={{ maxHeight: '300px', objectFit: 'contain' }}
+              style={{ maxHeight: '250px', objectFit: 'contain' }}
             />
             
             {/* Action buttons overlay */}
@@ -160,54 +172,42 @@ export function SingleBookImageResult({ result, isReadonly = false }: SingleBook
           </div>
         )}
 
-        {/* Image Details */}
-        <div className="bg-white rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-            <span className="font-medium text-gray-900">{result.name}</span>
-          </div>
-          <p className="text-sm text-gray-600">{result.description}</p>
-        </div>
+        {/* Description */}
+        <p className="text-sm text-gray-600 bg-white rounded-lg p-2">{result.description}</p>
 
         {/* Seed Images */}
         {result.seedImages && result.seedImages.length > 0 && (
-          <div className="bg-white rounded-lg p-3">
-            <div className="flex items-center gap-2 mb-3">
-              <Image className="w-4 h-4 text-blue-600" />
-              <span className="font-medium text-gray-900">Seed Images Used</span>
-              {result.approach && (
-                <Badge variant="outline" className="text-xs">
-                  {result.approach === 'merge_edit' ? 'Merged + Edited' : 
-                   result.approach === 'edit' ? 'Edited' : 'Generated'}
-                </Badge>
-              )}
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {result.seedImages.map((seedUrl, index) => (
-                <div key={index} className="relative group">
-                  <img
-                    src={seedUrl}
-                    alt={`Seed image ${index + 1}`}
-                    className="w-full h-16 object-cover rounded border hover:scale-105 transition-transform"
-                  />
-                  <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded transition-all duration-200 flex items-center justify-center opacity-0 group-hover:opacity-100">
-                    <span className="text-white text-xs font-medium bg-black bg-opacity-50 px-1 rounded">
-                      {index + 1}
-                    </span>
+          <>
+            <Separator />
+            <div className="space-y-2">
+              <h4 className="font-medium text-sm text-muted-foreground flex items-center gap-2">
+                <Image className="w-4 h-4" />
+                Seed Images Used ({result.seedImages.length})
+              </h4>
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                {result.seedImages.map((seedUrl, index) => (
+                  <div
+                    key={index}
+                    className="relative aspect-square rounded-md overflow-hidden border bg-muted/20"
+                  >
+                    <NextImage
+                      src={seedUrl}
+                      alt={`Seed image ${index + 1}`}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 20vw, 12vw"
+                    />
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-            <p className="text-xs text-gray-500 mt-2">
-              {result.seedImages.length} seed image{result.seedImages.length !== 1 ? 's' : ''} used to create this {result.imageType}
-            </p>
-          </div>
+          </>
         )}
 
         {/* Storage Status */}
-        <div className="flex items-center justify-between bg-white rounded-lg p-3">
-          <div className="text-sm font-medium text-gray-700">Storage Status</div>
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between bg-white rounded-lg p-2">
+          <div className="text-xs font-medium text-gray-700">Saved to:</div>
+          <div className="flex items-center gap-2">
             <div className="flex items-center gap-1">
               <Brain className={`w-3 h-3 ${result.savedToMemory ? 'text-green-600' : 'text-gray-400'}`} />
               <span className={`text-xs ${result.savedToMemory ? 'text-green-600' : 'text-gray-400'}`}>
@@ -225,16 +225,16 @@ export function SingleBookImageResult({ result, isReadonly = false }: SingleBook
 
         {/* Progress & Next Action */}
         {result.currentStep && result.totalSteps && (
-          <div className="bg-white rounded-lg p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-700">Progress</span>
-              <span className="text-sm text-gray-600">
+          <div className="bg-white rounded-lg p-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-gray-700">Progress</span>
+              <span className="text-xs text-gray-600">
                 {result.currentStep}/{result.totalSteps}
               </span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
+            <div className="w-full bg-gray-200 rounded-full h-1.5">
               <div
-                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                 style={{ width: `${(result.currentStep / result.totalSteps) * 100}%` }}
               />
             </div>
@@ -242,12 +242,12 @@ export function SingleBookImageResult({ result, isReadonly = false }: SingleBook
         )}
 
         {/* Next Action */}
-        <div className="bg-blue-50 rounded-lg p-3 border border-blue-200">
+        <div className="bg-blue-50 rounded-lg p-2 border border-blue-200">
           <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-medium text-blue-900">Next</span>
+            <CheckCircle className="w-3 h-3 text-blue-600" />
+            <span className="text-xs font-medium text-blue-900">Next</span>
           </div>
-          <p className="text-sm text-blue-700 mt-1">{result.nextAction}</p>
+          <p className="text-xs text-blue-700 mt-1">{result.nextAction}</p>
         </div>
       </CardContent>
     </Card>

@@ -2,7 +2,7 @@
 
 import { startTransition, useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useCanUsePremiumModels } from '@/hooks/use-subscription';
+import { useCanUsePremiumModels } from '@/components/subscription/subscription-context';
 import { useUpgradeModal } from '@/hooks/use-upgrade-modal';
 import { UpgradeModal } from '@/components/subscription/upgrade-modal';
 

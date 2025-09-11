@@ -1545,12 +1545,13 @@ const PurePreviewMessage = ({
                                        dataContent.step === 'environment' ? '🏞️' : '🎬';
                       return (
                         <div key={key}>
-                          <div className="w-fit max-w-full border rounded-lg p-4 bg-green-50 border-green-200">
-                            <div className="flex items-center gap-3 mb-3">
-                              <div className="text-lg">{stepEmoji}</div>
+                          <div className="w-fit max-w-full border rounded-lg p-3 bg-green-50 border-green-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="text-base">{stepEmoji}</div>
                               <div>
                                 <h3 className="font-semibold text-sm flex items-center gap-2">
-                                  {dataContent.item}
+                                  {dataContent.step === 'character_portrait' ? 'Character Portrait' :
+                                   dataContent.step === 'environment' ? 'Environment' : 'Scene'} Created
                                   {dataContent.success ? (
                                     <span className="text-green-500">✅</span>
                                   ) : (
@@ -1559,19 +1560,51 @@ const PurePreviewMessage = ({
                                   {dataContent.existingAsset && (
                                     <span className="text-xs bg-blue-100 px-2 py-1 rounded">Existing</span>
                                   )}
+                                  {dataContent.approach && (
+                                    <span className="text-xs bg-gray-100 px-2 py-1 rounded capitalize">
+                                      {dataContent.approach === 'merge_edit' ? 'Merge + Edit' : dataContent.approach}
+                                    </span>
+                                  )}
                                 </h3>
-                                <p className="text-xs text-muted-foreground">{dataContent.reasoning}</p>
+                                <p className="text-xs text-muted-foreground">{dataContent.item}</p>
                               </div>
                             </div>
                             {dataContent.success && dataContent.imageUrl && (
-                              <div className="relative w-32 h-32 mx-auto rounded-lg overflow-hidden border">
+                              <div className="relative w-full max-w-sm mx-auto rounded-lg overflow-hidden border mb-3">
                                 <img
                                   src={dataContent.imageUrl}
                                   alt={dataContent.item}
-                                  className="w-full h-full object-cover"
+                                  className="w-full aspect-square object-cover"
                                 />
                               </div>
                             )}
+                            
+                            {/* Seed Images */}
+                            {dataContent.success && dataContent.seedImagesUsed && dataContent.seedImagesUsed.length > 0 && (
+                              <div className="border-t pt-2 mt-2">
+                                <h4 className="font-medium text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                  </svg>
+                                  Seed Images Used ({dataContent.seedImagesUsed.length})
+                                </h4>
+                                <div className="grid grid-cols-3 gap-2">
+                                  {dataContent.seedImagesUsed.map((seedUrl: string, index: number) => (
+                                    <div
+                                      key={index}
+                                      className="relative aspect-square rounded-md overflow-hidden border bg-muted/20"
+                                    >
+                                      <img
+                                        src={seedUrl}
+                                        alt={`Seed image ${index + 1}`}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
                             {!dataContent.success && dataContent.error && (
                               <div className="text-sm text-red-600 bg-red-100 p-2 rounded">
                                 Error: {dataContent.error}

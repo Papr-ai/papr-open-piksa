@@ -13,8 +13,10 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   CopyIcon,
-  DownloadIcon
+  DownloadIcon,
+  ImageIcon
 } from 'lucide-react';
+import { Separator } from '@/components/ui/separator';
 
 interface StructuredBookImageStartProps {
   content: {
@@ -177,13 +179,13 @@ export function StructuredBookImageResult({ content, isReadonly = false }: Struc
 
   return (
     <Card className="w-fit max-w-full">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="text-lg">{stepIcons[content.step]}</div>
+          <div className="flex items-center gap-2">
+            <div className="text-base">{stepIcons[content.step]}</div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="font-semibold text-sm">{stepLabels[content.step]}</h3>
+                <h3 className="font-semibold text-sm">{stepLabels[content.step]} Created</h3>
                 {content.success ? (
                   <CheckCircleIcon className="w-4 h-4 text-green-500" />
                 ) : (
@@ -191,6 +193,11 @@ export function StructuredBookImageResult({ content, isReadonly = false }: Struc
                 )}
                 {content.existingAsset && (
                   <Badge variant="secondary" className="text-xs">Existing</Badge>
+                )}
+                {content.approach && (
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {content.approach === 'merge_edit' ? 'Merge + Edit' : content.approach}
+                  </Badge>
                 )}
               </div>
               <p className="text-xs text-muted-foreground">{content.item}</p>
@@ -214,9 +221,9 @@ export function StructuredBookImageResult({ content, isReadonly = false }: Struc
         </div>
       </CardHeader>
       
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2">
         {content.success && content.imageUrl && (
-          <div className="relative w-full aspect-square max-w-xs mx-auto rounded-lg overflow-hidden border group">
+          <div className="relative w-full aspect-square max-w-sm mx-auto rounded-lg overflow-hidden border group">
             <Image
               src={content.imageUrl}
               alt={`${stepLabels[content.step]}: ${content.item}`}
@@ -248,6 +255,35 @@ export function StructuredBookImageResult({ content, isReadonly = false }: Struc
           </div>
         )}
 
+        {/* Seed Images - Show outside expanded section for better visibility */}
+        {content.success && content.seedImagesUsed && content.seedImagesUsed.length > 0 && (
+          <>
+            <Separator />
+            <div>
+              <h4 className="font-medium text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                <ImageIcon className="w-3 h-3" />
+                Seed Images Used ({content.seedImagesUsed.length})
+              </h4>
+              <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                {content.seedImagesUsed.map((seedUrl, index) => (
+                  <div
+                    key={index}
+                    className="relative aspect-square rounded-md overflow-hidden border bg-muted/20"
+                  >
+                    <Image
+                      src={seedUrl}
+                      alt={`Seed image ${index + 1}`}
+                      fill
+                      className="object-cover"
+                      sizes="(max-width: 768px) 25vw, 12vw"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
         {!content.success && content.error && (
           <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-md">
             <p className="text-sm text-red-600 dark:text-red-400">
@@ -258,7 +294,7 @@ export function StructuredBookImageResult({ content, isReadonly = false }: Struc
         )}
 
         {isExpanded && (
-          <div className="space-y-3 border-t pt-3">
+          <div className="space-y-2 border-t pt-2">
             {content.reasoning && (
               <div>
                 <h4 className="font-medium text-xs text-muted-foreground mb-1">Reasoning</h4>
@@ -286,14 +322,6 @@ export function StructuredBookImageResult({ content, isReadonly = false }: Struc
               </div>
             )}
 
-            {content.seedImagesUsed && content.seedImagesUsed.length > 0 && (
-              <div>
-                <h4 className="font-medium text-xs text-muted-foreground mb-1">Seed Images Used</h4>
-                <div className="text-xs text-muted-foreground">
-                  {content.seedImagesUsed.length} image(s) seeded
-                </div>
-              </div>
-            )}
           </div>
         )}
       </CardContent>

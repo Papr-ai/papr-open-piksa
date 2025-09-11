@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useUsageData, useSubscription } from './subscription-context';
 
 interface UsageWarning {
   type: string;
@@ -22,39 +22,48 @@ interface UsageData {
 }
 
 export function UsageWarning() {
-  const { data: session } = useSession();
+  const { usage, loading } = useUsageData();
+  const { subscription } = useSubscription();
   const [usageData, setUsageData] = useState<UsageData | null>(null);
   const [dismissed, setDismissed] = useState<string[]>([]);
-  
-  // Add caching to prevent redundant API calls
-  const lastFetchTime = useRef(0);
-  const CACHE_DURATION = 30000; // 30 seconds cache
 
+  // Calculate warnings from context data instead of making API calls
   useEffect(() => {
-    if (session?.user) {
-      fetchUsageWarnings();
-    }
-  }, [session]);
-
-  const fetchUsageWarnings = async () => {
-    // Check cache
-    const now = Date.now();
-    if ((now - lastFetchTime.current) < CACHE_DURATION) {
-      console.log('[UsageWarning] Using cached usage warnings');
+    if (!usage || loading) {
+      setUsageData(null);
       return;
     }
 
-    try {
-      const response = await fetch('/api/subscription/usage-warnings');
-      if (response.ok) {
-        const data = await response.json();
-        setUsageData(data);
-        lastFetchTime.current = now;
+    const warnings: UsageWarning[] = [];
+    
+    // Check each usage type for warnings (80% threshold)
+    const usageTypes = [
+      { key: 'basicInteractions', name: 'Basic Interactions', data: usage.basicInteractions },
+      { key: 'premiumInteractions', name: 'Premium Interactions', data: usage.premiumInteractions },
+      { key: 'memoriesAdded', name: 'Memories Added', data: usage.memoriesAdded },
+      { key: 'memoriesSearched', name: 'Memory Searches', data: usage.memoriesSearched },
+      { key: 'voiceChats', name: 'Voice Chats', data: usage.voiceChats },
+      { key: 'videosGenerated', name: 'Videos Generated', data: usage.videosGenerated },
+    ];
+
+    for (const usageType of usageTypes) {
+      const { current, limit, percentage } = usageType.data;
+      if (percentage >= 80) {
+        warnings.push({
+          type: usageType.key,
+          message: `${usageType.name}: ${current}/${limit} used (${percentage.toFixed(1)}%)`,
+          percentage,
+          current,
+          limit,
+        });
       }
-    } catch (error) {
-      console.error('Error fetching usage warnings:', error);
     }
-  };
+
+    setUsageData({
+      warnings,
+      shouldShowUpgrade: subscription.subscriptionPlan === 'free' && warnings.length > 0,
+    });
+  }, [usage, loading, subscription.subscriptionPlan]);
 
   const dismissWarning = (type: string, percentage: number) => {
     // Don't allow dismissal if user is at 100% usage
@@ -64,7 +73,7 @@ export function UsageWarning() {
     setDismissed(prev => [...prev, type]);
   };
 
-  if (!usageData || !session?.user) return null;
+  if (!usageData || loading) return null;
 
   const activeWarnings = usageData.warnings.filter(w => !dismissed.includes(w.type));
 
@@ -110,46 +119,7 @@ export function UsageWarning() {
 }
 
 export function UsageOverviewCard() {
-  const { data: session } = useSession();
-  const [usageData, setUsageData] = useState<{
-    basicInteractions: { current: number; limit: number; percentage: number };
-    premiumInteractions: { current: number; limit: number; percentage: number };
-    memoriesAdded: { current: number; limit: number; percentage: number };
-    memoriesSearched: { current: number; limit: number; percentage: number };
-    voiceChats: { current: number; limit: number; percentage: number };
-    videosGenerated: { current: number; limit: number; percentage: number };
-    plan: string;
-  } | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (session?.user) {
-      fetchUsageOverview();
-    }
-  }, [session]);
-
-  const fetchUsageOverview = async () => {
-    try {
-      setLoading(true);
-      // Use the new optimized endpoint
-      const response = await fetch('/api/user/usage');
-      if (response.ok) {
-        const data = await response.json();
-        setUsageData(data);
-      } else {
-        // Fallback to old endpoint
-        const fallbackResponse = await fetch('/api/subscription/usage-overview');
-        if (fallbackResponse.ok) {
-          const data = await fallbackResponse.json();
-          setUsageData(data);
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching usage overview:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { usage, loading } = useUsageData();
 
   if (loading) {
     return (
@@ -167,7 +137,7 @@ export function UsageOverviewCard() {
     );
   }
 
-  if (!usageData || !session?.user) return null;
+  if (!usage || loading) return null;
 
   const formatUsage = (current: number, limit: number) => {
     if (limit === -1) return `${current.toLocaleString()} / Unlimited`;
@@ -194,21 +164,21 @@ export function UsageOverviewCard() {
       <CardHeader>
         <CardTitle className="text-lg">Usage Overview</CardTitle>
         <CardDescription>
-          Your current usage for this month ({usageData.plan} plan)
+          Your current usage for this month ({usage.plan} plan)
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span>Basic Interactions</span>
-            <span>{formatUsage(usageData.basicInteractions.current, usageData.basicInteractions.limit)}</span>
+            <span>{formatUsage(usage.basicInteractions.current, usage.basicInteractions.limit)}</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className={`h-2 rounded-full ${getProgressColor(usageData.basicInteractions.percentage)}`}
+              className={`h-2 rounded-full ${getProgressColor(usage.basicInteractions.percentage)}`}
               style={{ 
-                width: `${Math.min(usageData.basicInteractions.percentage, 100)}%`,
-                ...getProgressStyle(usageData.basicInteractions.percentage)
+                width: `${Math.min(usage.basicInteractions.percentage, 100)}%`,
+                ...getProgressStyle(usage.basicInteractions.percentage)
               }}
             />
           </div>
@@ -217,14 +187,14 @@ export function UsageOverviewCard() {
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span>Premium Interactions</span>
-            <span>{formatUsage(usageData.premiumInteractions.current, usageData.premiumInteractions.limit)}</span>
+            <span>{formatUsage(usage.premiumInteractions.current, usage.premiumInteractions.limit)}</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className={`h-2 rounded-full ${getProgressColor(usageData.premiumInteractions.percentage)}`}
+              className={`h-2 rounded-full ${getProgressColor(usage.premiumInteractions.percentage)}`}
               style={{ 
-                width: `${Math.min(usageData.premiumInteractions.percentage, 100)}%`,
-                ...getProgressStyle(usageData.premiumInteractions.percentage)
+                width: `${Math.min(usage.premiumInteractions.percentage, 100)}%`,
+                ...getProgressStyle(usage.premiumInteractions.percentage)
               }}
             />
           </div>
@@ -233,14 +203,14 @@ export function UsageOverviewCard() {
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span>Memory Storage</span>
-            <span>{formatUsage(usageData.memoriesAdded.current, usageData.memoriesAdded.limit)}</span>
+            <span>{formatUsage(usage.memoriesAdded.current, usage.memoriesAdded.limit)}</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className={`h-2 rounded-full ${getProgressColor(usageData.memoriesAdded.percentage)}`}
+              className={`h-2 rounded-full ${getProgressColor(usage.memoriesAdded.percentage)}`}
               style={{ 
-                width: `${Math.min(usageData.memoriesAdded.percentage, 100)}%`,
-                ...getProgressStyle(usageData.memoriesAdded.percentage)
+                width: `${Math.min(usage.memoriesAdded.percentage, 100)}%`,
+                ...getProgressStyle(usage.memoriesAdded.percentage)
               }}
             />
           </div>
@@ -249,56 +219,56 @@ export function UsageOverviewCard() {
         <div>
           <div className="flex justify-between text-sm mb-1">
             <span>Memory Searches</span>
-            <span>{formatUsage(usageData.memoriesSearched.current, usageData.memoriesSearched.limit)}</span>
+            <span>{formatUsage(usage.memoriesSearched.current, usage.memoriesSearched.limit)}</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-2">
             <div 
-              className={`h-2 rounded-full ${getProgressColor(usageData.memoriesSearched.percentage)}`}
+              className={`h-2 rounded-full ${getProgressColor(usage.memoriesSearched.percentage)}`}
               style={{ 
-                width: `${Math.min(usageData.memoriesSearched.percentage, 100)}%`,
-                ...getProgressStyle(usageData.memoriesSearched.percentage)
+                width: `${Math.min(usage.memoriesSearched.percentage, 100)}%`,
+                ...getProgressStyle(usage.memoriesSearched.percentage)
               }}
             />
           </div>
         </div>
 
-        {usageData.voiceChats && (
+        {usage.voiceChats && (
           <div>
             <div className="flex justify-between text-sm mb-1">
               <span>Voice Chats</span>
-              <span>{formatUsage(usageData.voiceChats.current, usageData.voiceChats.limit)}</span>
+              <span>{formatUsage(usage.voiceChats.current, usage.voiceChats.limit)}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
-                className={`h-2 rounded-full ${getProgressColor(usageData.voiceChats.percentage)}`}
+                className={`h-2 rounded-full ${getProgressColor(usage.voiceChats.percentage)}`}
                 style={{ 
-                  width: `${Math.min(usageData.voiceChats.percentage, 100)}%`,
-                  ...getProgressStyle(usageData.voiceChats.percentage)
+                  width: `${Math.min(usage.voiceChats.percentage, 100)}%`,
+                  ...getProgressStyle(usage.voiceChats.percentage)
                 }}
               />
             </div>
           </div>
         )}
 
-        {usageData.videosGenerated && (
+        {usage.videosGenerated && (
           <div>
             <div className="flex justify-between text-sm mb-1">
               <span>Videos Generated</span>
-              <span>{formatUsage(usageData.videosGenerated.current, usageData.videosGenerated.limit)}</span>
+              <span>{formatUsage(usage.videosGenerated.current, usage.videosGenerated.limit)}</span>
             </div>
             <div className="w-full bg-gray-200 rounded-full h-2">
               <div 
-                className={`h-2 rounded-full ${getProgressColor(usageData.videosGenerated.percentage)}`}
+                className={`h-2 rounded-full ${getProgressColor(usage.videosGenerated.percentage)}`}
                 style={{ 
-                  width: `${Math.min(usageData.videosGenerated.percentage, 100)}%`,
-                  ...getProgressStyle(usageData.videosGenerated.percentage)
+                  width: `${Math.min(usage.videosGenerated.percentage, 100)}%`,
+                  ...getProgressStyle(usage.videosGenerated.percentage)
                 }}
               />
             </div>
           </div>
         )}
 
-        {usageData.plan === 'free' && (
+        {usage.plan === 'free' && (
           <div className="pt-2 border-t">
             <Link href="/subscription">
               <Button className="w-full">

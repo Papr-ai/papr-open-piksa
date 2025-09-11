@@ -65,6 +65,8 @@ type CreateSingleBookImageOutput = {
   nextAction: string;
   message: string;
   error?: string;
+  seedImages?: string[];
+  approach?: string;
 };
 
 export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookImageProps) =>
@@ -129,7 +131,9 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
           savedToDatabase: false,
           nextAction: 'Authentication required',
           message: 'User session not found',
-          error: 'No user session'
+          error: 'No user session',
+          seedImages: undefined,
+          approach: undefined
         };
       }
 
@@ -449,7 +453,9 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
               `${savedToDatabase ? '🗃️ Saved to database\n' : ''}` +
               `\n${nextAction}`
             : `❌ Failed to create ${imageType}: ${name}`,
-          error: imageResult.success ? undefined : imageResult.error
+          error: imageResult.success ? undefined : imageResult.error,
+          seedImages: validSeedImages.length > 0 ? validSeedImages : undefined,
+          approach: imageResult.approach
         };
 
         // Note: If OpenAI fails to download the image URL for validation, 
@@ -485,7 +491,9 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
           totalSteps,
           nextAction: 'Error occurred',
           message: `❌ Failed to create ${imageType}: ${name}`,
-          error: error instanceof Error ? error.message : 'Unknown error'
+          error: error instanceof Error ? error.message : 'Unknown error',
+          seedImages: undefined,
+          approach: undefined
         };
       }
     },

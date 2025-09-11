@@ -7,7 +7,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
-import { useWebSocketUpdates } from '@/lib/websocket/client';
+import { useWebSocketUpdates, type RealtimeUpdate } from '@/lib/websocket/client';
 import type { SubscriptionPlan } from '@/lib/subscription/types';
 
 interface SubscriptionData {
@@ -186,17 +186,33 @@ export function SubscriptionProvider({ children }: { children: ReactNode }) {
     fetchUsage();
   }, [session?.user, sessionStatus]);
 
-  // Real-time updates via WebSocket (replaces expensive SSE)
-  // Only connects when user is authenticated - no WebSocket for landing/login/register pages
-  const { isConnected } = useWebSocketUpdates((update) => {
-    console.log('[Subscription Context] Received WebSocket update:', update);
+  // Real-time updates - use WebSocket updates directly instead of re-fetching
+  const { isConnected } = useWebSocketUpdates((update: RealtimeUpdate) => {
+    console.log('[Subscription Context] Received real-time update:', update);
     
-    if (update.table === 'subscription') {
-      // Refresh subscription data when subscription changes
-      fetchSubscription(false);
-    } else if (update.table === 'usage') {
-      // Refresh usage data when usage changes
-      fetchUsage();
+    if (update.table === 'subscription' && update.data) {
+      // Update subscription data directly from WebSocket instead of re-fetching
+      console.log('[Subscription Context] Updating subscription from WebSocket:', update.data);
+      setSubscription(prev => ({
+        ...prev,
+        ...update.data,
+        // Ensure we maintain proper boolean types
+        hasActiveSubscription: Boolean(update.data.hasActiveSubscription || update.data.subscriptionStatus === 'active'),
+      }));
+      
+      // Update cache time to prevent unnecessary API calls
+      lastFetchTime.current.subscription = Date.now();
+      
+      // Trigger subscription updated event for other parts of the app
+      window.dispatchEvent(new CustomEvent('subscriptionUpdated', { detail: update.data }));
+      
+    } else if (update.table === 'usage' && update.data) {
+      // Update usage data directly from WebSocket instead of re-fetching
+      console.log('[Subscription Context] Updating usage from WebSocket:', update.data);
+      setUsage(update.data);
+      
+      // Update cache time to prevent unnecessary API calls
+      lastFetchTime.current.usage = Date.now();
     }
   });
 
