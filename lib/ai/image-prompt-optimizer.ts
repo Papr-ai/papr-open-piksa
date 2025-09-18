@@ -7,7 +7,6 @@
 
 import { generateObject } from 'ai';
 import { myProvider } from '@/lib/ai/providers';
-import { searchMemories } from '@/lib/ai/tools/search-memories';
 import { z } from 'zod';
 
 interface ImagePromptContext {
@@ -30,6 +29,13 @@ interface ImagePromptContext {
   bookGenre?: string; // Book genre for style context
   targetAge?: string; // Target age group for appropriate style
   conversationContext?: string; // Full conversation context with style details
+  
+  // Spatial enhancement context
+  spatialViewType?: 'top-down' | 'isometric' | 'wide-angle' | 'birds-eye' | 'standard';
+  spatialPromptAddition?: string; // Additional spatial layout requirements
+  prescriptivePositioning?: boolean; // Whether to use prescriptive character positioning
+  spatialInstructions?: string; // Detailed spatial positioning instructions
+  environmentZones?: Array<{ zoneId: string; zoneName: string; description: string }>; // Defined zones for placement
 }
 
 // Schema for image creation prompts
@@ -263,6 +269,28 @@ function buildCreationUserPrompt(context: ImagePromptContext): string {
 
   if (context.sceneContext) {
     prompt += `\n\nSCENE CONTEXT: ${context.sceneContext}`;
+  }
+  
+  // Enhanced spatial awareness for environments
+  if (context.spatialViewType && context.spatialViewType !== 'standard') {
+    prompt += `\n\n🗺️ SPATIAL VIEW REQUIREMENT: Use ${context.spatialViewType} perspective to show complete spatial relationships and layout`;
+  }
+  
+  if (context.spatialPromptAddition) {
+    prompt += `\n\n${context.spatialPromptAddition}`;
+  }
+  
+  // Prescriptive positioning for scenes
+  if (context.prescriptivePositioning && context.spatialInstructions) {
+    prompt += `\n\n${context.spatialInstructions}`;
+  }
+  
+  // Environment zones for reference
+  if (context.environmentZones && context.environmentZones.length > 0) {
+    prompt += `\n\nENVIRONMENT ZONES FOR REFERENCE:`;
+    context.environmentZones.forEach(zone => {
+      prompt += `\n- ${zone.zoneName}: ${zone.description}`;
+    });
   }
 
   if (context.aspectRatio) {

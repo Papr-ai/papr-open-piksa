@@ -711,6 +711,7 @@ export function Chat({
             setInput={setInput}
             handleSubmit={handleSubmit}
             sendMessage={sendMessage}
+            bookId={bookId}
           />
         </div>
 

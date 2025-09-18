@@ -58,6 +58,16 @@ function getToolIcon(toolName: string) {
       return '📝';
     case 'createBook':
       return '📚';
+    case 'createBookArtifact':
+      return '📖';
+    case 'createImage':
+    case 'createSingleBookImage':
+    case 'structuredBookImageCreation':
+      return '🎨';
+    case 'enhancedBookCreation':
+      return '✨';
+    case 'createWritingTools':
+      return '🖊️';
     case 'requestSuggestions':
       return '💡';
     case 'searchMemories':
@@ -99,6 +109,34 @@ function getToolLabel(toolName: string, args?: any) {
       return `Updating document: ${args?.title || '...'}`;
     case 'createBook':
       return `Creating book chapter: ${args?.chapterTitle || '...'}`;
+    case 'createBookArtifact':
+      // Provide specific labels for different book creation actions
+      if (args?.action === 'create_new') return `Creating new book: "${args?.bookTitle || '...'}"`;
+      if (args?.action === 'update_step') {
+        const stepNames = {
+          1: 'Story Planning',
+          2: 'Character Creation', 
+          3: 'Chapter Writing',
+          4: 'Environment Design',
+          5: 'Scene Composition',
+          6: 'Final Review'
+        };
+        const stepName = stepNames[args?.stepNumber as keyof typeof stepNames] || `Step ${args?.stepNumber}`;
+        return `Updating ${stepName}...`;
+      }
+      if (args?.action === 'approve_step') return `Approving step ${args?.stepNumber}...`;
+      if (args?.action === 'regenerate') return `Regenerating step ${args?.stepNumber}...`;
+      return 'Working on book creation...';
+    case 'createImage':
+      return `Creating image: ${args?.prompt?.substring(0, 50) || '...'}`;
+    case 'createSingleBookImage':
+      return `Creating book illustration...`;
+    case 'structuredBookImageCreation':
+      return `Creating structured book images...`;
+    case 'enhancedBookCreation':
+      return `Creating enhanced book content...`;
+    case 'createWritingTools':
+      return `Setting up writing tools...`;
     case 'requestSuggestions':
       return 'Generating suggestions';
     case 'searchMemories':
@@ -425,6 +463,16 @@ export function ToolInvocation({
       args,
       result
     });
+    
+    // Special logging for image creation tools
+    if (toolName === 'createSingleBookImage' || toolName === 'createImage') {
+      console.log('[ToolInvocation] 🎨 Image creation tool detected:', {
+        toolName,
+        state,
+        hasArgs: !!args,
+        hasResult: !!result
+      });
+    }
   }, [toolName, state, toolCallId, args, result]);
 
   // Auto-expand file explorer when it's rendered
@@ -590,6 +638,131 @@ export function ToolInvocation({
     ) : (
       <Weather weatherAtLocation={result} />
     );
+  }
+
+  // Special handling for book creation tools
+  if (toolName === 'createBookArtifact') {
+    if (state === 'call') {
+      const stepNames = {
+        1: 'Story Planning',
+        2: 'Character Creation', 
+        3: 'Chapter Writing',
+        4: 'Environment Design',
+        5: 'Scene Composition',
+        6: 'Final Review'
+      };
+      
+      let message = 'Working on book creation...';
+      let stepDetail = '';
+      
+      if (args?.action === 'create_new') {
+        message = 'Creating new book...';
+        stepDetail = args?.bookTitle ? `"${args.bookTitle}"` : '';
+      } else if (args?.action === 'update_step') {
+        const stepName = stepNames[args?.stepNumber as keyof typeof stepNames] || `Step ${args?.stepNumber}`;
+        message = `Updating ${stepName}...`;
+        stepDetail = 'Generating content and saving progress';
+      } else if (args?.action === 'approve_step') {
+        message = `Approving step ${args?.stepNumber}...`;
+      } else if (args?.action === 'regenerate') {
+        const stepName = stepNames[args?.stepNumber as keyof typeof stepNames] || `Step ${args?.stepNumber}`;
+        message = `Regenerating ${stepName}...`;
+        stepDetail = 'Creating new content based on feedback';
+      }
+      
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">📖</span>
+            <span className="text-blue-800 font-medium">{message}</span>
+          </div>
+          {stepDetail && (
+            <p className="text-sm text-blue-700 mt-1">{stepDetail}</p>
+          )}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="animate-spin">
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
+            </div>
+            <span className="text-sm text-blue-600">Processing...</span>
+          </div>
+        </div>
+      );
+    }
+    
+    // Handle result state - show success or error
+    if (state === 'result' && result) {
+      if (result.success) {
+        return (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">✅</span>
+              <span className="text-green-800 font-medium">Book updated successfully</span>
+            </div>
+            {result.message && (
+              <p className="text-sm text-green-700 mt-1">{result.message}</p>
+            )}
+          </div>
+        );
+      } else {
+        return (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xl">❌</span>
+              <span className="text-red-800 font-medium">Book update failed</span>
+            </div>
+            {result.error && (
+              <p className="text-sm text-red-700 mt-1">{result.error}</p>
+            )}
+          </div>
+        );
+      }
+    }
+  }
+
+  // Special handling for image creation tools
+  if (toolName === 'createImage' || toolName === 'createSingleBookImage' || toolName === 'structuredBookImageCreation') {
+    if (state === 'call') {
+      return (
+        <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🎨</span>
+            <span className="text-purple-800 font-medium">Creating image...</span>
+          </div>
+          {args?.prompt && (
+            <p className="text-sm text-purple-700 mt-1">"{args.prompt.substring(0, 100)}..."</p>
+          )}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="animate-spin">
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full"></div>
+            </div>
+            <span className="text-sm text-purple-600">Generating artwork...</span>
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // Special handling for memory search tools
+  if (toolName === 'searchMemories' || toolName === 'get_memory') {
+    if (state === 'call') {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🧠</span>
+            <span className="text-amber-800 font-medium">Searching memories...</span>
+          </div>
+          {args?.query && (
+            <p className="text-sm text-amber-700 mt-1">Looking for: "{args.query}"</p>
+          )}
+          <div className="flex items-center gap-2 mt-2">
+            <div className="animate-spin">
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-amber-600 rounded-full"></div>
+            </div>
+            <span className="text-sm text-amber-600">Searching knowledge base...</span>
+          </div>
+        </div>
+      );
+    }
   }
 
   // Special handling for task tracker tools - keep the detailed UI

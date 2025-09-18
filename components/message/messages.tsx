@@ -28,6 +28,7 @@ interface MessagesProps {
   setInput?: (input: string) => void;
   handleSubmit?: (e?: React.FormEvent) => void;
   sendMessage?: (message: { role: 'user'; parts: Array<{ type: 'text'; text: string }> }) => void;
+  bookId?: string;
 }
 
 function PureMessages({
@@ -46,6 +47,7 @@ function PureMessages({
   setInput,
   handleSubmit,
   sendMessage,
+  bookId,
 }: MessagesProps) {
   // Mobile detection hook
   const isMobile = useIsMobile();
@@ -210,6 +212,8 @@ function PureMessages({
             if (partType === 'reasoning') return true;
             if (partType === 'step-start') return true;
             if (partType.startsWith('tool-')) return true; // tool-* parts
+            if (partType === 'tool-invocation') return true; // AI SDK 5 tool invocations
+            if (partType === 'tool-result') return true; // AI SDK 5 tool results
             if (partType === 'dynamic-tool') return true;
             if (partType === 'file') return true;
             if (partType === 'source-url' || partType === 'source-document') return true;
@@ -251,7 +255,7 @@ function PureMessages({
         })}
 
         {/* Show the global thinking indicator when AI is processing but no assistant message exists yet */}
-        {shouldShowThinking && <ThinkingMessage selectedModelId={selectedModelId} />}
+        {shouldShowThinking && <ThinkingMessage selectedModelId={selectedModelId} bookId={bookId} />}
         
         <div
           ref={messagesEndRef}

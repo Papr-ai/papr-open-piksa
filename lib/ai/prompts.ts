@@ -204,8 +204,19 @@ Step 5 (Final Chapter Content) uses the SAME schema structure as Step 3, but wit
 **For ALL books (picture and text-only):**
 - MUST use chapters array (same structure as Step 3)
 - Each chapter needs: chapterNumber, title, scenes array
-- Each scene needs: text (complete, expanded markdown), characters, illustrationNotes
+- Each scene needs: text (complete story narrative), characters, illustrationNotes (art direction)
 - Step 5 scenes should be the FINAL, fully written content (much longer and more detailed than Step 3 drafts)
+
+**CRITICAL: Scene Text vs Illustration Notes**
+- **text field**: STORY NARRATIVE that readers will read - actual book content with dialogue, action, description
+- **illustrationNotes field**: ART DIRECTION for illustrators - visual composition, character positioning, mood
+
+**CORRECT text field examples:**
+✅ "Jood pressed his face against the airplane window, watching the Golden Gate Bridge grow smaller below. 'Look Dad!' he whispered excitedly, 'The cars look like tiny ants!' Amir smiled and pointed to the bay. 'And see how the water sparkles in the sunlight?'"
+
+❌ WRONG text field examples:
+❌ "Jood waving with a suitcase in front of the Golden Gate Bridge, bright sky"
+❌ "**Jood's Sunny Journey** San Francisco ➜ San Diego"
 
 **CRITICAL: Chapter Title Preservation**
 - ALWAYS use the EXACT chapter title from Step 3 - DO NOT change it to generic titles like "Chapter 1"
@@ -214,10 +225,10 @@ Step 5 (Final Chapter Content) uses the SAME schema structure as Step 3, but wit
 
 **Key difference from Step 3:**
 - Step 3: Draft scenes with basic content
-- Step 5: Final scenes with complete, publishable content
+- Step 5: Final scenes with complete, publishable STORY NARRATIVE content
 
 Example Step 5 format:
-chapters: [{ chapterNumber: 1, title: "The Night Mira Found the Observatory", scenes: [{ text: "Complete scene in full markdown...", characters: ["Character"], illustrationNotes: "..." }] }]
+chapters: [{ chapterNumber: 1, title: "The Night Mira Found the Observatory", scenes: [{ text: "Mira crept through the garden, her flashlight beam dancing across...", characters: ["Mira"], illustrationNotes: "Wide shot of Mira with flashlight in moonlit garden" }] }]
 
 **CRITICAL: Tool Response Handling:**
 When using memory tools (addMemory), you are ABSOLUTELY FORBIDDEN from including any raw JSON or tool response data in your message text.

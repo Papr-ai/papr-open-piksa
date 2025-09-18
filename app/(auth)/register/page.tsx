@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useActionState, useEffect, useState } from 'react';
+import { useActionState, useEffect, useState, useRef } from 'react';
 import { signIn, useSession } from 'next-auth/react';
 
 import { AuthForm } from '@/components/auth/auth-form';
@@ -18,6 +18,7 @@ export default function Page() {
 
   const [email, setEmail] = useState('');
   const [isSuccessful, setIsSuccessful] = useState(false);
+  const redirectingRef = useRef(false);
 
   const [state, formAction] = useActionState<RegisterActionState, FormData>(
     register,
@@ -36,20 +37,21 @@ export default function Page() {
         type: 'error',
         description: 'Failed validating your submission!',
       });
-    } else if (state.status === 'success') {
+    } else if (state.status === 'success' && !isSuccessful && !redirectingRef.current) {
+      console.log('[Register] Account created successfully, redirecting to onboarding...');
       toast({ type: 'success', description: 'Account created successfully!' });
 
       setIsSuccessful(true);
+      redirectingRef.current = true;
       
-      // Update the session on the client side to ensure proper hydration
-      updateSession().then(() => {
-        // Small delay to ensure session is fully updated
-        setTimeout(() => {
-          router.push('/onboarding');
-        }, 100);
-      });
+      // Use router.replace instead of push to avoid back button issues
+      // and don't update session here as it might cause loops
+      setTimeout(() => {
+        console.log('[Register] Redirecting to /onboarding...');
+        router.replace('/onboarding');
+      }, 500); // Slightly longer delay to ensure toast is shown
     }
-  }, [state, router, updateSession]);
+  }, [state.status, router, isSuccessful]);
 
   const handleSubmit = (formData: FormData) => {
     setEmail(formData.get('email') as string);

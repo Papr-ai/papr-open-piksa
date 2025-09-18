@@ -25,7 +25,8 @@ import {
   Eye,
   Download,
   X,
-  History
+  History,
+  ImageIcon
 } from 'lucide-react';
 import type { BookArtifactState, BookCreationStep } from '@/lib/ai/tools/book-creation-constants';
 
@@ -72,6 +73,20 @@ export function BookCreationArtifact({
   onSaveContent
 }: BookCreationArtifactProps) {
   
+  // Log book state for debugging
+  console.log('[BookCreationArtifact] Book state loaded:', {
+    bookTitle: state.bookTitle,
+    isPictureBook: state.isPictureBook,
+    currentStep: state.currentStep,
+    targetAge: state.targetAge,
+    environmentCount: state.steps.find(s => s.stepNumber === 4)?.data?.environments?.length,
+    environmentImages: state.steps.find(s => s.stepNumber === 4)?.data?.environments?.map((env: any) => ({
+      name: env.name,
+      hasImage: !!env.imageUrl,
+      imageUrl: env.imageUrl?.substring(0, 50) + '...'
+    }))
+  });
+  
   console.log('[BookCreationArtifact] Component mounted with props:', {
     hasOnSaveContent: !!onSaveContent,
     bookId: state.bookId,
@@ -95,6 +110,173 @@ export function BookCreationArtifact({
   
   // Keep state ref updated
   stateRef.current = state;
+
+  // Create a key based on environment image URLs to force re-render when images change
+  const environmentImageKey = useMemo(() => {
+    const step4 = state.steps.find(s => s.stepNumber === 4);
+    if (!step4?.data?.environments) return 'no-environments';
+    
+    const imageUrls = step4.data.environments.map((env: any) => env.imageUrl || env.environmentUrl || 'no-image').join('|');
+    // Create a more stable hash-like key from the URLs
+    const hash = imageUrls.split('').reduce((a: number, b: string) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    const key = `env-${step4.data.environments.length}-${Math.abs(hash).toString(36)}`;
+    console.log('[BookCreationArtifact] Environment image key:', key);
+    return key;
+  }, [state.steps]);
+  
+  console.log('[BookCreationArtifact] Environment image key changed:', environmentImageKey);
+
+  // Helper function to build picture book pages from scenes
+  const buildPictureBookPages = (state: BookArtifactState, scenes: any[], pages: any[]) => {
+    const storyStep = state.steps.find(s => s.stepNumber === 3);
+    
+    // Find actual cover and back cover scenes
+    const coverScene = scenes.find((scene: any) => {
+      const sceneName = (scene.name || scene.title || '').toLowerCase();
+      return sceneName.includes('cover') && !sceneName.includes('back');
+    });
+    
+    const backCoverScene = scenes.find((scene: any) => {
+      const sceneName = (scene.name || scene.title || '').toLowerCase();
+      return sceneName.includes('back') && sceneName.includes('cover');
+    });
+    
+    console.log('🔍 Found cover scene:', coverScene?.name, 'with image:', coverScene?.imageUrl);
+    console.log('🔍 Found back cover scene:', backCoverScene?.name, 'with image:', backCoverScene?.imageUrl);
+    
+    // Add cover page with proper image
+    pages.push({
+      kind: 'cover',
+      data: {
+        title: state.bookTitle,
+        subtitle: state.bookConcept,
+        // Use the actual cover scene image if available, otherwise fallback to first story scene
+        image: coverScene?.imageUrl || scenes.find(s => !s.name?.toLowerCase().includes('cover'))?.imageUrl || '/api/placeholder/400/500'
+      }
+    });
+    
+    // If we have spreads from Step 3, use them; otherwise create pages from scenes
+    if (storyStep?.data?.spreads && Array.isArray(storyStep.data.spreads)) {
+      // Use existing spreads structure
+      storyStep.data.spreads.forEach((spread: any, index: number) => {
+        const scene = scenes.find((s: any) => s.spread === spread.spread || s.name?.includes(spread.title));
+        
+        pages.push({
+          kind: 'text',
+          data: {
+            page: spread.spread + 1,
+            title: spread.title,
+            text: Array.isArray(spread.text) ? spread.text.join('\n\n') : spread.text,
+            image: scene?.imageUrl || '/api/placeholder/400/300'
+          }
+        });
+        
+        pages.push({
+          kind: 'image',
+          data: {
+            page: spread.spread + 1,
+            title: spread.title,
+            text: Array.isArray(spread.text) ? spread.text.join('\n\n') : spread.text,
+            image: scene?.imageUrl || '/api/placeholder/400/300'
+          }
+        });
+      });
+    } else {
+      // Create pages directly from scenes, but try to get story text from Step 3
+      const chapterScenes = storyStep?.data?.chapters?.[0]?.scenes || [];
+      
+      console.log('🔍 Chapter scenes from Step 3:', chapterScenes);
+      console.log('🔍 Scene images from Step 5:', scenes);
+      
+      // Filter out cover-related scenes as they should not be story pages
+      const storyScenes = scenes.filter((scene: any) => {
+        const sceneName = (scene.name || scene.title || '').toLowerCase();
+        return !sceneName.includes('cover') && 
+               !sceneName.includes('front') && 
+               !sceneName.includes('back');
+      });
+      
+      console.log('🔍 Filtered story scenes (excluding covers):', storyScenes.map(s => s.name));
+      
+      storyScenes.forEach((scene: any, index: number) => {
+        // Try multiple matching strategies to find the corresponding story content
+        let storyScene = null;
+        
+        // Strategy 1: Match by scene number (index + 1)
+        storyScene = chapterScenes.find((s: any) => s.sceneNumber === (index + 1));
+        
+        // Strategy 2: Match by similar title/name
+        if (!storyScene) {
+          storyScene = chapterScenes.find((s: any) => 
+            s.title && scene.name && 
+            (s.title.toLowerCase().includes(scene.name.toLowerCase()) || 
+             scene.name.toLowerCase().includes(s.title.toLowerCase()))
+          );
+        }
+        
+        // Strategy 3: Just use the scene at the same index
+        if (!storyScene && chapterScenes[index]) {
+          storyScene = chapterScenes[index];
+        }
+        
+        // PRIORITY 1: Use actual story text from Step 3 chapter content (if available)
+        let storyText = storyScene?.text || scene.text;
+        
+        // FALLBACK: Only generate story text if no chapter content exists
+        if (!storyText) {
+          storyText = `In this part of the story, ${scene.name?.toLowerCase() || 'the adventure continues'}.`;
+        }
+        
+        console.log(`📖 Scene ${index + 1}: "${scene.name}" - Using ${storyScene?.text ? 'REAL CHAPTER CONTENT' : 'SCENE TEXT'} story text:`, storyText?.substring(0, 50) + '...');
+        
+        pages.push({
+          kind: 'text',
+          data: {
+            page: index + 1,
+            title: scene.name || storyScene?.title || `Scene ${index + 1}`,
+            text: storyText,
+            image: scene.imageUrl || '/api/placeholder/400/300'
+          }
+        });
+        
+        pages.push({
+          kind: 'image',
+          data: {
+            page: index + 1,
+            title: scene.name || storyScene?.title || `Scene ${index + 1}`,
+            text: storyText,
+            image: scene.imageUrl || '/api/placeholder/400/300'
+          }
+        });
+      });
+    }
+    
+    // Add back cover at the end
+    if (backCoverScene) {
+      pages.push({
+        kind: 'back-cover',
+        data: {
+          title: state.bookTitle,
+          summary: state.bookConcept,
+          image: backCoverScene.imageUrl
+        }
+      });
+    } else {
+      // Fallback back cover without specific image
+      pages.push({
+        kind: 'back-cover',
+        data: {
+          title: state.bookTitle,
+          summary: state.bookConcept
+        }
+      });
+    }
+    
+    return pages;
+  };
 
   // Load Step 5 content from database (chapterNumber = 1+) if not already loaded
   useEffect(() => {
@@ -399,10 +581,51 @@ export function BookCreationArtifact({
     
     if (!hasChapters && !hasLegacyScenes) return [];
     
-    const pages = [];
+    const pages: any[] = [];
     
-          // For non-picture books with chapters, create text-based pages
-          if (hasChapters) {
+    console.log('[BookPreview] Building pages for:', {
+      isPictureBook: state.isPictureBook,
+      hasChapters,
+      hasLegacyScenes,
+      bookTitle: state.bookTitle
+    });
+    
+    // PICTURE BOOKS: Always use visual scene-based format
+    if (state.isPictureBook) {
+      console.log('[BookPreview] Building picture book pages...');
+      
+      // For picture books, prioritize scenes from Step 5, but fall back to chapters if needed
+      const scenes = finalStep?.data?.scenes || [];
+      const chapters = finalStep?.data?.chapters || [];
+      
+      // If we have scenes, use them directly
+      if (scenes.length > 0) {
+        console.log('[BookPreview] Using scenes from Step 5:', scenes.length);
+        return buildPictureBookPages(state, scenes, [...pages]);
+      }
+      
+      // If we have chapters but no scenes, extract scenes from chapters for picture book format
+      if (chapters.length > 0) {
+        console.log('[BookPreview] Converting chapters to scenes for picture book:', chapters.length);
+        const extractedScenes = chapters.flatMap((chapter: any) => 
+          chapter.scenes?.map((scene: any, index: number) => ({
+            name: scene.title || `${chapter.title} - Scene ${index + 1}`,
+            text: scene.text,
+            imageUrl: scene.imageUrl,
+            characters: scene.characters,
+            illustrationNotes: scene.illustrationNotes
+          })) || []
+        );
+        return buildPictureBookPages(state, extractedScenes, [...pages]);
+      }
+      
+      console.log('[BookPreview] No scenes or chapters found for picture book');
+      return [];
+    }
+    
+    // NON-PICTURE BOOKS: Use chapter-based text format
+    if (hasChapters) {
+      console.log('[BookPreview] Building text-only book pages...');
             // Get characters and environments for cover design
             const charactersStep = state.steps.find(s => s.stepNumber === 2);
             const environmentsStep = state.steps.find(s => s.stepNumber === 4);
@@ -545,136 +768,9 @@ export function BookCreationArtifact({
       return pages;
     }
     
-    // Legacy picture book format
-    const scenes = finalStep.data.scenes;
-    
-    // Add cover page
-    pages.push({
-      kind: 'cover',
-      data: {
-        title: state.bookTitle,
-        subtitle: state.bookConcept,
-        image: scenes[0]?.imageUrl || '/api/placeholder/400/500'
-      }
-    });
-    
-    // If we have spreads from Step 3, use them; otherwise create pages from scenes
-    if (storyStep?.data?.spreads && Array.isArray(storyStep.data.spreads)) {
-      // Use existing spreads structure
-      storyStep.data.spreads.forEach((spread: any, index: number) => {
-        const scene = scenes.find((s: any) => s.spread === spread.spread || s.name?.includes(spread.title));
-        
-        pages.push({
-          kind: 'text',
-          data: {
-            page: spread.spread + 1,
-            title: spread.title,
-            text: Array.isArray(spread.text) ? spread.text.join('\n\n') : spread.text,
-            image: scene?.imageUrl || '/api/placeholder/400/300'
-          }
-        });
-        
-        pages.push({
-          kind: 'image',
-          data: {
-            page: spread.spread + 1,
-            title: spread.title,
-            text: Array.isArray(spread.text) ? spread.text.join('\n\n') : spread.text,
-            image: scene?.imageUrl || '/api/placeholder/400/300'
-          }
-        });
-      });
-    } else {
-      // Create pages directly from scenes, but try to get story text from Step 3
-      const chapterScenes = storyStep?.data?.chapters?.[0]?.scenes || [];
-      
-      console.log('🔍 Chapter scenes from Step 3:', chapterScenes);
-      console.log('🔍 Scene images from Step 5:', scenes);
-      
-      scenes.forEach((scene: any, index: number) => {
-        // Try multiple matching strategies to find the corresponding story content
-        let storyScene = null;
-        
-        // Strategy 1: Match by scene number (index + 1)
-        storyScene = chapterScenes.find((s: any) => s.sceneNumber === (index + 1));
-        
-        // Strategy 2: Match by similar title/name
-        if (!storyScene) {
-          storyScene = chapterScenes.find((s: any) => 
-            s.title && scene.name && 
-            (s.title.toLowerCase().includes(scene.name.toLowerCase()) || 
-             scene.name.toLowerCase().includes(s.title.toLowerCase()))
-          );
-        }
-        
-        // Strategy 3: Just use the scene at the same index
-        if (!storyScene && chapterScenes[index]) {
-          storyScene = chapterScenes[index];
-        }
-        
-        // PRIORITY 1: Use actual story text from Step 3 chapter content (if available)
-        let storyText = storyScene?.text;
-        
-        // FALLBACK: Only generate story text if no chapter content exists
-        if (!storyText) {
-          // Create a simple narrative based on the scene name and context
-          const sceneName = scene.name || `Scene ${index + 1}`;
-          
-          // Create age-appropriate story text based on scene names
-          if (sceneName.includes('Window')) {
-            storyText = "Aya looked out her bedroom window as the stars began to twinkle. Something magical was happening in the alley below.";
-          } else if (sceneName.includes('Thread')) {
-            storyText = "A shimmering silver thread caught Aya's eye. It seemed to glow with its own special light, calling to her.";
-          } else if (sceneName.includes('Following')) {
-            storyText = "Quietly, Aya slipped on her slippers and followed the magical thread down the moonlit alley.";
-          } else if (sceneName.includes('Meeting') || sceneName.includes('Spidey')) {
-            storyText = "On the rooftop, Aya met a tiny, friendly spider who could weave threads of starlight. 'Hello,' whispered Aya.";
-          } else if (sceneName.includes('Puzzle') || sceneName.includes('Alley')) {
-            storyText = "Together, Aya and Spidey discovered a little firefly trapped behind a fence. They had to work as a team to help.";
-          } else if (sceneName.includes('Firefly') || sceneName.includes('Helping')) {
-            storyText = "With gentle hands, Aya helped free the tiny firefly. It glowed with gratitude and danced around them both.";
-          } else if (sceneName.includes('Surprise')) {
-            storyText = "Suddenly, strange shadows appeared on the rooftop. Aya felt scared, but Spidey was right there beside her.";
-          } else if (sceneName.includes('Steps') || sceneName.includes('Brave')) {
-            storyText = "Aya had to be brave and climb up using the laundry line. With Spidey's encouragement, she found her courage.";
-          } else if (sceneName.includes('Glow') || sceneName.includes('Garden')) {
-            storyText = "In the secret garden, magical lights danced everywhere. Aya, Spidey, and the firefly celebrated their friendship.";
-          } else if (sceneName.includes('Home') || sceneName.includes('Time')) {
-            storyText = "It was time to go home. Spidey's magical thread guided Aya safely back through the quiet streets.";
-          } else if (sceneName.includes('Back') || sceneName.includes('Bed')) {
-            storyText = "Back in her cozy room, Aya tucked a tiny glowing thread into a jar. She would always remember this magical night.";
-          } else if (sceneName.includes('Activity') || sceneName.includes('Endpaper')) {
-            storyText = "The end. Now you can draw your own magical night adventure and connect the dots to make Spidey's special thread!";
-          } else {
-            storyText = `In this part of the story, ${sceneName.toLowerCase()}.`;
-          }
-        }
-        
-        console.log(`📖 Scene ${index + 1}: "${scene.name}" - Using ${storyScene?.text ? 'REAL CHAPTER CONTENT' : 'GENERATED FALLBACK'} story text:`, storyText?.substring(0, 50) + '...');
-        
-        pages.push({
-          kind: 'text',
-          data: {
-            page: index + 1,
-            title: scene.name || storyScene?.title || `Scene ${index + 1}`,
-            text: storyText,
-            image: scene.imageUrl || '/api/placeholder/400/300'
-          }
-        });
-        
-        pages.push({
-          kind: 'image',
-          data: {
-            page: index + 1,
-            title: scene.name || storyScene?.title || `Scene ${index + 1}`,
-            text: storyText,
-            image: scene.imageUrl || '/api/placeholder/400/300'
-          }
-        });
-      });
-    }
-    
-    return pages;
+    // Fallback: No valid content found
+    console.log('[BookPreview] No valid content found for book pages');
+    return [];
   };
 
   const bookPages = useMemo(() => buildPhysicalPages(state), [
@@ -1293,7 +1389,7 @@ export function BookCreationArtifact({
                   )}
                   
                   {/* Sample lines */}
-                  {character.sampleLines && character.sampleLines.length > 0 && (
+                  {character.sampleLines && Array.isArray(character.sampleLines) && character.sampleLines.length > 0 && (
                     <div className="text-xs text-gray-600 mb-2">
                       <span className="font-medium">Sample Lines:</span>
                       <div className="mt-1 space-y-1">
@@ -1563,11 +1659,22 @@ export function BookCreationArtifact({
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {step.data.environments?.map((env: any, index: number) => (
-                  <Card key={index} className="p-4">
+                  <Card key={`${environmentImageKey}-${index}-${env.imageUrl || env.environmentUrl || 'no-image'}`} className="p-4">
                     {/* Environment Image */}
                     {(env.environmentImageUrl || env.imageUrl || env.environmentUrl || env.existingReference || env.masterPlate) ? (
-                      <img 
-                        src={env.environmentImageUrl || env.imageUrl || env.environmentUrl || env.existingReference || env.masterPlate} 
+                      (() => {
+                        const baseUrl = env.environmentImageUrl || env.imageUrl || env.environmentUrl || env.existingReference || env.masterPlate;
+                        const cacheKey = environmentImageKey.slice(-10);
+                        const finalUrl = `${baseUrl}?v=${cacheKey}`;
+                        console.log(`[BookCreationArtifact] Rendering image for ${env.name}:`, {
+                          baseUrl: baseUrl.substring(0, 50) + '...',
+                          cacheKey,
+                          finalUrl: finalUrl.substring(0, 60) + '...'
+                        });
+                        return (
+                          <img 
+                            key={`img-${env.imageUrl || env.environmentUrl || env.existingReference || 'fallback'}`}
+                            src={finalUrl}
                         alt={env.location || env.name}
                         className="w-full h-40 object-contain bg-gray-50 rounded mb-3"
                         onError={(e) => {
@@ -1575,6 +1682,8 @@ export function BookCreationArtifact({
                           target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgZmlsbD0iI2Y3ZjdmNyIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM5OTk5OTkiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGR5PSIuM2VtIj5JbWFnZSBub3QgYXZhaWxhYmxlPC90ZXh0Pjwvc3ZnPg==';
                         }}
                       />
+                        );
+                      })()
                     ) : (
                       <div className="w-full h-40 bg-gray-100 rounded mb-3 flex items-center justify-center border-2 border-dashed border-gray-300">
                         <div className="text-center">
@@ -1638,7 +1747,114 @@ export function BookCreationArtifact({
           </div>
         );
 
-      case 5: // Final Chapter Content
+      case 5: // Final Chapter Content / Scene Composition
+        // Differentiate between picture books and non-picture books
+        const isPictureBook = state.isPictureBook;
+        
+        // Log picture book state for debugging
+        console.log('[BookCreationArtifact] Step 5 isPictureBook:', isPictureBook);
+        console.log('[BookCreationArtifact] Full state.isPictureBook:', state.isPictureBook);
+        
+        if (isPictureBook) {
+          // Picture book: Show visual scene composition with images
+          return (
+            <div className="space-y-4">
+              {/* Picture Book Scene Composition */}
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 mb-4">
+                <div className="flex items-center gap-2 text-purple-800">
+                  <ImageIcon size={16} />
+                  <span className="font-medium">Picture Book Scene Composition</span>
+                </div>
+                <p className="text-purple-700 text-sm mt-1">
+                  Visual scenes with illustrations for your picture book. Each scene includes characters, environments, and story text.
+                </p>
+              </div>
+
+              {/* Render scenes with images - check both chapters and legacy scenes */}
+              {(() => {
+                // For picture books, extract scenes from chapters or use legacy scenes
+                const scenes = step.data.scenes || [];
+                const chaptersWithScenes = step.data.chapters?.flatMap((chapter: any) => 
+                  chapter.scenes?.map((scene: any, sceneIndex: number) => ({
+                    ...scene,
+                    chapterTitle: chapter.title,
+                    chapterNumber: chapter.chapterNumber,
+                    sceneNumber: sceneIndex + 1
+                  })) || []
+                ) || [];
+                
+                const allScenes = scenes.length > 0 ? scenes : chaptersWithScenes;
+                console.log('[BookCreationArtifact] Step 5 Picture Book Scenes:', {
+                  legacyScenes: scenes.length,
+                  chaptersWithScenes: chaptersWithScenes.length,
+                  totalScenes: allScenes.length
+                });
+                
+                return allScenes.length > 0 ? (
+                  <div className="grid gap-4">
+                    {allScenes.map((scene: any, index: number) => (
+                    <Card key={index} className="p-4">
+                      <div className="flex gap-4">
+                        {/* Scene Image */}
+                        <div className="w-32 h-24 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
+                          {scene.imageUrl ? (
+                            <img 
+                              src={scene.imageUrl} 
+                              alt={`Scene ${index + 1}`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400">
+                              <ImageIcon size={16} />
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Scene Content */}
+                        <div className="flex-1">
+                          <h5 className="font-medium text-sm mb-2">
+                            {scene.chapterTitle && scene.sceneNumber ? 
+                              `${scene.chapterTitle} - Scene ${scene.sceneNumber}` : 
+                              (scene.title || scene.name || `Scene ${scene.sceneNumber || index + 1}`)
+                            }
+                            {scene.environment && (
+                              <span className="text-xs text-gray-500 ml-2">• {scene.environment}</span>
+                            )}
+                          </h5>
+                          <p className="text-sm text-gray-700 mb-2">
+                            {scene.text || scene.content || scene.sceneDescription}
+                          </p>
+                          
+                          {/* Characters */}
+                          {scene.characters && scene.characters.length > 0 && (
+                            <div className="mb-2">
+                              <div className="text-xs text-gray-500 mb-1">Characters:</div>
+                              <div className="flex flex-wrap gap-1">
+                                {scene.characters.map((character: string, charIndex: number) => (
+                                  <span key={charIndex} className="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded">
+                                    {character}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {!scene.imageUrl && (
+                            <p className="text-xs text-orange-600 italic">Scene illustration pending</p>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+              
+              {/* Fallback removed - scenes are now extracted from chapters in the IIFE above */}
+            </div>
+          );
+        } else {
+          // Non-picture book: Show chapter content editing interface
         return (
           <div className="space-y-4">
             {/* Step Title and Summary */}
@@ -1648,8 +1864,19 @@ export function BookCreationArtifact({
               </div>
             )}
 
-            {/* Main content: Final chapters with complete scenes */}
-            {step.data.chapters && (
+              {/* Non-Picture Book Chapter Editing */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <div className="flex items-center gap-2 text-blue-800">
+                  <BookOpen size={16} />
+                  <span className="font-medium">Chapter Book Content</span>
+                </div>
+                <p className="text-blue-700 text-sm mt-1">
+                  Edit and refine your chapter content. Each chapter is saved with version history.
+                </p>
+              </div>
+
+              {/* Main content: Final chapters with complete scenes */}
+              {step.data.chapters && (
               <div>
                 {/* Enhanced Editing Info */}
                 {step.data.chapters.length > 1 && (
@@ -2002,6 +2229,7 @@ export function BookCreationArtifact({
             )}
           </div>
         );
+        }
 
       case 6: // Final Review
         return (
@@ -2277,6 +2505,17 @@ export function BookCreationArtifact({
                     } else if (page.kind === 'back-cover') {
                       return (
                         <div className="w-full h-full bg-gradient-to-br from-indigo-700 via-blue-600 to-purple-600 text-white relative overflow-hidden">
+                          {/* Background image if available */}
+                          {page.data.image && (
+                            <div className="absolute inset-0">
+                              <img 
+                                src={page.data.image} 
+                                alt="Back Cover" 
+                                className="w-full h-full object-cover opacity-30"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-br from-indigo-700/80 via-blue-600/80 to-purple-600/80" />
+                            </div>
+                          )}
                           <div className="absolute inset-0 bg-black/20" />
                           <div className="relative z-10 flex flex-col h-full p-8 justify-center">
                             <div className="text-center mb-6">
@@ -2475,6 +2714,17 @@ export function BookCreationArtifact({
                 </div>
               ) : page.kind === 'back-cover' ? (
                 <div className="flex flex-col h-full bg-gradient-to-br from-indigo-700 via-blue-600 to-purple-600 text-white relative overflow-hidden">
+                  {/* Background image if available */}
+                  {page.data.image && (
+                    <div className="absolute inset-0">
+                      <img 
+                        src={page.data.image} 
+                        alt="Back Cover" 
+                        className="w-full h-full object-cover opacity-30"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-br from-indigo-700/80 via-blue-600/80 to-purple-600/80" />
+                    </div>
+                  )}
                   <div className="absolute inset-0 bg-black/20" />
                   <div className="relative z-10 flex flex-col h-full p-8">
                     <div className="text-center mb-6">

@@ -31,6 +31,7 @@ const unifiedBookCreationSchema = z.object({
   bookTitle: z.string().optional().describe('Title of the book'),
   bookConcept: z.string().optional().describe('High-level book concept and story idea'),
   targetAge: z.string().optional().describe('Target age group'),
+  isPictureBook: z.boolean().optional().describe('Whether this is a picture book (true) or chapter book (false). Use this to override auto-detection from content.'),
   
   // Step-specific data (for update_step action)
   stepNumber: z.number().optional().describe('Step number to update (1-6)'),
@@ -61,15 +62,24 @@ type UnifiedBookCreationInput = z.infer<typeof unifiedBookCreationSchema>;
  * This prevents AI agents from accidentally removing existing content when updating partial data
  */
 function smartMergeStepData(existingData: any, newData: any, stepNumber: number): any {
+  console.log(`[smartMergeStepData] Step ${stepNumber} starting merge:`, {
+    hasExisting: !!existingData,
+    hasNew: !!newData,
+    existingType: typeof existingData,
+    newType: typeof newData
+  });
+  
   if (!existingData || typeof existingData !== 'object') {
+    console.log(`[smartMergeStepData] Step ${stepNumber}: No valid existing data, returning new data`);
     return newData || {};
   }
   
   if (!newData || typeof newData !== 'object') {
+    console.log(`[smartMergeStepData] Step ${stepNumber}: No valid new data, returning existing data`);
     return existingData;
   }
   
-  console.log(`[smartMergeStepData] Step ${stepNumber} merge:`, {
+  console.log(`[smartMergeStepData] Step ${stepNumber} merge details:`, {
     existingKeys: Object.keys(existingData),
     newKeys: Object.keys(newData)
   });
@@ -111,6 +121,11 @@ function smartMergeStepData(existingData: any, newData: any, stepNumber: number)
     }
     // Skip empty strings to preserve existing content
   }
+  
+  console.log(`[smartMergeStepData] Step ${stepNumber} merge complete:`, {
+    mergedKeys: Object.keys(mergedData),
+    resultSize: Object.keys(mergedData).length
+  });
   
   return mergedData;
 }
@@ -216,6 +231,18 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
   tool({
     description: `Unified Book Creation Tool - Creates a persistent artifact UI for step-by-step book creation.
     
+    📖 **PICTURE BOOK vs CHAPTER BOOK SUPPORT**: This tool automatically adapts based on the user's choice:
+    - Picture books: Focus on visual scenes with illustrations and shorter text - IMAGES ARE REQUIRED for characters, environments, and scenes
+    - Chapter books: Focus on longer narrative content with detailed chapter development - Images are optional
+    The book type is determined from the user's initial selection and stored in the workflow state.
+    
+    🎨 **PICTURE BOOK IMAGE REQUIREMENTS**:
+    When isPictureBook is true, the AI MUST:
+    - Step 2: Generate character portrait images and include imageUrl in character objects
+    - Step 4: Generate environment images and include imageUrl in environment objects  
+    - Step 5: Generate scene composition images and include imageUrl in scene objects
+    Use the createSingleBookImage tool to generate these images before updating step data.
+    
     This tool manages the entire book creation workflow in a single artifact interface with the following steps:
     
     1. Story Planning - High-level concept, themes, character outlines
@@ -235,16 +262,18 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
     Set searchedMemory: true if you searched memory, false if you skipped it.
     
     ACTIONS:
-    - initialize: Create new book artifact with initial concept
+    - initialize: Create new book artifact with initial concept (INCLUDE isPictureBook parameter based on user's choice)
     - update_step: Update a specific step with validated structured content (SEARCH MEMORY FIRST!)
     - approve_step: User approves/rejects step from artifact UI
     - regenerate: Regenerate content for current step based on feedback (SEARCH MEMORY FIRST!)
-    - finalize: Complete the book creation process`,
+    - finalize: Complete the book creation process
+    
+    ⚠️ IMPORTANT: When initializing a book, always include the isPictureBook parameter based on the user's choice from the book creation wizard. This ensures proper workflow behavior and image requirements.`,
     
     inputSchema: unifiedBookCreationSchema,
     
     execute: async (input: UnifiedBookCreationInput) => {
-      const { action, bookId, bookTitle, bookConcept, targetAge, stepNumber, stepData, searchedMemory, approved, feedback, conversationContext, currentBookTitle } = input;
+      const { action, bookId, bookTitle, bookConcept, targetAge, isPictureBook, stepNumber, stepData, searchedMemory, approved, feedback, conversationContext, currentBookTitle } = input;
       
       // Generate or use existing book ID
       const currentBookId = bookId || generateUUID();
@@ -297,6 +326,12 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
             const premise = lines.find(line => !line.startsWith('#') && line.length > 50) || 
                            lines.slice(0, 3).join(' ').substring(0, 200) + '...';
             
+            // Detect if this is a picture book - prefer system context over content analysis
+            const isPictureBook = content.toLowerCase().includes('picture book') || 
+                                 content.toLowerCase().includes('illustration') ||
+                                 content.toLowerCase().includes('illustrated') ||
+                                 (targetAge && (targetAge.includes('3-') || targetAge.includes('4-') || targetAge.includes('5-')));
+            
             const styleGuide = content.includes('style') || content.includes('picture book') 
               ? 'Children\'s picture book style with vibrant illustrations'
               : 'Family-friendly storytelling style';
@@ -305,18 +340,36 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
               premise: premise || 'Story concept to be developed',
               themes: [...new Set(themes)].slice(0, 5) || ['Adventure', 'Family'],
               styleGuide,
+              isPictureBook,
               fullContent: content
             };
           };
 
           // Parse the book concept if provided
           const parsedContent = bookConcept ? parseStoryContent(bookConcept) : null;
+          
+          // Determine isPictureBook from parameter, parsed content, or auto-detection
+          const determinedIsPictureBook: boolean | undefined = (() => {
+            if (typeof isPictureBook === 'boolean') return isPictureBook;
+            if (typeof parsedContent?.isPictureBook === 'boolean') return parsedContent.isPictureBook;
+            return undefined;
+          })();
+          
+          console.log('[createBookArtifact] 📖 Initialization isPictureBook detection:', {
+            providedIsPictureBook: isPictureBook,
+            hasParsedContent: !!parsedContent,
+            parsedIsPictureBook: parsedContent?.isPictureBook,
+            determinedIsPictureBook,
+            bookConcept: bookConcept ? bookConcept.substring(0, 100) + '...' : 'No concept',
+            targetAge
+          });
 
           const initialState: BookArtifactState = {
             bookId: currentBookId,
             bookTitle: bookTitle || 'Untitled Book',
             bookConcept: bookConcept || '',
             targetAge: targetAge || '3-8 years',
+            isPictureBook: determinedIsPictureBook,
             currentStep: 1,
             steps: BOOK_CREATION_STEPS.map(step => ({
               stepNumber: step.number,
@@ -326,7 +379,8 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
                 content: parsedContent.fullContent,
                 premise: parsedContent.premise,
                 themes: parsedContent.themes,
-                styleBible: parsedContent.styleGuide
+                styleBible: parsedContent.styleGuide,
+                isPictureBook: determinedIsPictureBook
               } : undefined
             })),
             createdAt: new Date(),
@@ -417,7 +471,23 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
           }
 
           // Use stepData as-is - trust the AI SDK and Zod schemas completely
-          const validatedStepData = stepData;
+          let validatedStepData = stepData;
+          
+          // Enhanced spatial processing for environment and scene steps
+          if (stepNumber === 4 && validatedStepData.environments) {
+            console.log('[createBookArtifact] 🗺️ Enhancing environments with spatial data');
+            validatedStepData = await enhanceEnvironmentsWithSpatialData(validatedStepData, currentBookId, session);
+          } else if (stepNumber === 5 && validatedStepData.chapters) {
+            console.log('[createBookArtifact] 🎯 Enhancing scenes with prescriptive positioning');
+            validatedStepData = await enhanceScenesWithPrescriptivePositioning(validatedStepData, currentBookId, session);
+          }
+          
+          // Extract isPictureBook flag from Step 1 data to update artifact state
+          let isPictureBookFlag: boolean | undefined = undefined;
+          if (stepNumber === 1 && typeof validatedStepData.isPictureBook === 'boolean') {
+            isPictureBookFlag = validatedStepData.isPictureBook;
+            console.log('[createBookArtifact] 📖 Picture book flag detected:', isPictureBookFlag);
+          }
           
           // Step 5 now uses the same chapters structure as Step 3 - no special validation needed
           
@@ -439,11 +509,40 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
               console.log('[createBookArtifact] 🔍 Existing steps with data:', existingWorkflowState.steps.map(s => ({ 
                 stepNumber: s.stepNumber, 
                 status: s.status, 
-                hasData: !!s.data 
+                hasData: !!s.data,
+                dataKeys: s.data ? Object.keys(s.data) : []
               })));
+              
+              // Specifically check Step 1 data
+              const step1 = existingWorkflowState.steps.find(s => s.stepNumber === 1);
+              if (step1?.data) {
+                console.log('[createBookArtifact] 📋 Step 1 existing data details:', {
+                  keys: Object.keys(step1.data),
+                  premise: step1.data.premise ? String(step1.data.premise).substring(0, 100) + '...' : 'No premise',
+                  themes: step1.data.themes || 'No themes',
+                  content: step1.data.content ? String(step1.data.content).substring(0, 100) + '...' : 'No content'
+                });
+              }
             }
           } catch (error) {
             console.error('[createBookArtifact] Error retrieving existing workflow:', error);
+          }
+          
+          // Get current isPictureBook state from existing workflow or detected flag
+          const currentIsPictureBook = isPictureBookFlag ?? existingWorkflowState?.isPictureBook;
+          console.log('[createBookArtifact] 📖 Current isPictureBook state:', currentIsPictureBook);
+          
+          // Validate picture book image requirements
+          if (currentIsPictureBook === true) {
+            const imageValidation = validatePictureBookImageRequirements(stepNumber, validatedStepData);
+            if (!imageValidation.isValid) {
+              return {
+                success: false,
+                error: `Picture book image requirements not met for Step ${stepNumber}: ${imageValidation.errors.join(', ')}`,
+                requiredImages: imageValidation.requiredImages,
+                message: `This is a picture book. Please use the createSingleBookImage tool to generate the required images first, then update the step data with the imageUrl fields.`
+              };
+            }
           }
           
           // Process the validated step data based on step number
@@ -480,8 +579,20 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
           console.log('[createBookArtifact] 🔍 Preserved steps before update:', preservedSteps.map(s => ({ 
             stepNumber: s.stepNumber, 
             status: s.status, 
-            hasData: !!s.data 
+            hasData: !!s.data,
+            dataKeys: s.data ? Object.keys(s.data) : []
           })));
+          
+          // Specifically check if Step 1 data is preserved
+          const preservedStep1 = preservedSteps.find(s => s.stepNumber === 1);
+          if (preservedStep1?.data) {
+            console.log('[createBookArtifact] 📋 Preserved Step 1 data details:', {
+              keys: Object.keys(preservedStep1.data),
+              premise: preservedStep1.data.premise ? String(preservedStep1.data.premise).substring(0, 100) + '...' : 'No premise'
+            });
+          } else {
+            console.log('[createBookArtifact] ⚠️ No Step 1 data found in preserved steps!');
+          }
           
           // Update only the current step while preserving others
           const updatedSteps = preservedSteps.map(step => {
@@ -496,6 +607,15 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
                 mergedKeys: Object.keys(mergedStepData)
               });
               
+              // Additional debugging for Step 1 specifically
+              if (stepNumber === 1) {
+                console.log('[createBookArtifact] 📋 Step 1 smart merge details:', {
+                  existingPremise: existingStepData?.premise ? String(existingStepData.premise).substring(0, 100) + '...' : 'No existing premise',
+                  newPremise: processedStepData?.premise ? String(processedStepData.premise).substring(0, 100) + '...' : 'No new premise',
+                  mergedPremise: mergedStepData?.premise ? String(mergedStepData.premise).substring(0, 100) + '...' : 'No merged premise'
+                });
+              }
+              
               return {
                 ...step,
                 status: 'completed' as const,
@@ -503,6 +623,10 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
               };
             } else if (step.stepNumber < stepNumber) {
               // Keep previous steps as approved with their existing data
+              console.log(`[createBookArtifact] 📋 Preserving Step ${step.stepNumber} as approved:`, {
+                hasData: !!step.data,
+                dataKeys: step.data ? Object.keys(step.data) : []
+              });
               return {
                 ...step,
                 status: 'approved' as const
@@ -519,8 +643,20 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
           console.log('[createBookArtifact] 🔍 Updated steps after processing:', updatedSteps.map(s => ({ 
             stepNumber: s.stepNumber, 
             status: s.status, 
-            hasData: !!s.data 
+            hasData: !!s.data,
+            dataKeys: s.data ? Object.keys(s.data) : []
           })));
+          
+          // Final check on Step 1 data before saving
+          const finalStep1 = updatedSteps.find(s => s.stepNumber === 1);
+          if (finalStep1?.data) {
+            console.log('[createBookArtifact] 📋 Final Step 1 data before save:', {
+              keys: Object.keys(finalStep1.data),
+              premise: finalStep1.data.premise ? String(finalStep1.data.premise).substring(0, 100) + '...' : 'No premise'
+            });
+          } else {
+            console.log('[createBookArtifact] ❌ Step 1 data LOST! No data in final steps.');
+          }
           
           // Auto-finalize when Step 5 is completed
           if (stepNumber === 5) {
@@ -686,6 +822,7 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
             bookTitle: actualBookTitle || 'Book Creation',
             bookConcept: bookConcept || existingWorkflowState?.bookConcept || '',
             targetAge: targetAge || existingWorkflowState?.targetAge || '3-8 years',
+            isPictureBook: isPictureBookFlag ?? existingWorkflowState?.isPictureBook,
             currentStep: stepNumber === 5 ? 6 : stepNumber, // Auto-advance to Step 6 when Step 5 is completed
             steps: updatedSteps,
             createdAt: existingWorkflowState?.createdAt || new Date(),
@@ -1311,21 +1448,8 @@ async function saveWorkflowToDatabase(workflowState: BookArtifactState, session:
   try {
     const { db } = await import('@/lib/db/db');
     const { Book } = await import('@/lib/db/schema');
-    const { eq, and } = await import('drizzle-orm');
+    const { eq, and, sql } = await import('drizzle-orm');
     
-    // Check if a workflow record exists for this book
-    const existingRecord = await db
-      .select()
-      .from(Book)
-      .where(
-        and(
-          eq(Book.bookId, workflowState.bookId),
-          eq(Book.userId, session.user.id),
-          eq(Book.chapterNumber, 0) // Use chapter 0 for workflow metadata
-        )
-      )
-      .limit(1);
-
     // Create a readable summary of the workflow progress
     const completedSteps = workflowState.steps.filter(step => step.status === 'completed' || step.status === 'approved');
     const currentStepName = workflowState.steps.find(step => step.stepNumber === workflowState.currentStep)?.stepName || `Step ${workflowState.currentStep}`;
@@ -1353,27 +1477,41 @@ Workflow Data: ${JSON.stringify(workflowState, null, 2)}`;
       updatedAt: new Date()
     };
 
-    if (existingRecord.length > 0) {
-      // Update existing workflow record
-      await db
-        .update(Book)
-        .set(workflowData)
-        .where(
-          and(
-            eq(Book.bookId, workflowState.bookId),
-            eq(Book.userId, session.user.id),
-            eq(Book.chapterNumber, 0)
-          )
-        );
-      
-      console.log(`[saveWorkflowToDatabase] ✅ Updated workflow for book ${workflowState.bookId}`);
+    // Use UPSERT (INSERT ... ON CONFLICT DO UPDATE) to prevent duplicates
+    // This is atomic and handles race conditions properly
+    console.log(`[saveWorkflowToDatabase] 🔄 Upserting workflow for book ${workflowState.bookId}...`);
+    
+    const result = await db.execute(sql`
+      INSERT INTO "Books" (
+        "bookId", "userId", "bookTitle", "chapterNumber", "chapterTitle", 
+        "content", "version", "is_latest", "createdAt", "updatedAt"
+      ) VALUES (
+        ${workflowState.bookId}, 
+        ${session.user.id}, 
+        ${workflowState.bookTitle}, 
+        0, 
+        ${workflowData.chapterTitle}, 
+        ${workflowData.content}, 
+        ${workflowData.version}, 
+        ${workflowData.is_latest}, 
+        NOW(), 
+        NOW()
+      )
+      ON CONFLICT ("bookId", "userId", "chapterNumber") 
+      DO UPDATE SET 
+        "bookTitle" = EXCLUDED."bookTitle",
+        "chapterTitle" = EXCLUDED."chapterTitle",
+        "content" = EXCLUDED."content",
+        "version" = EXCLUDED."version",
+        "is_latest" = EXCLUDED."is_latest",
+        "updatedAt" = NOW()
+      RETURNING "id", "createdAt", "updatedAt"
+    `);
+
+    if (result.length > 0) {
+      console.log(`[saveWorkflowToDatabase] ✅ Upserted workflow for book ${workflowState.bookId} (ID: ${result[0].id})`);
     } else {
-      // Create new workflow record
-      await db
-        .insert(Book)
-        .values(workflowData);
-      
-      console.log(`[saveWorkflowToDatabase] ✅ Created workflow for book ${workflowState.bookId}`);
+      console.warn(`[saveWorkflowToDatabase] ⚠️ Upsert returned no results for book ${workflowState.bookId}`);
     }
   } catch (error) {
     console.error('[saveWorkflowToDatabase] Error:', error);
@@ -1420,6 +1558,7 @@ export async function getWorkflowFromDatabase(bookId: string, session: Session):
         
         const workflowState = JSON.parse(jsonContent) as BookArtifactState;
         console.log(`[getWorkflowFromDatabase] ✅ Retrieved workflow for book ${bookId}`);
+        console.log(`[getWorkflowFromDatabase] 📖 isPictureBook state:`, workflowState.isPictureBook);
         console.log(`[getWorkflowFromDatabase] 🔍 Loaded steps with data:`, workflowState.steps.map(s => ({ 
           stepNumber: s.stepNumber, 
           status: s.status, 
@@ -1532,6 +1671,202 @@ export const searchAndUseExistingImages = ({ session, dataStream }: { session: S
       }
     }
   });
+
+/**
+ * Enhanced spatial processing for environments (Step 4)
+ */
+async function enhanceEnvironmentsWithSpatialData(stepData: any, bookId: string, session: Session): Promise<any> {
+  if (!stepData.environments || !Array.isArray(stepData.environments)) {
+    return stepData;
+  }
+  
+  const enhancedEnvironments = await Promise.all(
+    stepData.environments.map(async (env: any) => {
+      // Add spatial enhancement prompts for top-down views
+      const spatialEnhancements = {
+        spatialViewType: 'top-down-with-detail',
+        spatialPromptAddition: `
+
+🗺️ SPATIAL LAYOUT REQUIREMENTS:
+- Create from a top-down or elevated isometric view showing complete spatial relationships
+- Include clear zones for character placement (seating areas, walkways, interaction points)
+- Show architectural accuracy with proper proportions and scale references
+- Define clear sight lines and accessibility paths
+- Include spatial reference points for accurate character positioning
+
+ZONE DEFINITION: Clearly define functional areas within this environment:
+- Seating/resting areas with specific positions
+- Movement corridors and pathways  
+- Interaction zones (doors, windows, furniture)
+- Scale references for character placement
+- Clear boundaries between different functional areas
+
+This environment will serve as a spatial foundation for precise character placement in scenes.`,
+        
+        enhancedDescription: `${env.description || ''} 
+
+SPATIAL CONTEXT: This ${env.name} environment needs comprehensive spatial layout visibility. Show the complete space from an elevated perspective that reveals:
+- All functional zones and their relationships
+- Clear pathways and access points
+- Seating arrangements and interaction areas
+- Proper scale and proportional relationships
+- Environmental elements that characters can interact with
+
+The view should provide enough spatial information for characters to be placed accurately and logically in subsequent scene compositions.`
+      };
+      
+      return {
+        ...env,
+        ...spatialEnhancements
+      };
+    })
+  );
+  
+  return {
+    ...stepData,
+    environments: enhancedEnvironments,
+    spatialEnhancementApplied: true,
+    spatialNotes: 'Environments enhanced with top-down spatial layout requirements for accurate character placement'
+  };
+}
+
+/**
+ * Enhanced prescriptive positioning for scenes (Step 5)
+ */
+async function enhanceScenesWithPrescriptivePositioning(stepData: any, bookId: string, session: Session): Promise<any> {
+  if (!stepData.chapters || !Array.isArray(stepData.chapters)) {
+    return stepData;
+  }
+  
+  const enhancedChapters = await Promise.all(
+    stepData.chapters.map(async (chapter: any) => {
+      if (!chapter.scenes || !Array.isArray(chapter.scenes)) {
+        return chapter;
+      }
+      
+      const enhancedScenes = chapter.scenes.map((scene: any) => {
+        // Add prescriptive positioning requirements
+        const prescriptiveEnhancements = {
+          prescriptivePositioning: true,
+          spatialInstructions: `
+
+🎯 PRESCRIPTIVE CHARACTER POSITIONING:
+When creating this scene, be extremely specific about character placement:
+
+SCENE: ${scene.text || scene.content || 'Scene description'}
+${scene.characters ? `CHARACTERS: ${scene.characters.join(', ')}` : ''}
+${scene.environment ? `ENVIRONMENT: ${scene.environment}` : ''}
+
+POSITIONING REQUIREMENTS:
+- Specify exact locations within the environment (e.g., "sitting in airplane seat 12A", "standing in the aisle between rows 5 and 6")
+- Define character poses and body language clearly
+- Describe what each character is touching, leaning on, or interacting with
+- Specify facing directions and eye contact between characters
+- Ensure all positions are physically possible and spatially consistent
+
+SPATIAL VALIDATION:
+- Characters cannot float or be placed in impossible positions
+- All interactions with environment must be realistic (sitting IN seats, not ON trays)
+- Character scale must be appropriate for the environment
+- Multiple characters must have logical spatial relationships
+
+This prescriptive approach prevents spatial inconsistencies and ensures realistic, believable scene composition.`,
+          
+          enhancedImagePrompt: scene.illustrationNotes ? 
+            `${scene.illustrationNotes}
+
+🎯 SPATIAL POSITIONING CRITICAL REQUIREMENTS:
+- Use EXACT positioning language (specific seat numbers, precise locations)
+- Characters must interact realistically with environment elements
+- Show proper scale relationships between characters and environment
+- Validate that all positions are physically possible and logical
+- Characters should appear naturally integrated, not artificially placed
+
+PRESCRIPTIVE SCENE COMPOSITION: Use the environment as a spatial foundation and place each character in their specified, realistic position within that space.` 
+            : undefined
+        };
+        
+        return {
+          ...scene,
+          ...prescriptiveEnhancements
+        };
+      });
+      
+      return {
+        ...chapter,
+        scenes: enhancedScenes
+      };
+    })
+  );
+  
+  return {
+    ...stepData,
+    chapters: enhancedChapters,
+    prescriptivePositioningApplied: true,
+    spatialNotes: 'Scenes enhanced with prescriptive character positioning requirements to prevent spatial inconsistencies'
+  };
+}
+
+/**
+ * Validate that picture books have required images for each step
+ */
+function validatePictureBookImageRequirements(stepNumber: number, stepData: any): {
+  isValid: boolean;
+  errors: string[];
+  requiredImages: string[];
+} {
+  const errors: string[] = [];
+  const requiredImages: string[] = [];
+  
+  switch (stepNumber) {
+    case 2: // Character Creation
+      if (stepData.characters && Array.isArray(stepData.characters)) {
+        for (const character of stepData.characters) {
+          if (!character.imageUrl && !character.portraitUrl) {
+            errors.push(`Character "${character.name}" missing imageUrl`);
+            requiredImages.push(`Character portrait for ${character.name}`);
+          }
+        }
+      }
+      break;
+      
+    case 4: // Environment Design
+      if (stepData.environments && Array.isArray(stepData.environments)) {
+        for (const environment of stepData.environments) {
+          if (!environment.imageUrl) {
+            errors.push(`Environment "${environment.name}" missing imageUrl`);
+            requiredImages.push(`Environment image for ${environment.name}`);
+          }
+        }
+      }
+      break;
+      
+    case 5: // Scene Composition
+      if (stepData.chapters && Array.isArray(stepData.chapters)) {
+        for (const chapter of stepData.chapters) {
+          if (chapter.scenes && Array.isArray(chapter.scenes)) {
+            for (const scene of chapter.scenes) {
+              if (!scene.imageUrl) {
+                errors.push(`Scene "${scene.title || scene.sceneNumber || 'untitled'}" missing imageUrl`);
+                requiredImages.push(`Scene image for ${scene.title || `Scene ${scene.sceneNumber}`}`);
+              }
+            }
+          }
+        }
+      }
+      break;
+      
+    default:
+      // No image requirements for other steps
+      break;
+  }
+  
+  return {
+    isValid: errors.length === 0,
+    errors,
+    requiredImages
+  };
+}
 
 // Export types for use in UI components
 export type { BookArtifactState, BookCreationStep, UnifiedBookCreationInput };

@@ -26,21 +26,55 @@ export function ThinkingStateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setThinkingState = (newState: string) => {
-    // We'll still let other components set this, but we want to normalize
-    // the various thinking states to ensure consistency
+    // Enhanced thinking state that shows specific progress for book creation
+    console.log('[ThinkingState] Setting state:', newState);
+    
+    // Book creation specific states - show these as-is for better UX
+    const bookCreationStates = [
+      'Creating characters...',
+      'Developing story plot...',
+      'Writing chapter content...',
+      'Designing environments...',
+      'Composing scenes...',
+      'Preparing final review...',
+      'Generating character portraits...',
+      'Creating book illustrations...',
+      'Building story structure...',
+      'Crafting dialogue...',
+      'Setting up scenes...',
+      'Polishing content...'
+    ];
+    
+    // If it's a book creation specific state, show it as-is
+    if (bookCreationStates.some(state => 
+      newState.toLowerCase().includes(state.toLowerCase().replace('...', ''))
+    )) {
+      setState(newState);
+      return;
+    }
+    
+    // Memory and tool-specific states - show these as-is
+    if (newState.toLowerCase().includes('searching memories') ||
+        newState.toLowerCase().includes('creating image') ||
+        newState.toLowerCase().includes('updating step') ||
+        newState.toLowerCase().includes('working on')) {
+      setState(newState);
+      return;
+    }
     
     // Normalize "initializing" variations
     if (newState.toLowerCase().includes('initializing')) {
-      setState('Thinking...');
+      setState('Getting started...');
       return;
     }
     
-    // Normalize "processing" variations
+    // Normalize "processing" variations but make them more specific
     if (newState.toLowerCase().includes('processing')) {
-      setState('Thinking...');
+      setState('Processing your request...');
       return;
     }
     
+    // Default fallback
     setState(newState);
   };
 

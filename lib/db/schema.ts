@@ -377,7 +377,15 @@ export const Book = pgTable(
     version: text('version').notNull().default('1'), // Version number for chapter revisions
     is_latest: boolean('is_latest').notNull().default(true), // Flag to mark the latest version
   },
-  // No additional constraints - allow multiple versions per chapter
+  (table) => ({
+    // Unique constraint to prevent duplicate chapters for the same book/user
+    // This ensures only one record per (bookId, userId, chapterNumber) combination
+    bookUserChapterUnique: unique("Books_bookId_userId_chapterNumber_unique").on(
+      table.bookId, 
+      table.userId, 
+      table.chapterNumber
+    ),
+  })
 );
 
 export type Book = InferSelectModel<typeof Book>;

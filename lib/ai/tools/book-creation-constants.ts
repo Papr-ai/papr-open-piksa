@@ -24,6 +24,7 @@ export const StoryPlanningDataSchema = z.object({
   themes: z.array(z.string()).optional().describe('Story themes'),
   narrativeVoice: z.string().optional().describe('Narrative voice and style'),
   styleBible: z.string().optional().describe('Visual style guide'),
+  isPictureBook: z.boolean().optional().describe('Whether this is a picture book (true) or chapter book (false)'),
   characters: z.array(z.object({
     name: z.string(), // REQUIRED - character needs a name
     age: z.union([z.number(), z.string()]).optional(),
@@ -170,6 +171,7 @@ export interface BookArtifactState {
   bookTitle: string;
   bookConcept: string;
   targetAge: string;
+  isPictureBook?: boolean;
   currentStep: number;
   steps: BookCreationStep[];
   createdAt: Date;

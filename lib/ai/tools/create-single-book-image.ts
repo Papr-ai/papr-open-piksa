@@ -96,6 +96,7 @@ const createSingleBookImageSchema = z.object({
   // Character-specific fields
   physicalDescription: z.string().optional().describe('Physical appearance details for characters'),
   role: z.string().optional().describe('Character role in the story'),
+  age: z.union([z.number(), z.string()]).optional().describe('Character age (e.g., 7, "8 years old", "young adult")'),
   height: z.string().optional().describe('Character height (e.g., "tall", "short", "average", "4 feet", "very tall for age 8")'),
   relativeSize: z.string().optional().describe('Size relative to other characters (e.g., "tallest", "shortest", "same height as Sarah")'),
   
@@ -174,6 +175,13 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
     **Do NOT use the generic 'createImage' tool for book content - use this tool instead.**
     **CRITICAL: This tool handles ALL image creation internally - do NOT call other image tools after using this!**
     
+    **🔄 WORKFLOW REFRESH REQUIREMENT:**
+    After creating/updating an image, you MUST call createBookArtifact with action: 'update_step' to refresh the workflow UI:
+    - Character images: Call createBookArtifact with stepNumber: 2 to refresh Step 2 (Character Creation)
+    - Environment images: Call createBookArtifact with stepNumber: 4 to refresh Step 4 (Environment Design)
+    - Scene images: Call createBookArtifact with stepNumber: 5 to refresh Step 5 (Scene Composition)
+    This ensures the new images appear in the workflow immediately.
+    
     **IMPORTANT: For EDITING existing scenes in book images, use the created scene images as the seed for 'editImage' tool instead with a simple prompt like "Edit the image to increase the height of the second character" !**
     - If the user wants a totally different scene image then you will need to recreate it with the right character and environment as seeds vs. use the existing scene image as the seed.
     - If user wants to modify an existing image (change height, colors, add/remove elements), use editImage
@@ -187,7 +195,7 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
     execute: async (input: CreateSingleBookImageInput): Promise<CreateSingleBookImageOutput> => {
       const { 
         bookId, bookTitle, imageType, imageId, name, description, styleBible,
-        physicalDescription, role, height, relativeSize, timeOfDay, weather, 
+        physicalDescription, role, age, height, relativeSize, timeOfDay, weather, 
         characters, characterHeights, environment, seedImages, seedImageTypes, 
         styleConsistency, aspectRatio, sceneContext, priorScene, conversationContext, 
         planId, currentStep, totalSteps 
@@ -249,6 +257,7 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
           enhancedDescription = `Transparent character portrait: ${name}. ${description}`;
           if (physicalDescription) enhancedDescription += ` Physical description: ${physicalDescription}`;
           if (role) enhancedDescription += ` Role: ${role}`;
+          if (age) enhancedDescription += ` Age: ${age}`;
           if (height) enhancedDescription += ` Height: ${height}`;
           if (relativeSize) enhancedDescription += ` Size relative to others: ${relativeSize}`;
           
@@ -516,6 +525,8 @@ ${physicalFeatures}`;
               `**${name}** for "${bookTitle}"\n` +
               `${savedToMemory ? '💾 Saved to memory\n' : ''}` +
               `${savedToDatabase ? '🗃️ Saved to database\n' : ''}` +
+              `\n🔄 **Next: Update workflow to show new image**\n` +
+              `Call createBookArtifact with action: 'update_step', stepNumber: ${imageType === 'character' ? 2 : imageType === 'environment' ? 4 : 5}\n` +
               `\n${nextAction}`
             : `❌ Failed to create ${imageType}: ${name}`,
           error: imageResult.success ? undefined : imageResult.error,

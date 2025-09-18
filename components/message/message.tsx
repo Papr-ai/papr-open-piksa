@@ -1450,6 +1450,7 @@ const PurePreviewMessage = ({
                     // Handle tool call during execution (state: 'input-streaming')
                     if (state === 'input-streaming' && input) {
                       // Rendering tool call in progress
+                      console.log('[Message] Tool call input-streaming:', { toolName, input, state });
                       
                       return (
                         <div key={toolCallId || key}>
@@ -1467,6 +1468,7 @@ const PurePreviewMessage = ({
 
                     // Handle tool call initiation (state: 'input-available')
                     if (state === 'input-available' && input) {
+                      console.log('[Message] Tool call input-available:', { toolName, input, state });
                       return (
                         <div key={toolCallId || key} className={cx({ skeleton: ['getWeather'].includes(toolName) })}>
                           {toolName === 'getWeather' ? (
@@ -1537,14 +1539,16 @@ const PurePreviewMessage = ({
                           </div>
                         </div>
                       ) : toolName === 'createSingleBookImage' ? (
-                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-purple-50 border-purple-200">
-                          <div className="text-purple-600 mt-1">🎨</div>
-                          <div className="text-left">
-                            <div className="font-medium">Creating Book Image</div>
+                        <>
+                          {console.log('[Message] 🎨 Rendering createSingleBookImage UI:', { toolName, imageType: (input as any)?.imageType, name: (input as any)?.name })}
+                          <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-purple-50 border-purple-200">
+                            <div className="text-purple-600 mt-1">🎨</div>
+                            <div className="text-left">
+                              <div className="font-medium">Creating Book Image</div>
                             <div className="text-sm text-muted-foreground">
-                              {(input as any)?.type === 'character' ? 'Character Portrait' : 
-                               (input as any)?.type === 'environment' ? 'Environment' : 
-                               (input as any)?.type === 'scene' ? 'Scene Composition' : 'Book Image'}
+                              {(input as any)?.imageType === 'character' ? 'Character Portrait' : 
+                               (input as any)?.imageType === 'environment' ? 'Environment' : 
+                               (input as any)?.imageType === 'scene' ? 'Scene Composition' : 'Book Image'}
                               {(input as any)?.name ? `: ${(input as any)?.name}` : ''}
                             </div>
                           </div>
@@ -1552,6 +1556,7 @@ const PurePreviewMessage = ({
                             <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full"></div>
                           </div>
                         </div>
+                        </>
                       ) : toolName === 'searchMemories' || toolName === 'get_memory' ? (
                         <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
                           <div className="text-blue-600 mt-1">🔍</div>
@@ -1987,7 +1992,7 @@ export const PreviewMessage = memo(
   },
 );
 
-export const ThinkingMessage = ({ selectedModelId }: { selectedModelId?: string }) => {
+export const ThinkingMessage = ({ selectedModelId, bookId }: { selectedModelId?: string, bookId?: string }) => {
   const role = 'assistant';
   const { state: thinkingState } = useThinkingState();
   const [dots, setDots] = useState('...');
@@ -2009,6 +2014,20 @@ export const ThinkingMessage = ({ selectedModelId }: { selectedModelId?: string 
     // If we have a specific thinking state that's not the default, use it
     if (message && message !== 'Thinking...') {
       return message;
+    }
+    
+    // If we're in a book creation context, show more specific messages
+    if (bookId) {
+      const bookMessages = [
+        'Analyzing your book project...',
+        'Planning the next steps...',
+        'Reviewing story elements...',
+        'Considering creative options...'
+      ];
+      
+      // Cycle through messages based on time for variety
+      const messageIndex = Math.floor(Date.now() / 3000) % bookMessages.length;
+      return bookMessages[messageIndex];
     }
     
     // Show appropriate loading text for the initial processing phase
