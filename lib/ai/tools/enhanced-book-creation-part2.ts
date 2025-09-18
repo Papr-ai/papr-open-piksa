@@ -4,6 +4,45 @@ import type { Session } from 'next-auth';
 import type { DataStreamWriter } from '@/lib/types';
 import type { CreateImageOutput } from './create-image';
 
+// Helper function to extract image result from tool response
+async function extractImageResultLocal(result: any): Promise<{
+  imageUrl?: string;
+  actualPrompt?: string;
+  approach?: string;
+  seedImagesUsed?: string[];
+  reasoning?: string;
+} | null> {
+  if (!result) return null;
+  
+  // If it's a direct object with imageUrl
+  if (typeof result === 'object' && result.imageUrl) {
+    return {
+      imageUrl: result.imageUrl,
+      actualPrompt: result.actualPrompt,
+      approach: result.approach,
+      seedImagesUsed: result.seedImagesUsed,
+      reasoning: result.reasoning
+    };
+  }
+  
+  // If it's an AsyncIterable, we need to consume it
+  if (result && typeof result[Symbol.asyncIterator] === 'function') {
+    for await (const chunk of result) {
+      if (chunk && chunk.imageUrl) {
+        return {
+          imageUrl: chunk.imageUrl,
+          actualPrompt: chunk.actualPrompt,
+          approach: chunk.approach,
+          seedImagesUsed: chunk.seedImagesUsed,
+          reasoning: chunk.reasoning
+        };
+      }
+    }
+  }
+  
+  return null;
+}
+
 // Import FormattedMemory type for memory operations
 interface FormattedMemory {
   id: string;
@@ -25,7 +64,12 @@ const batchEnvironmentCreationSchema = z.object({
     weather: z.string().describe('Weather conditions'),
     masterPlateDescription: z.string().describe('Detailed description for the environment master plate'),
     persistentElements: z.array(z.string()).describe('Elements that should remain consistent (signage, furniture, etc.)'),
-    layoutJson: z.record(z.string(), z.any()).describe('Layout information for prop placement')
+    layoutJson: z.record(z.string(), z.any()).describe('Layout information for prop placement'),
+    
+    // AI AGENT DECISIONS - exactly one of these should be provided:
+    existingImageUrl: z.string().optional().describe('OPTION 1: Use this exact existing image as-is (AI agent decision)'),
+    seedImageUrl: z.string().optional().describe('OPTION 2: Use this image as seed for style consistency (AI agent decision)'),
+    createNew: z.boolean().optional().describe('OPTION 3: Create completely new image (AI agent decision)')
   })).max(3).describe('Up to 3 environments to create at once for feedback'),
   aspectRatio: z.enum(['16:9', '4:3', '1:1', '3:4', '9:16']).default('16:9')
 });
@@ -75,9 +119,14 @@ export const createEnvironments = ({ session, dataStream }: { session: Session; 
   tool({
     description: `Step 5 of Enhanced Book Creation: Create environment master plates in batches.
     
-    IMPORTANT: This tool ALWAYS searches memory FIRST for existing environments across all books 
-    before creating new ones. It reuses existing environments when similar locations, time of day, 
-    and weather conditions are found.
+    AI AGENT CONTROLLED: This tool executes the AI agent's decisions. For each environment, the AI agent decides:
+    
+    OPTION 1: existingImageUrl - Use exact existing image as-is (no creation needed)
+    OPTION 2: seedImageUrl - Use existing image as seed for style consistency (create new with seed)  
+    OPTION 3: createNew: true - Create completely new image (no seeds)
+    
+    The AI agent searches memory, evaluates context, and passes the appropriate option.
+    This tool simply executes the decision - no intelligence needed here.
     
     Generates up to 3 environment master plate images at a time. Each environment shows
     the full room/location from above or at an angle that reveals the complete space.
@@ -111,116 +160,83 @@ export const createEnvironments = ({ session, dataStream }: { session: Session; 
           weather, 
           masterPlateDescription, 
           persistentElements, 
-          layoutJson 
+          layoutJson,
+          existingImageUrl,
+          seedImageUrl,
+          createNew
         } = environment;
 
         let environmentImageUrl = '';
-        let existingEnvironment = false;
 
-        // Check for existing environment in memory (search across all books)
-        if (session?.user?.id) {
-          try {
-            const { createMemoryService } = await import('@/lib/ai/memory/service');
-            const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
-            const apiKey = process.env.PAPR_MEMORY_API_KEY;
-            
-            if (apiKey) {
-              const memoryService = createMemoryService(apiKey);
-              const paprUserId = await ensurePaprUser(session.user.id, apiKey);
-              
-              if (paprUserId) {
-                console.log(`[createEnvironments] Searching for environment: ${location} at ${timeOfDay}`);
-                
-                // First: Search for existing environment in THIS book
-                let existingEnvironments = await memoryService.searchMemories(
-                  paprUserId, 
-                  `environment ${location} ${timeOfDay} ${weather} ${bookId}`,
-                  10
-                );
-
-                let existingEnv = existingEnvironments.find((mem: FormattedMemory) => 
-                  mem.metadata?.kind === 'environment' && 
-                  mem.metadata?.environment_id === environmentId &&
-                  mem.metadata?.image_url
-                );
-
-                // Second: If not found in current book, search across ALL books for similar environments
-                if (!existingEnv) {
-                  console.log(`[createEnvironments] Environment ${location} not found in current book, searching globally...`);
-                  
-                  const globalEnvironments = await memoryService.searchMemories(
-                    paprUserId, 
-                    `environment "${location}" ${timeOfDay} ${weather} master plate`,
-                    15
-                  );
-
-                  existingEnv = globalEnvironments.find((mem: FormattedMemory) => 
-                    mem.metadata?.kind === 'environment' && 
-                    mem.metadata?.location === location &&
-                    mem.metadata?.time_of_day === timeOfDay &&
-                    mem.metadata?.weather === weather &&
-                    mem.metadata?.image_url
-                  );
-                  
-                  if (existingEnv) {
-                    console.log(`[createEnvironments] Found similar environment ${location} from different book: ${existingEnv.metadata?.book_title || 'Unknown'}`);
-                  }
-                }
-
-                if (existingEnv && existingEnv.metadata?.image_url) {
-                  environmentImageUrl = existingEnv.metadata.image_url as string;
-                  existingEnvironment = true;
-                  console.log(`[createEnvironments] Using existing environment: ${location} - ${environmentImageUrl.substring(0, 50)}...`);
-                } else {
-                  console.log(`[createEnvironments] No existing environment found for ${location} at ${timeOfDay}, will generate new one`);
-                }
-              }
-            }
-          } catch (error) {
-            console.error('[createEnvironments] Error searching memory:', error);
-          }
+        // EXECUTE AI AGENT'S DECISION
+        console.log(`[createEnvironments] Processing environment: ${location} (${timeOfDay}, ${weather})`);
+        
+        // OPTION 1: Use existing image as-is
+        if (existingImageUrl) {
+          console.log(`[createEnvironments] ✅ OPTION 1: Using existing image as-is - ${existingImageUrl.substring(0, 50)}...`);
+          environmentImageUrl = existingImageUrl;
         }
-
-        // Generate new environment if not found
-        if (!existingEnvironment) {
+        // OPTION 2 & 3: Create new image (with or without seed)
+        else {
+          const seedImages = seedImageUrl ? [seedImageUrl] : [];
+          
+          if (seedImageUrl) {
+            console.log(`[createEnvironments] 🎨 OPTION 2: Creating new with seed - ${seedImageUrl.substring(0, 50)}...`);
+          } else {
+            console.log(`[createEnvironments] ✨ OPTION 3: Creating completely new environment`);
+          }
           try {
-            const { createImage } = await import('./create-image');
-            const imageTool = createImage({ session });
+            const { createSingleBookImage } = await import('./create-single-book-image');
+            const imageTool = createSingleBookImage({ session, dataStream });
 
-            const fullDescription = `Create an empty environment: ${location} at ${timeOfDay}
+            // Create a much more detailed and unique environment description
+            const uniqueIdentifier = `${location}_${timeOfDay}_${weather}_${Date.now()}`;
+            const environmentDescription = `UNIQUE ENVIRONMENT MASTER PLATE: Create a completely original and distinct "${location}" environment that has never been created before.
 
-ENVIRONMENT DETAILS: ${masterPlateDescription}
-TIME: ${timeOfDay}  
-WEATHER: ${weather}
+SPECIFIC LOCATION: ${location}
+DETAILED DESCRIPTION: ${masterPlateDescription}
+TIME OF DAY: ${timeOfDay} - ensure lighting, shadows, and atmosphere reflect this specific time
+WEATHER CONDITIONS: ${weather} - show clear weather effects and atmospheric conditions
 PERSISTENT ELEMENTS: ${persistentElements.join(', ')}
+UNIQUE ELEMENTS: Include specific architectural details, unique props, distinctive lighting, and characteristic features that make this "${location}" location completely different from any other environment
+COMPOSITION: Wide establishing shot showing the complete environment space, empty of people but rich in environmental storytelling details
 
-CRITICAL REQUIREMENTS:
-1. EMPTY environment with no characters or people
-2. Complete view of the ${location} showing the entire space
-3. Include persistent elements: ${persistentElements.join(', ')}
-4. Children's book illustration style
-5. Well-lit and detailed for character placement later
-6. ${timeOfDay} lighting with ${weather} conditions
+CRITICAL: This must be a completely unique interpretation of "${location}" - avoid generic or similar-looking environments. Focus on distinctive visual elements that make this location immediately recognizable and different from other locations.
 
-This empty environment will serve as a background for placing characters into scenes.`;
+Unique ID: ${uniqueIdentifier}`;
+
+            const styleBible = 'Children\'s book illustration style with watercolor techniques, bright warm palette, confident ink linework';
             
             if (imageTool.execute) {
               const imageResult = await imageTool.execute({
-              description: fullDescription,
-              sceneContext: `Empty environment master plate for children's book scenes - background showing complete space for character placement`,
-              seedImageTypes: ['environment'],
-              aspectRatio,
-              styleConsistency: true
-            }, { toolCallId: 'book-env-' + Date.now(), messages: [] } as ToolCallOptions) as CreateImageOutput;
+                bookId: bookId || 'unknown',
+                bookTitle: 'Book Environment',
+                imageType: 'environment' as const,
+                imageId: `env-${location}`,
+                name: location,
+                description: environmentDescription,
+                styleBible,
+                timeOfDay: timeOfDay || 'midday',
+                weather: weather || 'clear',
+                aspectRatio: aspectRatio as any || '4:3',
+                styleConsistency: true,
+                conversationContext: `Empty environment master plate for children's book scenes - background showing complete space for character placement`,
+                seedImages: seedImages, // AI agent provides seed decision via parameters
+                currentStep: undefined,
+                totalSteps: undefined
+              }, { toolCallId: 'book-env-optimized-' + Date.now(), messages: [] } as ToolCallOptions);
 
-              if (imageResult.imageUrl) {
-                environmentImageUrl = imageResult.imageUrl;
+              // Extract image result from createSingleBookImage response
+              const extractedResult = await extractImageResultLocal(imageResult);
+              if (extractedResult && extractedResult.imageUrl) {
+                environmentImageUrl = extractedResult.imageUrl;
+                console.log(`[createEnvironments] ✅ Created optimized environment: ${location}`);
               }
             }
           } catch (error) {
-            console.error('[createEnvironments] Error generating environment:', error);
+            console.error('[createEnvironments] Error generating optimized environment:', error);
           }
-        }
+        } // End of create new image (options 2 & 3)
 
         // Save environment to memory
         if (session?.user?.id && environmentImageUrl) {
@@ -266,7 +282,7 @@ This empty environment will serve as a background for placing characters into sc
           timeOfDay,
           weather,
           environmentImageUrl,
-          existingEnvironment,
+          existingEnvironment: false, // Always create new - AI agent decides on reuse
           persistentElements
         });
       }

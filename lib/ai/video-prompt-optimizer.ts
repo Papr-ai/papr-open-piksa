@@ -118,15 +118,38 @@ Do not include any text before or after the JSON. The entire response must be va
       searchMemories: searchMemories({ session: mockSession as any })
     };
 
-    const result = await streamText({
-      model: myProvider.languageModel('gpt-5-mini'),
-      system: systemPrompt,
-      prompt: userPrompt,
-      tools: tools,
-      temperature: 0.7,
-      maxOutputTokens: 800,
-      abortSignal: controller.signal,
-    });
+    let result;
+    try {
+      result = await streamText({
+        model: myProvider.languageModel('gpt-5-mini'),
+        system: systemPrompt,
+        prompt: userPrompt,
+        tools: tools,
+        temperature: 0.7,
+        maxOutputTokens: 800,
+        abortSignal: controller.signal,
+      });
+    } catch (reasoningError: any) {
+      console.error('[VideoPromptOptimizer] Error with AI call:', reasoningError);
+      
+      // Check if this is a reasoning error
+      if (reasoningError.message?.includes('reasoning') || reasoningError.message?.includes('required following item')) {
+        console.log('[VideoPromptOptimizer] Detected reasoning chain error, retrying without reasoning...');
+        
+        // Retry without reasoning-specific features
+        result = await streamText({
+          model: myProvider.languageModel('gpt-5-mini'),
+          system: systemPrompt,
+          prompt: userPrompt,
+          tools: tools,
+          temperature: 0.7,
+          maxOutputTokens: 800,
+          abortSignal: controller.signal,
+        });
+      } else {
+        throw reasoningError;
+      }
+    }
     
     clearTimeout(timeoutId);
     

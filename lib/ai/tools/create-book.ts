@@ -1,9 +1,8 @@
-import { tool } from 'ai';
+import { tool, streamText } from 'ai';
 import { z } from 'zod';
 import type { Session } from 'next-auth';
 import { generateUUID } from '@/lib/utils';
 import type { DataStreamWriter } from '@/lib/types';
-import { streamText } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { db } from '@/lib/db/db';
 import { sql } from 'drizzle-orm';
@@ -104,11 +103,30 @@ Write a complete, engaging chapter suitable for young readers (ages 4-8). Includ
 
 Write the actual story content for this chapter.`;
 
-      const streamResult = streamText({
-        model: openai('gpt-4o'),
-        system: contentGenerationPrompt,
-        prompt: chapterPrompt,
-      });
+      let streamResult;
+      try {
+        streamResult = streamText({
+          model: openai('gpt-4o'),
+          system: contentGenerationPrompt,
+          prompt: chapterPrompt,
+        });
+      } catch (reasoningError: any) {
+        console.error('[CreateBook] Error with AI call:', reasoningError);
+        
+        // Check if this is a reasoning error
+        if (reasoningError.message?.includes('reasoning') || reasoningError.message?.includes('required following item')) {
+          console.log('[CreateBook] Detected reasoning chain error, retrying without reasoning...');
+          
+          // Retry without reasoning-specific features
+          streamResult = streamText({
+            model: openai('gpt-4o'),
+            system: contentGenerationPrompt,
+            prompt: chapterPrompt,
+          });
+        } else {
+          throw reasoningError;
+        }
+      }
 
       for await (const textDelta of streamResult.textStream) {
         draftContent += textDelta;

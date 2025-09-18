@@ -27,10 +27,13 @@ import { sheetArtifact } from '@/artifacts/sheet/client';
 import { textArtifact } from '@/artifacts/text/client';
 import { memoryArtifact } from '@/artifacts/memory/client';
 import { bookArtifact } from '@/artifacts/book/client';
+import { bookCreationArtifact } from '@/artifacts/book-creation/client';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { VisibilityType } from '@/components/message/visibility-selector';
 import { UsageWarning } from '@/components/subscription/usage-warning';
+import { MessageSquare, FileText, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 export interface ArtifactContentProps {
   content: any;
@@ -56,6 +59,7 @@ export const artifactDefinitions = [
   sheetArtifact,
   memoryArtifact,
   bookArtifact,
+  bookCreationArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]['kind'];
 
@@ -73,6 +77,172 @@ export interface UIArtifact {
     height: number;
   };
   language?: string;
+}
+
+// Mobile Artifact Layout Component
+function MobileArtifactLayout({
+  chatId,
+  input,
+  setInput,
+  handleSubmit,
+  status,
+  stop,
+  attachments,
+  setAttachments,
+  messages,
+  setMessages,
+  append,
+  reload,
+  votes,
+  isReadonly,
+  selectedModelId,
+  selectedVisibilityType,
+  artifact,
+  setArtifact,
+  metadata,
+  setMetadata,
+  artifactDefinition,
+  isCurrentVersion,
+  documents,
+  currentVersionIndex,
+}: {
+  chatId: string;
+  input: string;
+  setInput: (input: string) => void;
+  handleSubmit: (event?: any) => void;
+  status: UseChatHelpers<UIMessage>['status'];
+  stop: UseChatHelpers<UIMessage>['stop'];
+  attachments: Array<FileUIPart>;
+  setAttachments: Dispatch<SetStateAction<Array<FileUIPart>>>;
+  messages: UseChatHelpers<UIMessage>['messages'];
+  setMessages: UseChatHelpers<UIMessage>['setMessages'];
+  append: UseChatHelpers<UIMessage>['sendMessage'];
+  reload: UseChatHelpers<UIMessage>['regenerate'];
+  votes: Array<Vote> | undefined;
+  isReadonly: boolean;
+  selectedModelId: string;
+  selectedVisibilityType: VisibilityType;
+  artifact: UIArtifact;
+  setArtifact: any;
+  metadata: any;
+  setMetadata: any;
+  artifactDefinition: any;
+  isCurrentVersion: boolean;
+  documents: any;
+  currentVersionIndex: number;
+}) {
+  const [mobileView, setMobileView] = useState<'chat' | 'artifact'>('artifact');
+
+  return (
+    <motion.div
+      className="fixed inset-0 bg-background z-50 flex flex-col"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      {/* Mobile Header with Toggle */}
+      <div className="flex items-center justify-between p-4 border-b bg-background sticky top-0 z-10">
+        <div className="flex items-center space-x-2">
+          <Button
+            variant={mobileView === 'chat' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMobileView('chat')}
+            className="flex items-center gap-2"
+          >
+            <MessageSquare size={16} />
+            Chat
+          </Button>
+          <Button
+            variant={mobileView === 'artifact' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setMobileView('artifact')}
+            className="flex items-center gap-2"
+          >
+            <FileText size={16} />
+            Workflow
+          </Button>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setArtifact({ ...artifact, isVisible: false })}
+          className="p-2"
+        >
+          <X size={20} />
+        </Button>
+      </div>
+
+      {/* Mobile Content */}
+      <div className="flex-1 overflow-hidden">
+        {mobileView === 'chat' ? (
+          <div className="flex flex-col h-full">
+            <div className="flex-1 overflow-y-auto">
+              <ArtifactMessages
+                chatId={chatId}
+                status={status}
+                votes={votes}
+                messages={messages}
+                setMessages={setMessages}
+                reload={reload}
+                isReadonly={isReadonly}
+                artifactStatus={artifact.status}
+                selectedModelId={selectedModelId}
+                setInput={setInput}
+                handleSubmit={handleSubmit}
+                sendMessage={append}
+              />
+            </div>
+
+            {/* Usage Warning */}
+            <div className="px-4">
+              <UsageWarning />
+            </div>
+
+            {/* Chat Input */}
+            <div className="p-4 border-t bg-background">
+              <MultimodalInput
+                chatId={chatId}
+                input={input}
+                setInput={setInput}
+                handleSubmit={handleSubmit}
+                status={status}
+                stop={stop}
+                attachments={attachments}
+                setAttachments={setAttachments}
+                messages={messages}
+                append={append}
+                className="bg-background"
+                setMessages={setMessages}
+                selectedModelId={selectedModelId}
+                selectedVisibilityType={selectedVisibilityType}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="h-full overflow-y-auto">
+            <artifactDefinition.content
+              title={artifact.title}
+              content={artifact.content}
+              mode="edit"
+              status={artifact.status}
+              currentVersionIndex={currentVersionIndex}
+              suggestions={[]}
+              onSaveContent={() => {}} // Mobile doesn't need save functionality for now
+              isInline={false}
+              isCurrentVersion={isCurrentVersion}
+              getDocumentContentById={() => artifact.content}
+              isLoading={false}
+              metadata={metadata}
+              setMetadata={setMetadata}
+              language={artifact.language}
+              handleVersionChange={() => {}} // Mobile doesn't need version change for now
+              totalVersions={1}
+            />
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
 }
 
 function PureArtifact({
@@ -190,13 +360,13 @@ function PureArtifact({
   // Books have their own versioning system in the Books table
   const shouldFetchDocuments = artifact.documentId !== 'init' && artifact.status !== 'streaming' && artifact.kind !== 'book';
   
-  console.log('[ARTIFACT] Document fetch condition:', {
-    documentId: artifact.documentId,
-    status: artifact.status,
-    shouldFetch: shouldFetchDocuments,
-    artifactKind: artifact.kind,
-    fetchUrl: shouldFetchDocuments ? `/api/document?id=${artifact.documentId}` : null
-  });
+  // console.log('[ARTIFACT] Document fetch condition:', {
+  //   documentId: artifact.documentId,
+  //   status: artifact.status,
+  //   shouldFetch: shouldFetchDocuments,
+  //   artifactKind: artifact.kind,
+  //   fetchUrl: shouldFetchDocuments ? `/api/document?id=${artifact.documentId}` : null
+  // });
 
   const {
     data: documents,
@@ -217,14 +387,14 @@ function PureArtifact({
   const shouldFetchBookVersions = artifact.documentId !== 'init' && artifact.status !== 'streaming' && artifact.kind === 'book';
   const currentChapter = metadata?.currentChapter || 1;
   
-  console.log('[ARTIFACT] Book versions fetch condition:', {
-    documentId: artifact.documentId,
-    status: artifact.status,
-    shouldFetch: shouldFetchBookVersions,
-    artifactKind: artifact.kind,
-    currentChapter: currentChapter,
-    fetchUrl: shouldFetchBookVersions ? `/api/books/${artifact.documentId}?versions=true&chapter=${currentChapter}` : null
-  });
+  // console.log('[ARTIFACT] Book versions fetch condition:', {
+  //   documentId: artifact.documentId,
+  //   status: artifact.status,
+  //   shouldFetch: shouldFetchBookVersions,
+  //   artifactKind: artifact.kind,
+  //   currentChapter: currentChapter,
+  //   fetchUrl: shouldFetchBookVersions ? `/api/books/${artifact.documentId}?versions=true&chapter=${currentChapter}` : null
+  // });
 
   const {
     data: bookVersions,
@@ -457,7 +627,7 @@ function PureArtifact({
       
       // Special handling for book artifacts - they don't use the Document table
       if (artifact.kind === 'book') {
-        console.log('[ARTIFACT] Book artifact detected - using book-specific save');
+        console.log(`[ARTIFACT] ${artifact.kind} artifact detected - using book-specific save`);
         
         // Prevent multiple simultaneous saves
         if (isSaving) {
@@ -499,25 +669,44 @@ function PureArtifact({
               if (response.status === 404) {
                 console.log('[ARTIFACT] Book not found, creating new book record...');
                 try {
-                  const createResponse = await fetch('/api/books', {
+                  const createResponse = await fetch('/api/book/chapters', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
                       bookId: artifact.documentId,
-                      bookTitle: metadata?.bookTitle || 'Untitled Book',
-                      chapterTitle: metadata?.chapters?.[metadata?.currentChapter - 1]?.title || 'Chapter 1',
                       chapterNumber: metadata?.currentChapter || 1,
+                      chapterTitle: metadata?.chapters?.[metadata?.currentChapter - 1]?.title || 'Chapter 1',
                       content: updatedContent,
                     }),
                   });
                   
                   if (createResponse.ok) {
-                    console.log('[ARTIFACT] Book created successfully');
+                    console.log('[ARTIFACT] Chapter created successfully, retrying save...');
+                    
+                    // Retry the save after creating the chapter
+                    const retryResponse = await fetch('/api/book/save', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                      },
+                      body: JSON.stringify({
+                        bookId: artifact.documentId,
+                        content: updatedContent,
+                        currentChapter: chapterToSave,
+                      }),
+                    });
+                    
+                    if (retryResponse.ok) {
+                      console.log('[ARTIFACT] Book saved successfully after chapter creation');
+                    } else {
+                      const retryErrorText = await retryResponse.text();
+                      console.error('[ARTIFACT] Failed to save book after chapter creation:', retryErrorText);
+                    }
                   } else {
                     const createErrorText = await createResponse.text();
-                    console.error('[ARTIFACT] Failed to create book:', createErrorText);
+                    console.error('[ARTIFACT] Failed to create chapter:', createErrorText);
                   }
                 } catch (createError) {
                   console.error('[ARTIFACT] Error creating book:', createError);
@@ -1048,83 +1237,34 @@ function PureArtifact({
             </motion.div>
           )}
 
-          {/* Mobile layout - original behavior */}
+          {/* Mobile layout - fullscreen with toggle */}
           {isMobile && (
-            <>
-              <motion.div
-                className="fixed w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
-                initial={{ opacity: 0, x: windowWidth, scale: 1 }}
-                animate={{
-                  opacity: 1,
-                  x: windowWidth - 400,
-                  scale: 1,
-                  transition: {
-                    delay: 0.2,
-                    type: 'spring',
-                    stiffness: 200,
-                    damping: 30,
-                  },
-                }}
-                exit={{
-                  opacity: 0,
-                  x: windowWidth,
-                  pointerEvents: 'none',
-                  transition: { duration: 0.0 },
-                }}
-              >
-                <AnimatePresence>
-                  {!isCurrentVersion && (
-                    <motion.div
-                      className="left-0 absolute h-dvh w-[400px] top-0 bg-zinc-900/50 z-50"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    />
-                  )}
-                </AnimatePresence>
-
-                <div className="flex flex-col h-full justify-between items-center">
-                  <ArtifactMessages
-                    chatId={chatId}
-                    status={status}
-                    votes={votes}
-                    messages={messages}
-                    setMessages={setMessages}
-                    reload={reload}
-                    isReadonly={isReadonly}
-                    artifactStatus={artifact.status}
-                    selectedModelId={selectedModelId}
-                    setInput={setInput}
-                    handleSubmit={handleSubmit}
-                    sendMessage={append}
-                  />
-
-                  {/* Usage Warning positioned right above the input */}
-                  <div className="w-[95%] mx-auto px-4">
-                    <UsageWarning />
-                  </div>
-
-                  <div className="flex flex-row gap-2 relative items-end w-[95%] mx-auto px-4 pb-4">
-                    <MultimodalInput
-                      chatId={chatId}
-                      input={input}
-                      setInput={setInput}
-                      handleSubmit={handleSubmit}
-                      status={status}
-                      stop={stop}
-                      attachments={attachments}
-                      setAttachments={setAttachments}
-                      messages={messages}
-                      append={append}
-                      className="bg-background dark:bg-muted"
-                      setMessages={setMessages}
-                      selectedModelId={selectedModelId}
-                      selectedVisibilityType={selectedVisibilityType}
-                    />
-                  </div>
-                </div>
-              </motion.div>
-            </>
+            <MobileArtifactLayout
+              chatId={chatId}
+              input={input}
+              setInput={setInput}
+              handleSubmit={handleSubmit}
+              status={status}
+              stop={stop}
+              attachments={attachments}
+              setAttachments={setAttachments}
+              messages={messages}
+              setMessages={setMessages}
+              append={append}
+              reload={reload}
+              votes={votes}
+              isReadonly={isReadonly}
+              selectedModelId={selectedModelId}
+              selectedVisibilityType={selectedVisibilityType}
+              artifact={artifact}
+              setArtifact={setArtifact}
+              metadata={metadata}
+              setMetadata={setMetadata}
+              artifactDefinition={artifactDefinition}
+              isCurrentVersion={isCurrentVersion}
+              documents={documents}
+              currentVersionIndex={currentVersionIndex}
+            />
           )}
 
         </motion.div>

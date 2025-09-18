@@ -1,3 +1,4 @@
+/* eslint-disable react/no-unescaped-entities */
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
@@ -728,6 +729,7 @@ export default function LandingPage() {
                 <span className="text-gray-400 text-sm">magical-forest-adventure.txt</span>
               </div>
               <div className="text-green-400 text-sm overflow-x-auto whitespace-pre-wrap">
+{/* eslint-disable react/no-unescaped-entities */}
 {`Chapter 1: The Discovery
 
 Once upon a time, in a small village at the edge 
@@ -751,6 +753,7 @@ be discovered."
 
 [AI Generated with character consistency 
 and story memory - 432 words]`}
+{/* eslint-enable react/no-unescaped-entities */}
               </div>
             </div>
           </div>

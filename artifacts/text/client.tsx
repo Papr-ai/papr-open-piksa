@@ -30,6 +30,8 @@ export const textArtifact = new Artifact<'text', TextArtifactMetadata>({
     });
   },
   onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
+    console.log('[TextArtifact] 📝 TEXT ARTIFACT - Stream event received:', streamPart.type, streamPart.content);
+    
     if (streamPart.type === 'suggestion') {
       try {
         setMetadata((metadata) => {

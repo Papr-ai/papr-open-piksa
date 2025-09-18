@@ -8,6 +8,7 @@ import { generateUUID } from '@/lib/utils';
 
 // Import existing tool result types  
 import type { ArtifactKind } from '@/components/artifact/artifact';
+import { ToolInvocation } from './tool-invocation';
 
 // Tool output type definitions based on existing interfaces
 interface WeatherAtLocation {
@@ -105,7 +106,16 @@ import { CreateImageResult } from './create-image-result';
 import { StructuredBookImageResults } from './structured-book-image-results';
 import { BookImagePlanResult } from './book-image-plan-result';
 import { SingleBookImageResult } from './single-book-image-result';
+import { BookPlanResult } from './book-plan-result';
+import { ChapterDraftResult } from './chapter-draft-result';
+import { SceneSegmentationResult } from './scene-segmentation-result';
+import { CharacterPortraitsResult } from './character-portraits-result';
+import { EnvironmentsResult } from './environments-result';
+import { SceneManifestResult } from './scene-manifest-result';
+import { BookArtifactResult } from './book-artifact-result';
 import { SearchBookPropsResult } from './search-book-props-result';
+import type { BookArtifactState } from '@/lib/ai/tools/book-creation-constants';
+import { BOOK_CREATION_STEPS } from '@/lib/ai/tools/book-creation-constants';
 import { StructuredBookImageStart, StructuredBookImageProgress, StructuredBookImageResult } from './structured-book-image-result';
 import { SceneImageAutoInsertedResult } from './scene-image-auto-inserted-result';
 
@@ -722,33 +732,6 @@ const PurePreviewMessage = ({
   // Track processed createBook results to prevent duplicate artifact opening
   const processedCreateBookResults = useRef<Set<string>>(new Set());
   
-  // Debug session loading for user messages
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development' && message.role === 'user') {
-      console.log('[Message] Avatar debug:', {
-        sessionStatus,
-        hasSession: !!session,
-        hasUser: !!session?.user,
-        userImage,
-        userEmail,
-        avatarLoading
-      });
-    }
-  }, [sessionStatus, session, userImage, userEmail, message.role, avatarLoading]);
-  
-  // Debug logging for development only
-  useEffect(() => {
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[Message] Processing message:', {
-        id: message.id,
-        role: message.role,
-        partTypes: message.parts?.map((part, index) => ({
-          index,
-          type: (part as any).type,
-        })),
-      });
-    }
-  }, [message]);
 
   // Auto-open book artifact when createBook tool completes successfully OR when experimental_artifacts are present
   useEffect(() => {
@@ -761,20 +744,85 @@ const PurePreviewMessage = ({
         const bookArtifact = bookArtifacts[0];
         console.log('[Message] Auto-opening book artifact from experimental_artifacts:', bookArtifact);
         
-        setArtifact({
-          title: `📖 ${bookArtifact.title}`,
-          documentId: generateUUID(),
-          kind: 'book',
-          content: bookArtifact.content,
-          isVisible: true,
-          status: 'idle',
-          boundingBox: {
-            top: 100,
-            left: 100,
-            width: 1000,
-            height: 700
-          },
-        });
+        // MIGRATION: Convert old 'book' artifacts to new 'book-creation' workflow
+        console.log('[Message] Converting old book artifact to new workflow format...');
+        
+        try {
+          // Parse the old book content to extract bookId and title
+          const bookContent = JSON.parse(bookArtifact.content);
+          const bookId = bookContent.bookId;
+          const bookTitle = bookContent.title || bookArtifact.title || 'Migrated Book';
+          
+          // Create workflow state for the migrated book
+          const workflowState = {
+            bookId: bookId,
+            bookTitle: bookTitle,
+            bookConcept: 'Migrated from old book format - existing content available in Step 5',
+            targetAge: '3-8 years',
+            currentStep: 6, // Move to Step 6 since Step 5 content exists
+            steps: [
+              { stepNumber: 1, stepName: 'Story Planning', status: 'approved', data: null },
+              { stepNumber: 2, stepName: 'Character Creation', status: 'approved', data: null },
+              { stepNumber: 3, stepName: 'Chapter Writing', status: 'approved', data: null },
+              { stepNumber: 4, stepName: 'Environment Design', status: 'approved', data: null },
+              { stepNumber: 5, stepName: 'Scene Composition', status: 'approved', data: { chapters: [] } }, // Approved since content exists
+              { stepNumber: 6, stepName: 'Final Review', status: 'in_progress', data: {
+                status: 'ready_for_review',
+                bookTitle: bookTitle,
+                totalSteps: 6,
+                completedSteps: 5,
+                bookSummary: `${bookTitle} - Migrated from old book format with existing content`,
+                bookConcept: 'Migrated from old book format - existing content available in Step 5',
+                totalCharacters: 0, // Will be populated when Step 5 loads from database
+                totalEnvironments: 0,
+                totalScenes: 0, // Will be calculated from actual content
+                totalPages: 0, // Will be calculated from actual content
+                migratedAt: new Date().toISOString(),
+                reviewNotes: 'This book was migrated from the old format. All existing content has been preserved and is available for editing in Step 5.'
+              }}
+            ],
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          
+          console.log('[Message] Created workflow state for migration:', workflowState);
+          
+          // Set the new workflow artifact
+          setArtifact({
+            title: `📖 ${bookTitle} (Migrated)`,
+            documentId: bookId,
+            kind: 'book-creation',
+            content: JSON.stringify(workflowState),
+            isVisible: true,
+            status: 'idle',
+            boundingBox: {
+              top: 100,
+              left: 100,
+              width: 800,
+              height: 600
+            },
+          });
+          
+          console.log('[Message] ✅ Successfully migrated old book artifact to workflow format');
+        } catch (error) {
+          console.error('[Message] Error migrating book artifact:', error);
+          
+          // Fallback to old format if migration fails
+          setArtifact({
+            title: `📖 ${bookArtifact.title}`,
+            documentId: generateUUID(),
+            kind: 'book',
+            content: bookArtifact.content,
+            isVisible: true,
+            status: 'idle',
+            boundingBox: {
+              top: 100,
+              left: 100,
+              width: 1000,
+              height: 700
+            },
+          });
+        }
       }
     }
     
@@ -837,144 +885,88 @@ const PurePreviewMessage = ({
         });
       }
     }
+
+    // Handle createBookArtifact tool results - auto-open book creation artifact
+    if (message.role === 'assistant' && message.parts) {
+      console.log('[Message] Checking for createBookArtifact parts in message:', message.id, 'parts:', message.parts?.length);
+      
+      // Look for completed createBookArtifact tool calls with initialize action
+      const createBookArtifactResults = message.parts.filter((part: any) => {
+        const matches = part.type === 'tool-createBookArtifact' && 
+               part.state === 'output-available' && 
+               (part.output?.action === 'initialize' || part.output?.action === 'update_step') &&
+               part.output?.success === true;
+        
+        if (part.type === 'tool-createBookArtifact') {
+          console.log('[Message] Found createBookArtifact part:', {
+            type: part.type,
+            state: part.state,
+            action: part.output?.action,
+            success: part.output?.success,
+            matches
+          });
+        }
+        
+        return matches;
+      });
+
+      if (createBookArtifactResults.length > 0) {
+        const latestResult = createBookArtifactResults[createBookArtifactResults.length - 1] as any;
+        const output = latestResult.output;
+        
+        console.log('[Message] Found matching createBookArtifact result, setting artifact:', {
+          bookId: output.bookId,
+          action: output.action,
+          hasArtifactState: !!output.artifactState
+        });
+
+        // Use the artifact state from the tool result instead of empty content
+        const artifactContent = output.artifactState ? 
+          JSON.stringify(output.artifactState) : 
+          '';
+
+        // Debug logging removed
+
+        setArtifact({
+          title: `📖 Book Creation Workflow`,
+          documentId: output.bookId || generateUUID(),
+          kind: 'book-creation',
+          content: artifactContent, // Use content from tool result
+          isVisible: true,
+          status: output.action === 'initialize' ? 'idle' : 'streaming',
+          boundingBox: {
+            top: 100,
+            left: 100,
+            width: 1000,
+            height: 700
+          },
+        });
+      }
+    }
   }, [message, setArtifact]);
   
   // Check if we're using a model with reasoning support (moved up to avoid hoisting issues)
   const isReasoningEnabled = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;
   
-  // Extract reasoning events from message parts (kept for debugging but not used for display)
-  console.log('[Message] Raw message parts:', message.parts);
-  console.log('[Message] Selected model supports reasoning:', isReasoningEnabled);
-  console.log('[Message] Message role:', message.role);
+  // In v5, reasoning parts come directly as type 'reasoning' - let's handle them properly
+  // Debug logging removed to prevent infinite loops
   
-  const reasoningEvents = message.parts?.reduce((events, part) => {
-    const typedPart = part as MessagePart;
-    // Process message parts for reasoning extraction
-
-    // Handle direct reasoning parts
-    if (typedPart.type === 'reasoning') {
-      console.log('[Message] Found direct reasoning part:', typedPart);
-      const reasoningPart = typedPart as ReasoningPart;
-      
-        // Handle the actual structure from the logs: { type: "reasoning", text: "...", providerOptions: {...} }
-        const reasoningText = (reasoningPart as any).text || 
-                             (typeof reasoningPart.reasoning === 'string' ? reasoningPart.reasoning : 
-                              (reasoningPart.reasoning as ReasoningContent)?.text || '');
-        
-        // Only add reasoning events if there's actual content
-        if (reasoningText && reasoningText.trim().length > 0) {
-          events.push({
-            type: 'reasoning',
-            content: {
-              text: reasoningText,
-              timestamp: typeof reasoningPart.reasoning === 'string' ? 
-                new Date().toISOString() : 
-                (reasoningPart.reasoning as ReasoningContent)?.timestamp || new Date().toISOString(),
-              step: typeof reasoningPart.reasoning === 'string' ? 
-                'complete' : 
-                (reasoningPart.reasoning as ReasoningContent)?.step || 'complete',
-            },
-          });
-        }
-    }
-    // Handle parts with direct reasoning field (as seen in logs)
-    else if ('reasoning' in typedPart && typeof typedPart.reasoning === 'string' && typedPart.reasoning && typedPart.reasoning.trim().length > 0) {
-      console.log('[Message] Found part with direct reasoning field:', typedPart);
-      events.push({
-        type: 'reasoning',
-        content: {
-          text: typedPart.reasoning,
-          timestamp: new Date().toISOString(),
-          step: 'complete',
-        },
-      });
-    }
-    // Handle parts with details array and reasoning field (seen in logs)
-    else if ('details' in typedPart && Array.isArray(typedPart.details) && 'reasoning' in typedPart) {
-      console.log('[Message] Found part with details array and reasoning:', typedPart);
-      const reasoningText = typeof typedPart.reasoning === 'string' ? typedPart.reasoning : '';
-      
-      // Only add if there's actual reasoning content
-      if (reasoningText && reasoningText.trim().length > 0) {
-        events.push({
-          type: 'reasoning',
-          content: {
-            text: reasoningText,
-            timestamp: new Date().toISOString(),
-            step: 'complete',
-          },
-        });
-      }
-    }
-    // Legacy tool-invocation format - not used in AI SDK v5
-    // else if (typedPart.type === 'tool-invocation') {
-    //   const toolPart = typedPart as ToolInvocationPart;
-    //   const { toolName, state, args, result } = toolPart.toolInvocation;
-    //   if (toolName === 'searchMemories') {
-    //     if (state === 'result') {
-    //       console.log('[Message] Found searchMemories call:', args);
-    //       events.push({
-    //         type: 'reasoning',
-    //         content: {
-    //           text: `🔍 Starting memory search with query: "${args.query}"`,
-    //           timestamp: new Date().toISOString(),
-    //           step: 'start',
-    //         },
-    //       });
-    //     } else if (state === 'result' && result) {
-    //       console.log('[Message] Found searchMemories result:', result);
-    //       events.push({
-    //         type: 'reasoning',
-    //         content: {
-    //           text: `✅ Found ${result.memories?.length || 0} relevant memories`,
-    //           timestamp: new Date().toISOString(),
-    //           step: 'reading',
-    //         },
-    //       });
-    //     }
-    //   }
-    // }
-    // Handle data events
-    else if (typedPart.type === 'data') {
-      const dataPart = typedPart as DataPart;
-      if (dataPart.data.type === 'part' && dataPart.data.data?.type === 'reasoning') {
-        const reasoningData = dataPart.data.data;
-        console.log('[Message] Found data part with reasoning:', reasoningData);
-        events.push({
-          type: 'reasoning',
-          content: reasoningData.reasoning,
-        });
-      } else if (dataPart.data.type === 'reasoning' && dataPart.data.reasoning) {
-        console.log('[Message] Found direct reasoning data:', dataPart.data);
-        events.push({
-          type: 'reasoning',
-          content: dataPart.data.reasoning,
-        });
-      }
-    }
-    // Handle step-start events
-    else if (typedPart.type === 'step-start') {
-      const stepPart = typedPart as StepStartPart;
-      if (stepPart.data?.type === 'reasoning' && stepPart.data.reasoning) {
-        console.log('[Message] Found step-start reasoning:', stepPart.data);
-        events.push({
-          type: 'reasoning',
-          content: stepPart.data.reasoning,
-        });
-      } else {
-        console.log('[Message] Found step-start without data:', typedPart);
-        events.push({
-          type: 'reasoning',
-          content: {
-            text: 'Processing...',
-            timestamp: new Date().toISOString(),
-            step: 'init',
-          },
-        });
-      }
-    }
-    return events;
-  }, [] as ReasoningEvent[]) || [];
+  const reasoningEvents: ReasoningEvent[] = message.parts?.filter(part => 
+    (part as any).type === 'reasoning'
+  ).map(part => {
+    const reasoningPart = part as ReasoningUIPart;
+    // Debug logging removed to prevent infinite loops
+    return {
+      type: 'reasoning' as const,
+      content: {
+        text: reasoningPart.text || '',
+        timestamp: new Date().toISOString(),
+        step: 'complete' as ReasoningStep,
+      },
+    };
+  }) || [];
+  
+  // Debug logging removed to prevent infinite loops
 
   // isReasoningEnabled is now declared above
   
@@ -991,35 +983,22 @@ const PurePreviewMessage = ({
     reasoningEvents.push(...toolCallEvents);
   }
 
-  console.log('[Message] Extracted reasoning events:', reasoningEvents);
-  console.log('[Message] Model supports reasoning:', modelSupportsReasoningCapability);
-  console.log('[Message] Selected model ID:', selectedModelId);
-  console.log('[Message] Message model ID:', messageModelId);
+  // Note: For V5, reasoning comes as separate 'reasoning' parts, not embedded in text
+  // Only extract from text for backwards compatibility with older models that use <think> tags
+  const textContent = extractTextFromMessage(message);
+  if (textContent.includes('<think>')) {
+    // Debug logging removed to prevent infinite loops
+    const thinkingEvents = extractAllThinkingContent(message);
+    reasoningEvents.push(...thinkingEvents);
+  }
 
-  // For messages with think blocks: extract all thinking content from text now,
-  // so gating below can consider these tokens.
-  const thinkingEvents = extractAllThinkingContent(message);
-  reasoningEvents.push(...thinkingEvents);
-
-  // Render MessageReasoning only when there's actual meaningful reasoning content
-  const hasAnyReasoning = reasoningEvents.length > 0;
+  // Simplified reasoning display - show immediately when available
+  const shouldShowReasoning = reasoningEvents.length > 0;
   
-  // Check if we have meaningful reasoning content (not just empty or generic placeholders)
-  const hasMeaningfulReasoning = reasoningEvents.some(event => {
-    const text = event.content.text;
-    return text && 
-           text.trim().length > 0 && 
-           text !== 'Processing...' && 
-           text !== 'Processing' && 
-           !text.startsWith('Processing step');
-  });
+  // Debug logging removed to prevent infinite loops and simplify logic
   
-  // Simplified: Only show reasoning for models that actually support it and have meaningful content
-  const shouldShowReasoning = modelSupportsReasoningCapability && hasMeaningfulReasoning;
-  
-  // Determine if reasoning is complete based on events
-  const isReasoningComplete = !isLoading || 
-    reasoningEvents.some(event => event.content.step === 'complete');
+  // Simplified completion logic - don't block streaming
+  const isReasoningComplete = !isLoading;
   
   // Extract user query for reasoning title
   const userQuery = message.role === 'assistant' ? findUserQuery(message) : '';
@@ -1033,14 +1012,14 @@ const PurePreviewMessage = ({
     
     // Add context for memory search if we have a user query
     if (userQuery && !reasoningEvents.some(event => event.content.step === 'think')) {
-      reasoningEvents.push({
-        type: 'reasoning',
-        content: {
-          text: `The user is asking about "${userQuery}". I need to search through memories to find relevant information.`,
-          timestamp: new Date().toISOString(),
-          step: 'think',
-        }
-      });
+        reasoningEvents.push({
+          type: 'reasoning',
+          content: {
+            text: `The user is asking about "${userQuery}". I need to search through memories to find relevant information.`,
+            timestamp: new Date().toISOString(),
+            step: 'think' as ReasoningStep,
+          }
+        });
     }
   }
 
@@ -1098,13 +1077,16 @@ const PurePreviewMessage = ({
 
 
                     {shouldShowReasoning && (
-                      <MessageReasoning
-                        isLoading={isLoading && !isReasoningComplete}
-                        reasoning={reasoningEvents[0]?.content?.text || ''}
-                        events={reasoningEvents}
-                        userQuery={userQuery}
-                        selectedModelId={selectedModelId}
-                      />
+                      <>
+                        {/* Debug logging removed to prevent infinite loops */}
+                        <MessageReasoning
+                          isLoading={isLoading && !isReasoningComplete}
+                          reasoning={reasoningEvents[0]?.content?.text || ''}
+                          events={reasoningEvents}
+                          userQuery={userQuery}
+                          selectedModelId={selectedModelId}
+                        />
+                      </>
                     )}
                                         {(message as ExtendedUIMessage).attachments && (
                       <div>
@@ -1125,37 +1107,19 @@ const PurePreviewMessage = ({
 
 
 
+                {/* Processing indicator removed - was causing UI issues */}
+
                 {message.parts?.map((part, index) => {
                   const typedPart = part as MessagePart;
                   const { type } = typedPart;
                   const key = `message-${message.id}-part-${index}`;
+                  
+                  // Debug logging removed to prevent infinite loops
 
                   if (type === 'text') {
                     const textContent = (typedPart as TextPart).text;
-                    const hasThinkBlock = textContent.includes('<think>');
                     
-                    console.log('[Message] Rendering text part:', { textContent, hasThinkBlock, messageRole: message.role });
-                    
-                    // Extract think block content for assistant messages
-                    if (message.role === 'assistant' && hasThinkBlock) {
-                      // If we have an opening <think> but no closing yet, hide everything after the opening tag
-                      if (textContent.includes('<think>') && !textContent.includes('</think>')) {
-                        const visibleText = textContent.slice(0, textContent.indexOf('<think>')).trim();
-                        return (
-                          <div key={key} className="w-full message-content">
-                            {visibleText ? <Markdown>{visibleText}</Markdown> : null}
-                          </div>
-                        );
-                      }
-                      // When we have a complete <think>...</think> block, strip it from the assistant text
-                      const thinkBlockRegex = /<think>([\s\S]*?)<\/think>/g;
-                      const cleanedContent = textContent.replace(thinkBlockRegex, '').trim();
-                      return (
-                        <div key={key} className="w-full message-content">
-                          <Markdown>{cleanedContent}</Markdown>
-                        </div>
-                      );
-                    }
+                    // Rendering text part
                     
                     if (message.role === 'user') {
                       return (
@@ -1212,6 +1176,53 @@ const PurePreviewMessage = ({
                         </div>
                       );
                     }
+                  }
+
+                  // Handle reasoning parts - skip if MessageReasoning component is already showing them
+                  if (type === 'reasoning') {
+                    // Skip individual reasoning parts when MessageReasoning component handles them
+                    if (shouldShowReasoning) {
+                      return null;
+                    }
+                    
+                    const reasoningPart = typedPart as ReasoningUIPart;
+                    return (
+                      <div key={key} className="reasoning-block bg-muted/30 border-l-4 border-blue-500 pl-4 py-2 my-2 rounded-r">
+                        <div className="text-sm text-muted-foreground mb-1 font-medium">🧠 Reasoning</div>
+                        <div className="text-sm whitespace-pre-wrap">{reasoningPart.text}</div>
+                      </div>
+                    );
+                  }
+
+                  // Handle step-start parts  
+                  if (type === 'step-start') {
+                    // Debug logging removed
+                    return (
+                      <div key={key} className="step-divider border-t border-dashed border-muted-foreground/30 my-4">
+                        <div className="text-xs text-muted-foreground text-center py-1">• • •</div>
+                      </div>
+                    );
+                  }
+
+                  // Handle tool-invocation parts (AI SDK format)
+                  if (type === 'tool-invocation') {
+                    const toolInvocationPart = typedPart as ToolInvocationPart;
+                    const { toolInvocation } = toolInvocationPart;
+                    
+                    // Tool invocation rendering
+                    
+                    return (
+                      <div key={key}>
+                        <ToolInvocation
+                          toolName={toolInvocation.toolName}
+                          state={toolInvocation.state}
+                          toolCallId={toolInvocation.toolCallId}
+                          args={toolInvocation.args}
+                          result={toolInvocation.result}
+                          isReadonly={isReadonly}
+                        />
+                      </div>
+                    );
                   }
 
                   // Handle AI SDK v5 tool parts (format: tool-{toolName})
@@ -1278,6 +1289,38 @@ const PurePreviewMessage = ({
                               result={output as any}
                               isReadonly={isReadonly}
                             />
+                          ) : toolName === 'createBookPlan' ? (
+                            <BookPlanResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'draftChapter' ? (
+                            <ChapterDraftResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'segmentChapterIntoScenes' ? (
+                            <SceneSegmentationResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createCharacterPortraits' ? (
+                            <CharacterPortraitsResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createEnvironments' ? (
+                            <EnvironmentsResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createSceneManifest' ? (
+                            <SceneManifestResult
+                              result={output as any}
+                              isReadonly={isReadonly}
+                            />
+                          ) : toolName === 'createBookArtifact' ? (
+                            <BookArtifactResult result={output as any} />
                           ) : toolName === 'createSingleBookImage' ? (
                             <SingleBookImageResult
                               result={output as any}
@@ -1404,6 +1447,24 @@ const PurePreviewMessage = ({
                       );
                     }
 
+                    // Handle tool call during execution (state: 'input-streaming')
+                    if (state === 'input-streaming' && input) {
+                      // Rendering tool call in progress
+                      
+                      return (
+                        <div key={toolCallId || key}>
+                          <ToolInvocation
+                            toolName={toolName}
+                            state="call"
+                            toolCallId={toolCallId}
+                            args={input}
+                            result={undefined}
+                            isReadonly={isReadonly}
+                          />
+                        </div>
+                      );
+                    }
+
                     // Handle tool call initiation (state: 'input-available')
                     if (state === 'input-available' && input) {
                       return (
@@ -1473,6 +1534,116 @@ const PurePreviewMessage = ({
                           </div>
                           <div className="animate-spin mt-1">
                             <div className="w-4 h-4 border-2 border-gray-300 border-t-indigo-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'createSingleBookImage' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-purple-50 border-purple-200">
+                          <div className="text-purple-600 mt-1">🎨</div>
+                          <div className="text-left">
+                            <div className="font-medium">Creating Book Image</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.type === 'character' ? 'Character Portrait' : 
+                               (input as any)?.type === 'environment' ? 'Environment' : 
+                               (input as any)?.type === 'scene' ? 'Scene Composition' : 'Book Image'}
+                              {(input as any)?.name ? `: ${(input as any)?.name}` : ''}
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'searchMemories' || toolName === 'get_memory' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
+                          <div className="text-blue-600 mt-1">🔍</div>
+                          <div className="text-left">
+                            <div className="font-medium">Searching Memories</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.query ? 
+                                `Looking for: "${(input as any)?.query.substring(0, 50)}${(input as any)?.query.length > 50 ? '...' : ''}"` : 
+                                'Searching your memories...'
+                              }
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'createCharacterPortraits' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-emerald-50 border-emerald-200">
+                          <div className="text-emerald-600 mt-1">👤</div>
+                          <div className="text-left">
+                            <div className="font-medium">Creating Character Portraits</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.characters?.length 
+                                ? `Generating portraits for ${(input as any).characters.length} character${(input as any).characters.length > 1 ? 's' : ''}` 
+                                : 'Generating character portraits...'
+                              }
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-emerald-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'createEnvironments' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-green-50 border-green-200">
+                          <div className="text-green-600 mt-1">🏞️</div>
+                          <div className="text-left">
+                            <div className="font-medium">Creating Environments</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.environments?.length 
+                                ? `Generating ${(input as any).environments.length} environment${(input as any).environments.length > 1 ? 's' : ''}` 
+                                : 'Generating environment master plates...'
+                              }
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-green-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'createSceneManifest' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-indigo-50 border-indigo-200">
+                          <div className="text-indigo-600 mt-1">🎬</div>
+                          <div className="text-left">
+                            <div className="font-medium">Creating Scene Manifest</div>
+                            <div className="text-sm text-muted-foreground">
+                              Planning scene composition and visual elements...
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-indigo-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'renderScene' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-purple-50 border-purple-200">
+                          <div className="text-purple-600 mt-1">🖼️</div>
+                          <div className="text-left">
+                            <div className="font-medium">Rendering Scene</div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.sceneId ? `Composing scene: ${(input as any)?.sceneId}` : 'Composing scene with characters and environment...'}
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-purple-600 rounded-full"></div>
+                          </div>
+                        </div>
+                      ) : toolName === 'createBookArtifact' ? (
+                        <div className="w-fit border py-2 px-3 rounded-xl flex flex-row items-start gap-3 bg-blue-50 border-blue-200">
+                          <div className="text-blue-600 mt-1">📖</div>
+                          <div className="text-left">
+                            <div className="font-medium">
+                              {(input as any)?.action === 'initialize' && 'Initializing Book Creation'}
+                              {(input as any)?.action === 'update_step' && `Updating Step ${(input as any)?.stepNumber}`}
+                              {(input as any)?.action === 'approve_step' && `Processing Step ${(input as any)?.stepNumber} Approval`}
+                              {(input as any)?.action === 'regenerate' && `Regenerating Step ${(input as any)?.stepNumber}`}
+                              {(input as any)?.action === 'finalize' && 'Finalizing Book'}
+                              {!(input as any)?.action && 'Processing Book Creation'}
+                            </div>
+                            <div className="text-sm text-muted-foreground">
+                              {(input as any)?.bookTitle ? `"${(input as any).bookTitle}"` : 'Setting up artifact workflow...'}
+                            </div>
+                          </div>
+                          <div className="animate-spin mt-1">
+                            <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full"></div>
                           </div>
                         </div>
                       ) : toolName === 'addMemory' ? (
@@ -1715,6 +1886,7 @@ const PurePreviewMessage = ({
                     }
                   }
 
+                  // Fallback - unhandled part types return null
                   return null;
                 })}
 

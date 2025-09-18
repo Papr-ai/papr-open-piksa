@@ -5,6 +5,7 @@ import { createMemoryService } from '@/lib/ai/memory/service';
 import { ensurePaprUser } from '@/lib/ai/memory/middleware';
 import type { Session } from 'next-auth';
 import { unifiedTaskService, type UnifiedTask, type TaskProgress } from '@/lib/db/unified-task-service';
+import { generateUUID } from '@/lib/utils';
 
 // Task status types (extended to match unified system)
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'cancelled' | 'approved' | 'skipped';
@@ -513,9 +514,9 @@ async function saveTasksToMemoryAsync(
   }
 }
 
-// Generate a unique task ID
+// Generate a unique task ID using proper UUID format
 function generateTaskId(): string {
-  return `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  return generateUUID();
 }
 
 // Common task item schema

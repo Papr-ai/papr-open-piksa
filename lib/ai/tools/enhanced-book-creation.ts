@@ -664,11 +664,30 @@ Make sure the scenes flow naturally and cover the entire chapter content. Focus 
 
     let sceneResponse = '';
     
-    const streamResult = streamText({
-      model: openai('gpt-4o'),
-      system: 'You are an expert at breaking down children\'s book chapters into visual scenes. Respond only with valid JSON.',
-      prompt: sceneGenerationPrompt,
-    });
+    let streamResult;
+    try {
+      streamResult = streamText({
+        model: openai('gpt-4o'),
+        system: 'You are an expert at breaking down children\'s book chapters into visual scenes. Respond only with valid JSON.',
+        prompt: sceneGenerationPrompt,
+      });
+    } catch (reasoningError: any) {
+      console.error('[Enhanced Book Creation] Error with scene generation AI call:', reasoningError);
+      
+      // Check if this is a reasoning error
+      if (reasoningError.message?.includes('reasoning') || reasoningError.message?.includes('required following item')) {
+        console.log('[Enhanced Book Creation] Detected reasoning chain error, retrying without reasoning...');
+        
+        // Retry without reasoning-specific features
+        streamResult = streamText({
+          model: openai('gpt-4o'),
+          system: 'You are an expert at breaking down children\'s book chapters into visual scenes. Respond only with valid JSON.',
+          prompt: sceneGenerationPrompt,
+        });
+      } else {
+        throw reasoningError;
+      }
+    }
 
     for await (const textDelta of streamResult.textStream) {
       sceneResponse += textDelta;
@@ -820,6 +839,9 @@ const batchCharacterCreationSchema = z.object({
     characterName: z.string().describe('Character name to create portrait for'),
     portraitStyle: z.string().describe('Art style for the portrait (consistent with book style)'),
     baseOutfit: z.string().describe('Description of the character\'s base outfit - their standard, consistent clothing worn throughout the book'),
+    seedImages: z.array(z.string()).optional().describe('Specific seed image URLs to use for this character (AI agent should provide these after user confirmation)'),
+    useExistingPortrait: z.boolean().optional().describe('Whether to use an existing portrait instead of creating a new one'),
+    existingPortraitUrl: z.string().optional().describe('URL of existing portrait to use if useExistingPortrait is true'),
     props: z.array(z.object({
       propName: z.string(),
       description: z.string(),
@@ -835,11 +857,39 @@ const batchCharacterCreationSchema = z.object({
 // Step 4: Batch Character Portrait and Props Creation Tool
 export const createCharacterPortraits = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
   tool({
-    description: `Step 4 of Enhanced Book Creation: Create character portraits and props in batches.
+    description: `Step 4 of Enhanced Book Creation: Register existing character portraits OR create new ones in batches.
     
-    Creates up to 3 character portraits at a time with transparent/white backgrounds 
-    and consistent base outfits for scene composition. Searches memory for existing 
-    canon character images first. Requires approval before creating more characters.`,
+    🚨 **CRITICAL WORKFLOW**: This tool automatically searches memory for existing character portraits. 
+    
+    **DECISION FLOW**:
+    1. Tool automatically finds existing portraits in memory/database
+    2. **IF USER APPROVES existing portraits**: Set useExistingPortrait: true + existingPortraitUrl
+    3. **IF USER wants new portraits**: Set useExistingPortrait: false + generatePortraits: true
+    4. **IF mixed (some existing, some new)**: Use appropriate flags per character
+    
+    **WHEN TO USE EXISTING PORTRAITS**:
+    ✅ User says "those portraits look good" / "use those" / "perfect"
+    ✅ User explicitly approves existing character images
+    ✅ Existing portraits match the character descriptions well
+    ✅ User wants to save time and avoid recreating similar images
+    
+    **WHEN TO CREATE NEW PORTRAITS**:
+    ❌ User says "create new ones" / "different style" / "not quite right"
+    ❌ No existing portraits found for characters
+    ❌ Existing portraits don't match character descriptions
+    ❌ User specifically requests new character designs
+    
+    **PARAMETERS FOR EXISTING PORTRAITS**:
+    - useExistingPortrait: true
+    - existingPortraitUrl: "https://..." (from memory search results)
+    - generatePortraits: false (skip image creation)
+    
+    **PARAMETERS FOR NEW PORTRAITS**:
+    - useExistingPortrait: false  
+    - generatePortraits: true (create new images)
+    - seedImages: [] (optional reference images)
+    
+    Supports up to 3 characters at a time. Always requires user approval before proceeding to next step.`,
     inputSchema: batchCharacterCreationSchema,
     execute: async (input) => {
       const { bookId, characters, generatePortraits, transparentBackground } = input;
@@ -862,12 +912,18 @@ export const createCharacterPortraits = ({ session, dataStream }: { session: Ses
       const results = [];
       
       for (const character of characters) {
-        const { characterName, portraitStyle, baseOutfit, props } = character;
+        const { characterName, portraitStyle, baseOutfit, props, seedImages, useExistingPortrait, existingPortraitUrl } = character;
         let portraitUrl = '';
         let existingPortrait = false;
-
-        // Search memory for existing character portrait (broader search across all books first)
-        if (session?.user?.id) {
+        
+        // Handle existing portrait reuse (AI agent decision)
+        if (useExistingPortrait && existingPortraitUrl) {
+          portraitUrl = existingPortraitUrl;
+          existingPortrait = true;
+          console.log(`[createCharacterPortraits] Using AI agent-specified existing portrait for ${characterName}: ${portraitUrl.substring(0, 50)}...`);
+        }
+        // Search memory for existing character portrait only if not using AI agent-provided existing portrait
+        else if (session?.user?.id) {
           try {
             const { createMemoryService } = await import('@/lib/ai/memory/service');
           const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
@@ -929,6 +985,10 @@ export const createCharacterPortraits = ({ session, dataStream }: { session: Ses
           }
         }
 
+        // Use AI agent-provided seed images (or empty array if none provided)
+        let finalSeedImages: string[] = seedImages || [];
+        console.log(`[createCharacterPortraits] Using AI agent-provided seed images for ${characterName}:`, finalSeedImages);
+
         // Generate new portrait if needed and requested
         if (!existingPortrait && generatePortraits) {
           try {
@@ -938,9 +998,17 @@ export const createCharacterPortraits = ({ session, dataStream }: { session: Ses
             // Get character description from memory
             const characterDescription = await getCharacterDescription(session, bookId, characterName);
             
+            // Extract key physical features for seed image consistency
+            const physicalFeatures = extractPhysicalFeatures(characterDescription, characterName);
+            
             if (imageTool.execute) {
               const imageResult = await imageTool.execute({
-              description: `CHILDREN'S BOOK CHARACTER PORTRAIT: ${characterName} - ${characterDescription}. Art style: ${portraitStyle}. 
+              description: `CHILDREN'S BOOK CHARACTER PORTRAIT: ${characterName} - ${characterDescription}
+
+🎯 CRITICAL PHYSICAL FEATURES TO MAINTAIN (especially when using seed images):
+${physicalFeatures}
+
+Art style: ${portraitStyle}. 
 
 CRITICAL REQUIREMENTS:
 1. CHARACTER wearing their BASE OUTFIT: ${baseOutfit} (this is their standard, consistent clothing worn throughout the book)
@@ -954,8 +1022,15 @@ CRITICAL REQUIREMENTS:
 
 This portrait will be used as a seed image for scene composition, so it must have a clean white/transparent background and show the character's complete base outfit clearly.`,
               sceneContext: `Character portrait for book illustration with white/transparent background, designed for scene composition and consistency across multiple scenes`,
+              seedImages: finalSeedImages, // Use AI agent-provided seed images
+              seedImageTypes: finalSeedImages.map(() => 'character'), // All seeds are character images
               styleConsistency: true,
-              aspectRatio: '3:4'
+              aspectRatio: '3:4',
+              
+              // Enhanced book context for style consistency
+              styleBible: portraitStyle,
+              bookGenre: 'children\'s book',
+              targetAge: 'children'
             }, { toolCallId: 'book-character-' + Date.now(), messages: [] } as ToolCallOptions) as CreateImageOutput;
 
               if (imageResult.imageUrl) {
@@ -1030,10 +1105,89 @@ This portrait will be used as a seed image for scene composition, so it must hav
           characterName,
           portraitUrl,
           existingPortrait,
-          propsCreated: props?.length || 0
+          propsCreated: props?.length || 0,
+          seedImages: finalSeedImages // Include the AI agent-provided seed images that were used
         });
       }
 
+      // CRITICAL: Update the workflow state with character portraits
+      try {
+        console.log(`[createCharacterPortraits] Updating workflow state with ${results.length} character portraits`);
+        
+        // Get current workflow state
+        const { getWorkflowFromDatabase } = await import('./unified-book-creation');
+        const workflowState = await getWorkflowFromDatabase(bookId, session);
+        
+        if (workflowState) {
+          // Find character step (step 2)
+          const characterStepIndex = workflowState.steps.findIndex(s => s.stepNumber === 2);
+          
+          if (characterStepIndex !== -1) {
+            // Get existing characters or initialize empty array
+            const existingCharacters = workflowState.steps[characterStepIndex].data?.characters || [];
+            
+            // Map results to character objects with both portraitUrl AND imageUrl fields
+            const newCharacters = results.map(result => {
+              // Find the original character data
+              const originalChar = characters.find(c => c.characterName === result.characterName);
+              
+              return {
+                name: result.characterName,
+                portraitUrl: result.portraitUrl, // Primary field
+                imageUrl: result.portraitUrl,    // Duplicate for compatibility
+                role: originalChar?.baseOutfit ? `Character with ${originalChar.baseOutfit}` : 'character',
+                physicalDescription: originalChar?.portraitStyle || '',
+                existingPortrait: result.existingPortrait
+              };
+            });
+            
+            // Merge with existing characters, replacing any with same name
+            const mergedCharacters = [
+              ...existingCharacters.filter((ec: any) => !newCharacters.some(nc => nc.name === ec.name)),
+              ...newCharacters
+            ];
+            
+            // Update workflow state
+            workflowState.steps[characterStepIndex].data = {
+              ...workflowState.steps[characterStepIndex].data,
+              characters: mergedCharacters
+            };
+            
+            // Mark step as completed if not already
+            if (workflowState.steps[characterStepIndex].status === 'in_progress') {
+              workflowState.steps[characterStepIndex].status = 'completed';
+            }
+            
+            // Use createBookArtifact tool to update the workflow state
+            // This is the proper way to update workflow state instead of direct DB access
+            const { createBookArtifact } = await import('./unified-book-creation');
+            
+            // Create a tool instance
+            const bookArtifactTool = createBookArtifact({ session, dataStream });
+            
+            // Call the tool to update the workflow state
+            if (bookArtifactTool.execute) {
+              await bookArtifactTool.execute({
+                action: 'update_step',
+                bookId: workflowState.bookId,
+                stepNumber: 2,
+                stepData: {
+                  characters: mergedCharacters
+                }
+              }, { 
+                toolCallId: `update-characters-${Date.now()}`,
+                messages: [] 
+              });
+            }
+            
+            console.log(`[createCharacterPortraits] ✅ Successfully updated workflow state with ${mergedCharacters.length} characters`);
+          }
+        }
+      } catch (error) {
+        console.error(`[createCharacterPortraits] Error updating workflow state:`, error);
+        // Continue with normal return even if workflow update fails
+      }
+      
       return {
         success: true,
         bookId,
@@ -1046,6 +1200,82 @@ This portrait will be used as a seed image for scene composition, so it must hav
       };
     },
   });
+
+// Helper function to extract key physical features from character description for seed image consistency
+function extractPhysicalFeatures(characterDescription: string, characterName: string): string {
+  const features = [];
+  const desc = characterDescription.toLowerCase();
+  
+  // Extract age
+  const ageMatches = desc.match(/(?:age|aged?)\s*:?\s*(\d+)|(\d+)\s*years?\s*old|(?:is|was)\s*(\d+)/i);
+  if (ageMatches) {
+    const age = ageMatches[1] || ageMatches[2] || ageMatches[3];
+    features.push(`- Age: ${age} years old`);
+  } else if (desc.includes('child') || desc.includes('kid') || desc.includes('young')) {
+    features.push(`- Age: Child (approximately 5-8 years old)`);
+  }
+  
+  // Extract eye color
+  const eyeColors = ['blue', 'brown', 'green', 'hazel', 'gray', 'grey', 'amber', 'violet', 'dark', 'light'];
+  for (const color of eyeColors) {
+    if (desc.includes(`${color} eye`) || desc.includes(`${color}-eye`)) {
+      features.push(`- Eyes: ${color.charAt(0).toUpperCase() + color.slice(1)} eyes`);
+      break;
+    }
+  }
+  
+  // Extract hair color and style
+  const hairColors = ['black', 'brown', 'blonde', 'blond', 'red', 'auburn', 'ginger', 'gray', 'grey', 'white', 'dark', 'light', 'golden'];
+  const hairStyles = ['curly', 'wavy', 'straight', 'long', 'short', 'braided', 'ponytail', 'pigtails', 'bob'];
+  
+  let hairDescription = '';
+  for (const color of hairColors) {
+    if (desc.includes(`${color} hair`)) {
+      hairDescription = color.charAt(0).toUpperCase() + color.slice(1);
+      break;
+    }
+  }
+  
+  for (const style of hairStyles) {
+    if (desc.includes(`${style} hair`) || desc.includes(`hair is ${style}`)) {
+      hairDescription += (hairDescription ? ', ' : '') + style;
+      break;
+    }
+  }
+  
+  if (hairDescription) {
+    features.push(`- Hair: ${hairDescription} hair`);
+  }
+  
+  // Extract height/size
+  if (desc.includes('tall') || desc.includes('height')) {
+    if (desc.includes('short')) {
+      features.push(`- Height: Short for age`);
+    } else if (desc.includes('tall')) {
+      features.push(`- Height: Tall for age`);
+    }
+  }
+  
+  // Extract distinctive features
+  if (desc.includes('freckle')) features.push(`- Features: Has freckles`);
+  if (desc.includes('dimple')) features.push(`- Features: Has dimples`);
+  if (desc.includes('glasses')) features.push(`- Accessories: Wears glasses`);
+  
+  // Extract clothing/outfit details
+  const clothingMatches = desc.match(/wearing\s+([^.]+)|dressed\s+in\s+([^.]+)|outfit[:\s]+([^.]+)/i);
+  if (clothingMatches) {
+    const outfit = clothingMatches[1] || clothingMatches[2] || clothingMatches[3];
+    features.push(`- Clothing: ${outfit.trim()}`);
+  }
+  
+  // If no features found, add a general note
+  if (features.length === 0) {
+    features.push(`- Maintain all physical features exactly as shown in seed image`);
+    features.push(`- Keep consistent appearance throughout the book`);
+  }
+  
+  return features.join('\n');
+}
 
 // Helper function to get character description from memory (searches across all books)
 async function getCharacterDescription(session: Session, bookId: string, characterName: string): Promise<string> {

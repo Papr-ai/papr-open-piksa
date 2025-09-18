@@ -585,7 +585,7 @@ export async function saveDocument({
       const result = await db.insert(document).values({
         id,
         title,
-        kind,
+        kind: kind as any, // Cast to avoid enum type issues during development
         content,
         userId,
         createdAt: newTimestamp,
@@ -623,7 +623,7 @@ export async function saveDocument({
         const result = await db.insert(document).values({
           id,
           title,
-          kind,
+          kind: kind as any, // Cast to avoid enum type issues during development
           content,
           userId,
           createdAt: newTimestamp,

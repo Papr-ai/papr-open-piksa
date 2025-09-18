@@ -115,11 +115,30 @@ ${existingContent ? `Build upon this existing content: ${existingContent}` : ''}
 
 Create a well-structured, detailed ${toolTypeNames[toolType].toLowerCase()} that will serve as a valuable reference for writing the book. Use clear headings, bullet points, and organize the information logically.`;
 
-      const streamResult = streamText({
-        model: openai('gpt-5'),
-        system: systemPrompt,
-        prompt: contentPrompt,
-      });
+      let streamResult;
+      try {
+        streamResult = streamText({
+          model: openai('gpt-5'),
+          system: systemPrompt,
+          prompt: contentPrompt,
+        });
+      } catch (reasoningError: any) {
+        console.error('[CreateWritingTools] Error with AI call:', reasoningError);
+        
+        // Check if this is a reasoning error
+        if (reasoningError.message?.includes('reasoning') || reasoningError.message?.includes('required following item')) {
+          console.log('[CreateWritingTools] Detected reasoning chain error, retrying without reasoning...');
+          
+          // Retry without reasoning-specific features
+          streamResult = streamText({
+            model: openai('gpt-5'),
+            system: systemPrompt,
+            prompt: contentPrompt,
+          });
+        } else {
+          throw reasoningError;
+        }
+      }
 
       for await (const textDelta of streamResult.textStream) {
         draftContent += textDelta;

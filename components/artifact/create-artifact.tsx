@@ -2,8 +2,62 @@ import type { Suggestion } from '@/lib/db/schema';
 import type { UseChatHelpers } from '@ai-sdk/react';
 import type { UIMessage } from 'ai';
 import type { ComponentType, Dispatch, ReactNode, SetStateAction } from 'react';
-import type { DataStreamDelta } from '../message/data-stream-handler';
 import type { UIArtifact } from './artifact';
+
+// Local type definition for data stream delta (previously from data-stream-handler)
+export type DataStreamDelta = {
+  type:
+    | 'text-delta'
+    | 'code-delta'
+    | 'sheet-delta'
+    | 'image-delta'
+    | 'image-generated'
+    | 'image-edited'
+    | 'images-merged'
+    | 'structured-book-image-start'
+    | 'structured-book-image-progress'
+    | 'structured-book-image-result'
+    | 'structured-book-image-complete'
+    | 'structured-book-image-approval'
+    | 'single-book-image-start'
+    | 'single-book-image-complete'
+    | 'single-book-image-auto-inserted'
+    | 'single-book-image-auto-insert-failed'
+    | 'single-book-image-auto-insert-error'
+    | 'book-creation-update'
+    | 'book-creation-state'
+    | 'title'
+    | 'id'
+    | 'suggestion'
+    | 'clear'
+    | 'finish'
+    | 'kind'
+    | 'status'
+    | 'tool-call'
+    | 'tool-result'
+    | 'progress'
+    | 'github-staged-files'
+    | 'github-selection'
+    | 'repository-approval-request'
+    | 'repository-created'
+    | 'project-creation-started';
+  content: string | Suggestion | Record<string, any>;
+  language?: string;
+  toolCall?: {
+    id: string;
+    name: string;
+  };
+  toolResult?: {
+    id: string;
+    result: any;
+  };
+  tool_calls?: Array<{
+    id: string;
+    function: {
+      name: string;
+    };
+  }>;
+};
 
 export type ArtifactActionContext<M = any> = {
   content: string;

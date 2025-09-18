@@ -251,19 +251,14 @@ function PureMultimodalInput({
       return;
     }
 
-    window.history.replaceState({}, '', `/chat/${chatId}`);
+    // Don't change URL for book workflow chats - preserve the book context
+    if (!window.location.pathname.includes('/chat/book/')) {
+      window.history.replaceState({}, '', `/chat/${chatId}`);
+    }
 
-    // Prepare custom headers with memory, web search and context info
-    console.log('[MULTIMODAL INPUT] Preparing headers with contexts:', selectedContexts.length, selectedContexts);
-    const customHeaders: Record<string, string> = {
-      'X-Memory-Enabled': isMemoryEnabled ? 'true' : 'false',
-      'X-Web-Search-Enabled': isWebSearchEnabled ? 'true' : 'false',
-      'X-Context': selectedContexts.length > 0 ? JSON.stringify(selectedContexts) : '',
-      'X-Interaction-Mode': interactionMode,
-    };
-    console.log('[MULTIMODAL INPUT] Headers prepared:', customHeaders);
+    console.log('[MultimodalInput] Submitting form with input:', input.substring(0, 100));
 
-    // Submit the message with our custom headers
+    // Submit the message - the transport handles headers via refs
     handleSubmit();
 
     setAttachments([]);
@@ -276,17 +271,12 @@ function PureMultimodalInput({
     }
   }, [
     input,
-    attachments,
     handleSubmit,
     setAttachments,
     setLocalStorageInput,
     width,
     chatId,
-    isMemoryEnabled,
-    isWebSearchEnabled,
-    selectedContexts,
     clearContexts,
-    interactionMode,
   ]);
 
   const uploadFile = async (file: File) => {
@@ -382,16 +372,16 @@ function PureMultimodalInput({
           }}
           disabled={status === 'streaming'}
         />
-        <div className={`flex items-center justify-between gap-2 w-full ${isMobile ? 'flex-col space-y-2' : 'flex-row'}`}>
-          <div className={`flex items-center gap-2 ${isMobile ? 'w-full justify-between' : ''}`}>
-            <ModelSelector selectedModelId={selectedModelId} className={isMobile ? "h-8 flex-1 max-w-[120px]" : "h-8"} />
+        <div className="flex items-center justify-between gap-2 w-full">
+          <div className="flex items-center gap-2">
+            <ModelSelector selectedModelId={selectedModelId} className={isMobile ? "h-8 text-xs" : "h-8"} />
             <div className="flex items-center gap-1">
               <MemoryToggle />
               <WebSearchToggle />
             </div>
           </div>
-          <div className={`flex flex-row pb-2 ${isMobile ? 'w-full justify-end' : 'justify-start'}`}>
-            <div className={`flex flex-row justify-start gap-1 ${isMobile ? '' : 'ml-3 mr-2'}`}>
+          <div className="flex flex-row pb-2 justify-start">
+            <div className="flex flex-row justify-start gap-1 ml-3 mr-2">
               <VoiceButton
                 chatId={chatId}
                 selectedModel={selectedModelId}

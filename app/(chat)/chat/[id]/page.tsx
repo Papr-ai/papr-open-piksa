@@ -3,7 +3,6 @@ import { notFound, redirect } from 'next/navigation';
 import { auth } from '@/app/(auth)/auth';
 import { Chat } from '@/components/message/chat';
 import { getChatById, getMessagesByChatId, getUser } from '@/lib/db/queries';
-import { DataStreamHandler } from '@/components/message/data-stream-handler';
 import { DEFAULT_CHAT_MODEL } from '@/lib/ai/models';
 import type { DBMessage } from '@/lib/db/schema';
 import type { FileUIPart, UIMessage } from 'ai';
@@ -165,7 +164,6 @@ export default async function Page({ params, searchParams }: PageProps) {
         isReadonly={session?.user?.id !== chat.userId}
         documentId={documentId}
       />
-      <DataStreamHandler id={id} />
     </>
   );
 }

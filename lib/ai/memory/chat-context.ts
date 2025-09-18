@@ -3,9 +3,48 @@ import { getChatById, saveChat } from '@/lib/db/queries';
 import { generateTitleFromUserMessage } from '@/app/(chat)/actions';
 import type { ExtendedUIMessage } from '@/lib/types';
 
+// Cache for user context to avoid repeated API calls within the same request
+const userContextCache = new Map<string, { context: UserContextData; timestamp: number }>();
+const CONTEXT_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Get user context with intelligent caching
+ * OPTIMIZED: Tries global cache first, then database, then fresh API call
+ */
+async function getCachedUserContext(userId: string, apiKey: string): Promise<UserContextData> {
+  const emptyContext: UserContextData = {
+    preferences: [],
+    insights: [],
+    goals: [],
+    patterns: [],
+    context: ''
+  };
+
+  if (!apiKey) return emptyContext;
+
+  // OPTIMIZATION 1: Check in-memory server cache first (fastest)
+  const cached = userContextCache.get(userId);
+  if (cached && (Date.now() - cached.timestamp) < CONTEXT_CACHE_DURATION) {
+    console.log('[Chat Context] Using in-memory cached user context');
+    return cached.context;
+  }
+
+  // OPTIMIZATION 2: Fresh fetch (slowest)
+  console.log('[Chat Context] Fetching fresh user context (cache miss)');
+  const freshContext = await getUserContext(userId, apiKey);
+  
+  // Cache in memory for subsequent requests
+  userContextCache.set(userId, {
+    context: freshContext,
+    timestamp: Date.now()
+  });
+  
+  return freshContext;
+}
+
 /**
  * Get or create user context for a chat session
- * This function ensures user context is fetched only once per chat and cached in the database
+ * OPTIMIZED: Uses multiple levels of caching to minimize API calls
  */
 export async function getOrCreateChatContext(
   chatId: string,
@@ -56,10 +95,10 @@ export async function getOrCreateChatContext(
         console.log('[Chat Context] No cached context found, will fetch fresh');
       }
       
-      // Chat exists but no context cached - fetch and update
+      // Chat exists but no context cached - use cached context
       if (memoryApiKey) {
-        console.log('[Chat Context] Fetching fresh user context...');
-        const userContext = await getUserContext(userId, memoryApiKey);
+        console.log('[Chat Context] Getting cached user context...');
+        const userContext = await getCachedUserContext(userId, memoryApiKey);
         
         if (userContext.context) {
           // Update the chat with the new context
@@ -99,8 +138,8 @@ export async function getOrCreateChatContext(
     
     let userContext = emptyContext;
     if (memoryApiKey) {
-      console.log('[Chat Context] Fetching user context for new chat...');
-      userContext = await getUserContext(userId, memoryApiKey);
+      console.log('[Chat Context] Getting cached user context for new chat...');
+      userContext = await getCachedUserContext(userId, memoryApiKey);
     }
     
     // Generate title for new chat

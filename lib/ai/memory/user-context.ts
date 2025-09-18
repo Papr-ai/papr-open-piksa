@@ -10,6 +10,7 @@ export interface UserContextData {
 
 /**
  * Search user memory for preferences, insights, and goals to enhance chat context
+ * Optimized to reduce API calls and improve performance
  */
 export async function getUserContext(userId: string, apiKey: string): Promise<UserContextData> {
   if (!apiKey) {
@@ -25,41 +26,67 @@ export async function getUserContext(userId: string, apiKey: string): Promise<Us
 
   try {
     console.log('[User Context] Fetching user context from memory for user:', userId);
+    const startTime = Date.now();
 
-    // Search for different types of user information
-    const [preferences, insights, goals, patterns] = await Promise.all([
-      // User preferences and settings
-      searchUserMemories({
-        userId,
-        query: 'user preferences settings configuration likes dislikes favorite tools programming languages frameworks',
-        maxResults: 8,
-        apiKey
-      }),
+    // OPTIMIZATION 1: Single comprehensive search instead of 4 separate calls
+    // This reduces API calls from 4 to 1, significantly improving performance
+    const comprehensiveMemories = await searchUserMemories({
+      userId,
+      query: 'user preferences settings configuration goals objectives projects patterns behavior work style habits routine workflow programming languages frameworks tools learning approach',
+      maxResults: 20, // Get more results in single call
+      apiKey
+    });
+
+    const searchTime = Date.now() - startTime;
+    console.log(`[User Context] Memory search completed in ${searchTime}ms`);
+
+    // OPTIMIZATION 2: Categorize results client-side using keyword matching
+    // This is much faster than separate API calls
+    const preferences: string[] = [];
+    const insights: string[] = [];
+    const goals: string[] = [];
+    const patterns: string[] = [];
+
+    comprehensiveMemories.forEach((memory: any) => {
+      const content = memory.content?.toLowerCase() || '';
+      const memoryText = memory.content || '';
       
-      // Insights about the user's work patterns and behavior
-      searchUserMemories({
-        userId,
-        query: 'user insights patterns behavior work style learning approach problem solving methods',
-        maxResults: 6,
-        apiKey
-      }),
+      // Categorize based on content keywords
+      if (content.includes('prefer') || content.includes('like') || content.includes('favorite') || 
+          content.includes('setting') || content.includes('configuration') || content.includes('tool')) {
+        if (preferences.length < 8) preferences.push(memoryText);
+      }
       
-      // Current goals and objectives
-      searchUserMemories({
-        userId,
-        query: 'user goals objectives projects planning weekly goals monthly targets learning goals career goals',
-        maxResults: 5,
-        apiKey
-      }),
+      if (content.includes('goal') || content.includes('objective') || content.includes('target') || 
+          content.includes('plan') || content.includes('want to') || content.includes('working on')) {
+        if (goals.length < 5) goals.push(memoryText);
+      }
       
-      // Work patterns and habits
-      searchUserMemories({
-        userId,
-        query: 'user habits routine workflow development process coding style project structure',
-        maxResults: 5,
-        apiKey
-      })
-    ]);
+      if (content.includes('pattern') || content.includes('behavior') || content.includes('style') || 
+          content.includes('approach') || content.includes('method') || content.includes('way')) {
+        if (insights.length < 6) insights.push(memoryText);
+      }
+      
+      if (content.includes('habit') || content.includes('routine') || content.includes('workflow') || 
+          content.includes('process') || content.includes('usually') || content.includes('always')) {
+        if (patterns.length < 5) patterns.push(memoryText);
+      }
+    });
+
+    // OPTIMIZATION 3: Fallback categorization for remaining memories
+    // Distribute remaining memories if categories are still empty
+    if (preferences.length === 0 || goals.length === 0 || insights.length === 0 || patterns.length === 0) {
+      comprehensiveMemories.slice(0, 10).forEach((memory: any, index: number) => {
+        const memoryText = memory.content || '';
+        if (!memoryText) return;
+        
+        // Round-robin distribution for remaining memories
+        if (index % 4 === 0 && preferences.length < 8) preferences.push(memoryText);
+        else if (index % 4 === 1 && goals.length < 5) goals.push(memoryText);
+        else if (index % 4 === 2 && insights.length < 6) insights.push(memoryText);
+        else if (index % 4 === 3 && patterns.length < 5) patterns.push(memoryText);
+      });
+    }
 
     console.log('[User Context] Memory search results:', {
       preferencesCount: preferences.length,
@@ -68,23 +95,13 @@ export async function getUserContext(userId: string, apiKey: string): Promise<Us
       patternsCount: patterns.length
     });
 
-    // Log the actual search results for debugging
-    console.log('[User Context] Raw preferences results:', preferences.map(p => ({
-      content: p.content?.substring(0, 100) + '...',
-      metadata: p.metadata
-    })));
-    console.log('[User Context] Raw insights results:', insights.map(i => ({
-      content: i.content?.substring(0, 100) + '...',
-      metadata: i.metadata
-    })));
-    console.log('[User Context] Raw goals results:', goals.map(g => ({
-      content: g.content?.substring(0, 100) + '...',
-      metadata: g.metadata
-    })));
-    console.log('[User Context] Raw patterns results:', patterns.map(p => ({
-      content: p.content?.substring(0, 100) + '...',
-      metadata: p.metadata
-    })));
+    // Log the actual search results for debugging (simplified to avoid type issues)
+    console.log('[User Context] Context categories populated:', {
+      preferences: preferences.length,
+      insights: insights.length,
+      goals: goals.length,
+      patterns: patterns.length
+    });
 
     // Extract and format the content
     const extractContent = (memories: any[]) => 

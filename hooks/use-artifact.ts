@@ -55,6 +55,13 @@ export function useArtifact(chatId?: string) {
       );
       return initialArtifactData;
     }
+    console.log(`[ARTIFACT HOOK] Current artifact for ${artifactKey}:`, {
+      kind: localArtifact.kind,
+      title: localArtifact.title,
+      documentId: localArtifact.documentId,
+      isVisible: localArtifact.isVisible,
+      status: localArtifact.status
+    });
     return localArtifact;
   }, [localArtifact, artifactKey]);
 

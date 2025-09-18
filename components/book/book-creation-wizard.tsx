@@ -128,8 +128,9 @@ export function BookCreationWizard() {
       // Generate a new chat UUID and navigate with the initial prompt
       const chatId = crypto.randomUUID();
       
-      // Store the initial prompt in sessionStorage so the chat can pick it up
+      // Store the initial prompt and book type in sessionStorage so the chat can pick it up
       sessionStorage.setItem(`initial-prompt-${chatId}`, initialPrompt);
+      sessionStorage.setItem(`is-picture-book-${chatId}`, bookData.isPictureBook.toString());
       
       // Navigate to the new chat page - this will create a new chat via the API
       router.push(`/chat/${chatId}`);

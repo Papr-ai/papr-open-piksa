@@ -35,56 +35,40 @@ export function MessageReasoning({
   userQuery = '',
   selectedModelId,
 }: MessageReasoningProps & { selectedModelId?: string }) {
+  // Component rendered successfully
+  
   // We no longer need to skip rendering for non-reasoning models
   // as the parent component will decide whether to render us or not
   
   const [isExpanded, setIsExpanded] = useState(false);
-  const [prevEventsLength, setPrevEventsLength] = useState(events.length);
   const [wasPreviouslyLoading, setWasPreviouslyLoading] = useState(isLoading);
+  
+  // Debug logging removed to prevent infinite loops
 
-  // Add debug logging
+  // Simplified auto-expand logic - avoid complex dependencies
   useEffect(() => {
-    console.log('[MessageReasoning] Props:', {
-      isLoading,
-      reasoning,
-      events: events.length,
-      eventDetails: events,
-      userQuery,
-    });
-  }, [isLoading, reasoning, events, userQuery]);
-
-  // Auto-expand reasoning when loading or when important new events come in
-  useEffect(() => {
+    // Always expand when loading starts
     if (isLoading) {
       setIsExpanded(true);
       setWasPreviouslyLoading(true);
-    } else if (wasPreviouslyLoading && !isLoading) {
-      // Auto-collapse when thinking is complete
-      setIsExpanded(false);
-      setWasPreviouslyLoading(false);
     }
     
-    // Still expand for significant events even when not loading
-    if (events.length > prevEventsLength) {
-      // Check if the new events are significant enough to auto-expand
-      const newEvents = events.slice(prevEventsLength);
-      const hasSignificantNewEvent = newEvents.some(event => 
-        // Auto-expand for errors or memory search results
-        event.content.step === 'error' ||
-        (event.content.text && (
-          event.content.text.includes('Found') ||
-          event.content.text.startsWith('✅') ||
-          event.content.text.includes('Error')
-        ))
-      );
-      
-      if (hasSignificantNewEvent) {
-        setIsExpanded(true);
+    // Reset when loading stops
+    if (!isLoading && wasPreviouslyLoading) {
+      setWasPreviouslyLoading(false);
+      // Keep expanded if we have any events
+      if (events.length === 0) {
+        setIsExpanded(false);
       }
-      
-      setPrevEventsLength(events.length);
     }
-  }, [isLoading, events.length, prevEventsLength, wasPreviouslyLoading]);
+  }, [isLoading, wasPreviouslyLoading]);
+  
+  // Separate effect for events length changes - simplified
+  useEffect(() => {
+    if (events.length > 0) {
+      setIsExpanded(true);
+    }
+  }, [events.length]);
 
   const variants = {
     collapsed: {
@@ -122,7 +106,7 @@ export function MessageReasoning({
     }
     
     // Filter out generic processing placeholders
-    return !(text === "Processing..." || 
+    return !(text === "Processing.." || 
              text === "Processing" ||
              text.startsWith("Processing step") ||
              text === "");
@@ -595,7 +579,7 @@ export function MessageReasoning({
     : `Thoughts`;
 
   // Prepare event lists for subcomponents
-  const thinkingEvents = events.filter(e => e.content.step === 'think');
+  const thinkingEvents = events.filter(e => e.content.step === 'think' || e.content.step === 'complete');
   const memoryEvents = events.filter(event =>
     event.content.text && (
       event.content.text.includes('Found') ||

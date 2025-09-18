@@ -10,7 +10,15 @@ const createImageInput = z.object({
   sceneContext: z.string().optional().describe('Context about the current scene and story for continuity'),
   priorScene: z.string().optional().describe('Description of the previous scene for visual continuity'),
   styleConsistency: z.boolean().optional().default(false).describe('Whether to prioritize style consistency with seed images'),
-  aspectRatio: z.enum(['1:1', '16:9', '9:16', '4:3', '3:4']).optional().default('1:1').describe('Aspect ratio for the generated image')
+  aspectRatio: z.enum(['1:1', '16:9', '9:16', '4:3', '3:4']).optional().default('1:1').describe('Aspect ratio for the generated image'),
+  
+  // Enhanced book context
+  styleBible: z.string().optional().describe('Art style guidelines from book creation for consistent visual style'),
+  bookTitle: z.string().optional().describe('Title of the book for context'),
+  bookThemes: z.array(z.string()).optional().describe('Main themes of the book to reflect in the image'),
+  bookGenre: z.string().optional().describe('Book genre for appropriate style context'),
+  targetAge: z.string().optional().describe('Target age group for appropriate style'),
+  conversationContext: z.string().optional().describe('Full conversation context with style details')
 });
 
 const createImageOutput = z.object({

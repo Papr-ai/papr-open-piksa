@@ -43,6 +43,8 @@ interface MemorySearchResult {
   memoryId?: string;
   imageUrl?: string;
   description?: string;
+  seedImageUrl?: string; // For AI agent seed decisions
+  seedDescription?: string; // Context for seed usage
 }
 
 interface FormattedMemory {
@@ -385,13 +387,14 @@ All created images are automatically saved to both memory and the book_props dat
               }
             });
             
-            const environmentResult = await createEnvironmentImage({
+            const environmentResult = await createEnvironmentImageOptimized({
               environment,
               bookId,
               bookTitle,
               conversationContext,
               session,
-              dataStream
+              dataStream,
+              memoryCheck // Pass AI agent's seed decision
             });
             
             // Send progress update for environment completion
@@ -682,7 +685,7 @@ async function checkMemoryForCharacter(characterName: string, bookId: string, se
 }
 
 /**
- * Check memory for existing environment image
+ * Check memory for existing environment image with intelligent decision-making
  */
 async function checkMemoryForEnvironment(environmentName: string, bookId: string, session: Session): Promise<MemorySearchResult> {
   try {
@@ -701,15 +704,17 @@ async function checkMemoryForEnvironment(environmentName: string, bookId: string
       return { found: false };
     }
 
-    // Search for environment in memory
-    const memories = await memoryService.searchMemories(
+    console.log(`[StructuredBookImages] 🔍 INTELLIGENT SEARCH: Looking for environment "${environmentName}" in book ${bookId}`);
+
+    // First: Search for environment in THIS book
+    const currentBookMemories = await memoryService.searchMemories(
       paprUserId,
       `environment ${environmentName} book ${bookId}`,
       5
     );
 
-    // Look for environment-specific memories with images
-    const environmentMemory = memories.find(m => {
+    // Look for environment-specific memories with images from current book
+    let environmentMemory = currentBookMemories.find(m => {
       const customMeta = m.metadata?.customMetadata as any;
       return customMeta?.environment_name === environmentName &&
         customMeta?.book_id === bookId &&
@@ -719,6 +724,7 @@ async function checkMemoryForEnvironment(environmentName: string, bookId: string
 
     if (environmentMemory) {
       const customMeta = environmentMemory.metadata?.customMetadata as any;
+      console.log(`[StructuredBookImages] ✅ FOUND in current book: ${environmentName}`);
       return {
         found: true,
         memoryId: environmentMemory.id,
@@ -727,6 +733,11 @@ async function checkMemoryForEnvironment(environmentName: string, bookId: string
       };
     }
 
+    // SIMPLIFIED: Only check current book - AI agent handles cross-book decisions
+    console.log(`[StructuredBookImages] Simplified search - only checking current book "${bookId}"`);
+    console.log(`[StructuredBookImages] AI agent in chat route handles all cross-book and seed decisions`);
+
+    console.log(`[StructuredBookImages] ❌ NOT FOUND: No suitable environment "${environmentName}" found - will create new`);
     return { found: false };
   } catch (error) {
     console.error(`[StructuredBookImages] Error checking memory for environment ${environmentName}:`, error);
@@ -771,7 +782,14 @@ async function createCharacterPortrait({
         seedImages: [], // No seed images for portraits
         seedImageTypes: [], // Empty for new portraits
         styleConsistency: false,
-        aspectRatio: '1:1'
+        aspectRatio: '1:1',
+        
+        // Enhanced book context for better style consistency
+        styleBible: bookStyle,
+        bookTitle: bookTitle,
+        bookGenre: bookStyle?.includes('children') ? 'children\'s book' : undefined,
+        targetAge: bookStyle?.includes('age') ? bookStyle.split('age')[1]?.split(',')[0]?.trim() : undefined,
+        conversationContext: conversationContext
       }, { toolCallId: `portrait-${character.name}-${Date.now()}`, messages: [] });
 
       const imageResult = await extractImageResult(result);
@@ -818,15 +836,16 @@ async function createCharacterPortrait({
 }
 
 /**
- * Create an environment image (empty, top-view)
+ * Create an environment image using optimized createSingleBookImage (empty, top-view)
  */
-async function createEnvironmentImage({
+async function createEnvironmentImageOptimized({
   environment,
   bookId,
   bookTitle,
   conversationContext,
   session,
-  dataStream
+  dataStream,
+  memoryCheck
 }: {
   environment: any;
   bookId: string;
@@ -834,51 +853,69 @@ async function createEnvironmentImage({
   conversationContext?: string;
   session: Session;
   dataStream: DataStreamWriter;
+  memoryCheck?: MemorySearchResult; // AI agent's seed decision
 }): Promise<CreationResult> {
   try {
-    const { createImage } = await import('./create-image');
-    const imageTool = createImage({ session });
+    console.log(`[StructuredBookImages] Creating optimized environment: ${environment.name}`);
+    
+    // SIMPLIFIED: AI agent in chat route provides all seed decisions
+    console.log(`[StructuredBookImages] Creating environment - AI agent handles seed decisions`);
+    
+    const { createSingleBookImage } = await import('./create-single-book-image');
+    const imageTool = createSingleBookImage({ session, dataStream });
 
     // Extract style from conversation context or use default
     const styleMatch = conversationContext?.match(/Style Bible:\s*([^\n]+)/i);
-    const bookStyle = styleMatch ? styleMatch[1] : 'children\'s book illustration with consistent art style';
-    
-    // Ensure "empty" is in the prompt as requested
-    const environmentDescription = `Create an empty top-view image of ${environment.name}. ${environment.description}. The environment should be completely empty with no characters, people, or moving objects. Show the location from a top-down or slightly angled perspective that would work well for placing characters into the scene later. Style: ${bookStyle}. ${environment.timeOfDay ? `Time: ${environment.timeOfDay}.` : ''} ${environment.weather ? `Weather: ${environment.weather}.` : ''}`;
+    const styleBible = styleMatch ? styleMatch[1] : 'Children\'s book illustration style with watercolor techniques, bright warm palette, confident ink linework';
 
-    const context = conversationContext ? `Book: ${bookTitle}. Context: ${conversationContext}` : `Book: ${bookTitle}. Style: ${bookStyle}`;
+    // Create a much more detailed and unique environment description
+    const uniqueIdentifier = `${environment.name}_${environment.timeOfDay || 'day'}_${environment.weather || 'clear'}_${Date.now()}`;
+    const environmentDescription = `UNIQUE ENVIRONMENT MASTER PLATE: Create a completely original and distinct "${environment.name}" environment that has never been created before.
+
+SPECIFIC LOCATION: ${environment.name}
+DETAILED DESCRIPTION: ${environment.description}
+TIME OF DAY: ${environment.timeOfDay || 'day'} - ensure lighting, shadows, and atmosphere reflect this specific time
+WEATHER CONDITIONS: ${environment.weather || 'clear'} - show clear weather effects and atmospheric conditions
+UNIQUE ELEMENTS: Include specific architectural details, unique props, distinctive lighting, and characteristic features that make this "${environment.name}" location completely different from any other environment
+COMPOSITION: Wide establishing shot showing the complete environment space, empty of people but rich in environmental storytelling details
+
+CRITICAL: This must be a completely unique interpretation of "${environment.name}" - avoid generic or similar-looking environments. Focus on distinctive visual elements that make this location immediately recognizable and different from other locations.
+
+Unique ID: ${uniqueIdentifier}`;
 
     if (imageTool.execute) {
       const result = await imageTool.execute({
+        bookId,
+        bookTitle,
+        imageType: 'environment' as const,
+        imageId: `env-${environment.name}`,
+        name: environment.name,
         description: environmentDescription,
-        sceneContext: context,
-        seedImages: [], // No seed images for environments
-        seedImageTypes: ['environment'],
-        styleConsistency: false,
-        aspectRatio: '16:9'
-      }, { toolCallId: `env-${environment.name}-${Date.now()}`, messages: [] });
+        styleBible,
+        timeOfDay: environment.timeOfDay || 'midday',
+        weather: environment.weather || 'clear',
+        aspectRatio: '4:3' as const,
+        styleConsistency: true,
+        conversationContext,
+        seedImages: [], // AI agent in chat route provides seed decisions
+        currentStep: undefined,
+        totalSteps: undefined
+      }, { toolCallId: `env-optimized-${environment.name}-${Date.now()}`, messages: [] });
 
       const imageResult = await extractImageResult(result);
       if (imageResult && imageResult.imageUrl) {
-        // Save environment to memory with image URL
-        await saveEnvironmentToMemory({
-          environment,
-          imageUrl: imageResult.imageUrl,
-          bookId,
-          bookTitle,
-          session
-        });
-
+        console.log(`[StructuredBookImages] ✅ Created optimized environment: ${environment.name}`);
+        
         return {
           step: 'environment',
           success: true,
           item: environment.name,
           imageUrl: imageResult.imageUrl,
-          prompt: imageResult.actualPrompt,
-          approach: imageResult.approach,
-          seedImagesUsed: imageResult.seedImagesUsed,
-          reasoning: imageResult.reasoning,
-          memoryId: undefined // createImage doesn't return memoryId
+          prompt: imageResult.actualPrompt || environmentDescription,
+          approach: imageResult.approach || 'optimized-generation',
+          seedImagesUsed: imageResult.seedImagesUsed || [],
+          reasoning: imageResult.reasoning || 'Used createSingleBookImage for optimized environment creation',
+          memoryId: undefined // createSingleBookImage saves to memory automatically
         };
       }
     }
@@ -887,11 +924,11 @@ async function createEnvironmentImage({
       step: 'environment',
       success: false,
       item: environment.name,
-      error: 'Failed to create environment image'
+      error: 'Failed to create optimized environment image'
     };
 
   } catch (error) {
-    console.error(`[StructuredBookImages] Error creating environment ${environment.name}:`, error);
+    console.error(`[StructuredBookImages] Error creating optimized environment ${environment.name}:`, error);
     return {
       step: 'environment',
       success: false,
@@ -899,6 +936,14 @@ async function createEnvironmentImage({
       error: error instanceof Error ? error.message : 'Unknown error'
     };
   }
+}
+
+/**
+ * Legacy function - now uses optimized version
+ */
+async function createEnvironmentImage(params: any): Promise<CreationResult> {
+  console.log('[StructuredBookImages] Redirecting to optimized environment creation');
+  return createEnvironmentImageOptimized(params);
 }
 
 /**
@@ -964,7 +1009,15 @@ async function createSceneComposition({
     const styleMatch = conversationContext?.match(/Style Bible:\s*([^\n]+)/i);
     const bookStyle = styleMatch ? styleMatch[1] : 'children\'s book illustration with consistent art style';
     
-    const sceneDescription = `Compose a scene: ${scene.description}. Place the characters (${scene.characters.join(', ')}) into the ${scene.environment} environment. ${scene.actions ? `Actions: ${scene.actions}.` : ''} The characters should be naturally integrated into the environment with proper lighting, shadows, and perspective. Maintain the original character appearances and environment layout. Style: ${bookStyle}.`;
+    const sceneDescription = `Compose a scene: ${scene.description}. Place the characters (${scene.characters.join(', ')}) into the ${scene.environment} environment. ${scene.actions ? `Actions: ${scene.actions}.` : ''} 
+
+🎯 CRITICAL CHARACTER CONSISTENCY (using seed character portraits):
+- Maintain EXACT physical features from seed images (age, eye color, hair color/style, distinctive features)
+- Keep consistent clothing/outfits as shown in character seed portraits
+- Preserve character proportions and relative heights
+- Ensure each character looks identical to their seed portrait
+
+The characters should be naturally integrated into the environment with proper lighting, shadows, and perspective while maintaining their exact appearance from the seed images. Style: ${bookStyle}.`;
 
     const context = conversationContext ? `Book: ${bookTitle}. Scene: ${scene.sceneId}. Context: ${conversationContext}` : `Book: ${bookTitle}. Scene: ${scene.sceneId}. Style: ${bookStyle}`;
 
@@ -975,7 +1028,14 @@ async function createSceneComposition({
         seedImages,
         seedImageTypes,
         styleConsistency: true,
-        aspectRatio: '16:9'
+        aspectRatio: '16:9',
+        
+        // Enhanced book context for consistent scene composition
+        styleBible: bookStyle,
+        bookTitle: bookTitle,
+        bookGenre: bookStyle?.includes('children') ? 'children\'s book' : undefined,
+        targetAge: bookStyle?.includes('age') ? bookStyle.split('age')[1]?.split(',')[0]?.trim() : undefined,
+        conversationContext: conversationContext
       }, { toolCallId: `scene-${scene.sceneId}-${Date.now()}`, messages: [] });
 
       const imageResult = await extractImageResult(result);

@@ -23,6 +23,14 @@ interface BookWithProgress extends Book {
   currentStep?: number;
   totalSteps?: number;
   completedSteps?: number;
+  hasWorkflow?: boolean;
+  currentStepName?: string;
+  workflowSteps?: Array<{
+    stepNumber: number;
+    stepName: string;
+    status: string;
+    hasData: boolean;
+  }>;
 }
 
 const getStatusColor = (status: string) => {
@@ -61,22 +69,44 @@ export function BookCreationDashboard() {
       if (response.ok) {
         const data = await response.json();
         
-        // Fetch progress for each book
+        // Fetch workflow progress for each book
         const booksWithProgress: BookWithProgress[] = await Promise.all(
           data.books.map(async (book: Book) => {
             try {
-              const progressResponse = await fetch(`/api/books/${book.bookId}/progress`);
-              const progressData = progressResponse.ok ? await progressResponse.json() : null;
+              // Try workflow progress first
+              const workflowResponse = await fetch(`/api/books/${book.bookId}/workflow-progress`);
+              const workflowData = workflowResponse.ok ? await workflowResponse.json() : null;
               
-              return {
-                ...book,
-                progress: progressData?.progressPercentage || 0,
-                lastUpdatedFormatted: formatLastUpdated(book.lastUpdated),
-                status: deriveStatus(book, progressData),
-                currentStep: progressData?.currentStep,
-                totalSteps: progressData?.totalSteps,
-                completedSteps: progressData?.completedSteps,
-              };
+              if (workflowData && workflowData.hasWorkflow) {
+                // Use workflow-based progress
+                return {
+                  ...book,
+                  progress: workflowData.progressPercentage || 0,
+                  lastUpdatedFormatted: formatLastUpdated(book.lastUpdated),
+                  status: deriveWorkflowStatus(workflowData),
+                  currentStep: workflowData.currentStep,
+                  totalSteps: workflowData.totalSteps,
+                  completedSteps: workflowData.completedSteps,
+                  hasWorkflow: true,
+                  currentStepName: workflowData.currentStepName,
+                  workflowSteps: workflowData.steps,
+                };
+              } else {
+                // Fallback to task-based progress
+                const progressResponse = await fetch(`/api/books/${book.bookId}/progress`);
+                const progressData = progressResponse.ok ? await progressResponse.json() : null;
+                
+                return {
+                  ...book,
+                  progress: progressData?.progressPercentage || 0,
+                  lastUpdatedFormatted: formatLastUpdated(book.lastUpdated),
+                  status: deriveStatus(book, progressData),
+                  currentStep: progressData?.currentStep,
+                  totalSteps: progressData?.totalSteps,
+                  completedSteps: progressData?.completedSteps,
+                  hasWorkflow: false,
+                };
+              }
             } catch (error) {
               console.error(`Error fetching progress for book ${book.bookId}:`, error);
               return {
@@ -84,6 +114,7 @@ export function BookCreationDashboard() {
                 progress: 0,
                 lastUpdatedFormatted: formatLastUpdated(book.lastUpdated),
                 status: 'planning',
+                hasWorkflow: false,
               };
             }
           })
@@ -125,6 +156,20 @@ export function BookCreationDashboard() {
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
     if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
     return new Date(date).toLocaleDateString();
+  };
+
+  const deriveWorkflowStatus = (workflowData: any): string => {
+    const { currentStep, progressPercentage } = workflowData;
+    
+    if (progressPercentage === 100) return 'completed';
+    if (currentStep === 1) return 'planning';
+    if (currentStep === 2) return 'writing';
+    if (currentStep === 3) return 'writing';
+    if (currentStep === 4) return 'illustrating';
+    if (currentStep === 5) return 'illustrating';
+    if (currentStep === 6) return 'finalizing';
+    
+    return 'planning';
   };
 
   const deriveStatus = (book: Book, progressData?: any): string => {
@@ -239,14 +284,21 @@ export function BookCreationDashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {books.map((book) => (
-              <Link key={book.bookId} href={`/books/${book.bookId}`}>
+              <Link key={book.bookId} href={book.hasWorkflow ? `/chat/book/${book.bookId}` : `/books/${book.bookId}`}>
                 <Card className="hover:shadow-md transition-shadow cursor-pointer">
                   <CardHeader>
-                                          <div className="flex justify-between items-start">
-                        <div>
-                          <CardTitle className="text-lg line-clamp-2">{book.bookTitle}</CardTitle>
-                          <CardDescription>Book Project</CardDescription>
-                        </div>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <CardTitle className="text-lg line-clamp-2">{book.bookTitle}</CardTitle>
+                        <CardDescription>
+                          {book.hasWorkflow ? 'Book Creation Workflow' : 'Book Project'}
+                          {book.currentStepName && (
+                            <span className="block text-xs text-muted-foreground mt-1">
+                              Current: {book.currentStepName}
+                            </span>
+                          )}
+                        </CardDescription>
+                      </div>
                       <Badge 
                         variant="outline" 
                         className={`gap-1 ${getStatusColor(book.status)}`}
@@ -270,6 +322,11 @@ export function BookCreationDashboard() {
                             style={{ width: `${book.progress}%` }}
                           />
                         </div>
+                        {book.hasWorkflow && book.totalSteps && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {book.completedSteps} of {book.totalSteps} steps completed
+                          </div>
+                        )}
                       </div>
                       
                       {/* Stats */}
@@ -277,6 +334,27 @@ export function BookCreationDashboard() {
                         <span>{book.chapterCount} chapters</span>
                         <span>{book.totalWordCount.toLocaleString()} words</span>
                       </div>
+                      
+                      {/* Workflow Steps Preview */}
+                      {book.hasWorkflow && book.workflowSteps && (
+                        <div className="text-xs">
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {book.workflowSteps.slice(0, 6).map((step) => (
+                              <div
+                                key={step.stepNumber}
+                                className={`w-2 h-2 rounded-full ${
+                                  step.status === 'completed' || step.status === 'approved'
+                                    ? 'bg-green-500'
+                                    : step.status === 'in_progress'
+                                    ? 'bg-blue-500'
+                                    : 'bg-gray-300'
+                                }`}
+                                title={`${step.stepName}: ${step.status}`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       
                       <div className="text-xs text-muted-foreground">
                         Updated {book.lastUpdatedFormatted}

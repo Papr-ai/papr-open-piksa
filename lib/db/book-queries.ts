@@ -32,22 +32,29 @@ export interface BookChapter {
 // Book queries - working with existing Books table structure
 export async function getBooksByUserId(userId: string): Promise<BookSummary[]> {
   const result = await db.execute(sql`
-    SELECT 
-      "bookId",
-      "bookTitle",
-      COUNT(*) as "chapterCount",
-      SUM(
-        CASE 
-          WHEN "content" IS NULL OR "content" = '' THEN 0
-          ELSE array_length(string_to_array(trim("content"), ' '), 1)
-        END
-      ) as "totalWordCount",
-      MAX("updatedAt") as "lastUpdated",
-      "userId"
-    FROM "Books"
-    WHERE "userId" = ${userId} AND "is_latest" = true
-    GROUP BY "bookId", "bookTitle", "userId"
-    ORDER BY MAX("updatedAt") DESC
+    WITH book_titles AS (
+      SELECT 
+        "bookId",
+        "userId",
+        -- Prioritize workflow title (chapter 0) over other chapter titles
+        COALESCE(
+          MAX(CASE WHEN "chapterNumber" = 0 THEN "bookTitle" END),
+          MAX("bookTitle")
+        ) as "bookTitle",
+        COUNT(*) as "chapterCount",
+        SUM(
+          CASE 
+            WHEN "content" IS NULL OR "content" = '' THEN 0
+            ELSE array_length(string_to_array(trim("content"), ' '), 1)
+          END
+        ) as "totalWordCount",
+        MAX("updatedAt") as "lastUpdated"
+      FROM "Books"
+      WHERE "userId" = ${userId} AND "is_latest" = true
+      GROUP BY "bookId", "userId"
+    )
+    SELECT * FROM book_titles
+    ORDER BY "lastUpdated" DESC
   `);
   
   return result.map(row => ({
@@ -61,7 +68,9 @@ export async function getBooksByUserId(userId: string): Promise<BookSummary[]> {
 }
 
 export async function getBookChaptersByBookId(bookId: string, userId: string): Promise<BookChapter[]> {
-  return await db
+  console.log(`[getBookChaptersByBookId] Fetching chapters for bookId: ${bookId}, userId: ${userId}`);
+  
+  const chapters = await db
     .select()
     .from(Book)
     .where(and(
@@ -70,6 +79,17 @@ export async function getBookChaptersByBookId(bookId: string, userId: string): P
       eq(Book.is_latest, true)  // Only get the latest version of each chapter
     ))
     .orderBy(Book.chapterNumber);
+  
+  console.log(`[getBookChaptersByBookId] Found ${chapters.length} chapters:`, 
+    chapters.map(ch => ({ 
+      chapterNumber: ch.chapterNumber, 
+      chapterTitle: ch.chapterTitle,
+      contentLength: ch.content?.length || 0,
+      is_latest: ch.is_latest
+    }))
+  );
+  
+  return chapters;
 }
 
 export async function getBookChapterById(chapterId: string, userId: string): Promise<BookChapter | null> {

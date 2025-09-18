@@ -12,8 +12,9 @@ interface ReasoningEvent {
 
 export function ThinkingBlockList({ events }: { events: ReasoningEvent[] }) {
   // Deduplicate events based on their text content
+  // Accept both 'think' and 'complete' steps for reasoning content
   const uniqueEvents = events
-    .filter(e => e.content.step === 'think')
+    .filter(e => e.content.step === 'think' || e.content.step === 'complete')
     .reduce((unique, event) => {
       // Check if we already have an event with the same text content
       const exists = unique.some(e => e.content.text === event.content.text);

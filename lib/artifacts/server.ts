@@ -2,6 +2,7 @@ import { imageDocumentHandler } from '@/artifacts/image/server';
 import { sheetDocumentHandler } from '@/artifacts/sheet/server';
 import { textDocumentHandler } from '@/artifacts/text/server';
 import { memoryDocumentHandler } from '@/artifacts/memory/server';
+import { bookCreationDocumentHandler } from '@/artifacts/book-creation/server';
 // Book functionality moved to createBook tool
 import type { ArtifactKind } from '@/components/artifact/artifact';
 import type { DataStreamWriter } from '@/lib/types';
@@ -136,6 +137,7 @@ export const artifactKinds = [
   'image',
   'sheet',
   'memory',
+  'book-creation',
 ] as const;
 
 /*
@@ -146,4 +148,5 @@ export const documentHandlersByArtifactKind: Array<DocumentHandler> = [
   imageDocumentHandler,
   sheetDocumentHandler,
   memoryDocumentHandler,
+  bookCreationDocumentHandler,
 ];

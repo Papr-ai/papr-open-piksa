@@ -1155,6 +1155,8 @@ export const bookArtifact = new Artifact<'book', BookArtifactMetadata>({
       });
   },
   onStreamPart: ({ streamPart, setMetadata, setArtifact }) => {
+    console.log('[BookArtifact] 📖 REGULAR BOOK ARTIFACT - Stream event received:', streamPart.type, streamPart.content);
+    
     if (streamPart.type === 'suggestion') {
       try {
         setMetadata((metadata) => {

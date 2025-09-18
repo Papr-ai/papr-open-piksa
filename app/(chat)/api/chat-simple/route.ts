@@ -114,6 +114,7 @@ function getFriendlyToolName(toolName: string): string {
 
 import { handleRateLimitWithRetry } from '@/lib/ai/rate-limit-handler';
 import { google } from '@ai-sdk/google';
+import { openai } from '@ai-sdk/openai';
 
 // Simple chat API that works with useChat hook
 export async function POST(request: Request) {
@@ -234,6 +235,11 @@ export async function POST(request: Request) {
     //console.log('[SIMPLE CHAT API] Memory enabled:', isMemoryEnabled);
     //console.log('[SIMPLE CHAT API] All headers:', Object.fromEntries(request.headers.entries()));
 
+    // Check if it's a picture book from headers (set by frontend based on user choice or DB)
+    const pictureBookHeaderValue = request.headers.get('X-Is-Picture-Book');
+    const isPictureBook = pictureBookHeaderValue === 'true';
+    console.log('[SIMPLE CHAT API] Picture book mode:', isPictureBook);
+
     const userMessage = getMostRecentUserMessage(messages);
     if (!userMessage) {
       return new Response('No user message found', { status: 400 });
@@ -309,7 +315,9 @@ export async function POST(request: Request) {
     }
 
     const supportsReasoning = modelSupportsReasoning(modelToUse);
-    console.log('[SIMPLE CHAT API] Model supports reasoning:', supportsReasoning, 'for model:', modelToUse);
+    // Only OpenAI models support the reasoning API format
+    const supportsOpenAIReasoning = supportsReasoning && (modelToUse.startsWith('gpt-') || modelToUse.startsWith('o4-'));
+    console.log('[SIMPLE CHAT API] Model supports reasoning:', supportsReasoning, 'OpenAI reasoning:', supportsOpenAIReasoning, 'for model:', modelToUse);
 
     // For the simple chat route, we'll collect data stream writes and include them in tool responses
     // This is a simpler approach than real-time streaming but will show progress after tool completion
@@ -327,9 +335,11 @@ export async function POST(request: Request) {
     
     // Always available tools
     tools.getWeather = getWeather;
-    tools.createDocument = createDocument({ session, dataStream });
+    // TEMPORARILY DISABLED to force unified workflow
+    // tools.createDocument = createDocument({ session, dataStream });
     tools.updateDocument = updateDocument({ session, dataStream });
-    tools.createBook = createBook({ session, dataStream });
+    // TEMPORARILY DISABLED to force unified workflow
+    // tools.createBook = createBook({ session, dataStream });
     tools.searchBooks = searchBooks({ session });
     tools.searchBookProps = searchBookProps({ session, dataStream });
     tools.createBookImagePlan = createBookImagePlan({ session, dataStream });
@@ -342,17 +352,21 @@ export async function POST(request: Request) {
     const { createStructuredBookImages } = await import('@/lib/ai/tools/structured-book-image-creation');
     tools.createStructuredBookImages = createStructuredBookImages({ session, dataStream });
     
-    // Enhanced book creation workflow tools
-    const { createEnhancedBookTools } = await import('@/lib/ai/tools/enhanced-book-tools');
-    const enhancedBookTools = createEnhancedBookTools(session, dataStream);
-    tools.createBookPlan = enhancedBookTools.createBookPlan;
-    tools.draftChapter = enhancedBookTools.draftChapter;
-    tools.segmentChapterIntoScenes = enhancedBookTools.segmentChapterIntoScenes;
-    tools.createCharacterPortraits = enhancedBookTools.createCharacterPortraits;
-    tools.createEnvironments = enhancedBookTools.createEnvironments;
-    tools.createSceneManifest = enhancedBookTools.createSceneManifest;
-    tools.renderScene = enhancedBookTools.renderScene;
-    tools.completeBook = enhancedBookTools.completeBook;
+    // Enhanced book creation workflow tools - TEMPORARILY DISABLED to force unified workflow
+    // const { createEnhancedBookTools } = await import('@/lib/ai/tools/enhanced-book-tools');
+    // const enhancedBookTools = createEnhancedBookTools(session, dataStream);
+    // tools.createBookPlan = enhancedBookTools.createBookPlan;
+    // tools.draftChapter = enhancedBookTools.draftChapter;
+    // tools.segmentChapterIntoScenes = enhancedBookTools.segmentChapterIntoScenes;
+    // tools.createCharacterPortraits = enhancedBookTools.createCharacterPortraits;
+    // tools.createEnvironments = enhancedBookTools.createEnvironments;
+    // tools.createSceneManifest = enhancedBookTools.createSceneManifest;
+    // tools.renderScene = enhancedBookTools.renderScene;
+    // tools.completeBook = enhancedBookTools.completeBook;
+    
+    // Unified book creation artifact tool
+    const { createBookArtifact } = await import('@/lib/ai/tools/unified-book-creation');
+    tools.createBookArtifact = createBookArtifact({ session, dataStream });
     
     // Book workflow status tool
     const { getBookWorkflowStatus } = await import('@/lib/ai/tools/book-workflow-status');
@@ -370,13 +384,13 @@ export async function POST(request: Request) {
     tools.getStagingState = createGetStagingStateTool({ session, dataStream });
     tools.clearStagedFiles = createClearStagedFilesTool({ session, dataStream });
     
-    // Task tracker tools - pass chat ID for automatic sessionId
-    const taskTrackerTools = createTaskTrackerTools(dataStream, session, id);
-    tools.createTaskPlan = taskTrackerTools.createTaskPlan;
-    tools.updateTask = taskTrackerTools.updateTask;
-    tools.completeTask = taskTrackerTools.completeTask;
-    tools.getTaskStatus = taskTrackerTools.getTaskStatus;
-    tools.addTask = taskTrackerTools.addTask;
+    // Task tracker tools - DISABLED in favor of unified book creation workflow
+    // const taskTrackerTools = createTaskTrackerTools(dataStream, session, id);
+    // tools.createTaskPlan = taskTrackerTools.createTaskPlan;
+    // tools.updateTask = taskTrackerTools.updateTask;
+    // tools.completeTask = taskTrackerTools.completeTask;
+    // tools.getTaskStatus = taskTrackerTools.getTaskStatus;
+    // tools.addTask = taskTrackerTools.addTask;
     
     // Memory tools (if enabled)
     if (isMemoryEnabled) {
@@ -414,7 +428,10 @@ export async function POST(request: Request) {
     let enhancedSystemPrompt: string;
     
     // Use system prompt with memory instructions if memory is enabled
-    let baseSystemPrompt = systemPrompt({ selectedChatModel: modelToUse });
+    let baseSystemPrompt = systemPrompt({ 
+      selectedChatModel: modelToUse,
+      isPictureBook   
+    });
     
     // Get chat history context for newly created chats only
     let chatHistoryContext = '';
@@ -689,10 +706,12 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
 
 
-        // Use Google provider directly for web search, otherwise use custom provider
+        // Use direct providers for testing streaming issues
         const modelProvider = (isWebSearchEnabled && modelSupportsWebSearch(modelToUse)) 
           ? google(modelToUse)
-          : myProvider.languageModel(modelToUse);
+          : modelToUse.startsWith('gpt-') || modelToUse.startsWith('o4-')
+            ? openai(modelToUse) // Use OpenAI provider directly for GPT models
+            : myProvider.languageModel(modelToUse);
 
         // Build final system prompt with additional instructions
         const additionalInstructions = "\n\nIMPORTANT: When using tools, ALWAYS provide a helpful text response explaining what you're doing or what the tools accomplish. DO NOT include raw tool response data or JSON in your text - the UI will handle displaying tool results automatically. Focus on natural language explanations of your actions." +
@@ -723,10 +742,13 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
         //console.log(`  - System prompt preview: ${finalSystemPrompt.substring(0, 200)}...`);
         
 
-        //console.log(`  - Model: ${modelProvider.modelId || 'unknown'}`);
-        //console.log(`  - Tools count: ${Object.keys(tools).length}`);
-        //console.log(`  - Reasoning enabled: ${supportsReasoning}`);
-        //console.log(`  - Reasoning config:`, supportsReasoning ? { effort: 'medium', budgetTokens: 2000 } : 'none');
+        console.log(`[SIMPLE CHAT API] 🧠 REASONING CONFIG:`, {
+          modelId: modelProvider.modelId || 'unknown',
+          supportsReasoning,
+          supportsOpenAIReasoning,
+          reasoningConfig: supportsOpenAIReasoning ? { effort: 'low', budgetTokens: 100 } : 'none',
+          sendReasoning: supportsReasoning
+        });
 
                 const streamTextStart = Date.now();
                 console.log(`[TIMING] 🚀 Starting AI streamText call...`);
@@ -738,19 +760,13 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           tools: tools,
           experimental_activeTools: [
             'getWeather',
-            'createDocument',
+            'createBookArtifact',
             'updateDocument',
-            'createBook',
             'searchBooks',
             'searchBookProps',
             'createBookImagePlan',
             'createSingleBookImage',
             'requestSuggestions',
-            'createTaskPlan',
-            'updateTask',
-            'completeTask',
-            'getTaskStatus',
-            'addTask',
             ...(isMemoryEnabled ? ['searchMemories', 'addMemory', 'updateMemory', 'deleteMemory'] : []),
             ...(isWebSearchEnabled && modelSupportsWebSearch(modelToUse) ? ['google_search'] : []),
           ],
@@ -769,6 +785,15 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
               stepResult.toolCalls.forEach((toolCall: any) => {
                 const friendlyName = getFriendlyToolName(toolCall.toolName);
                 console.log(`[PROGRESS] 🔧 ${friendlyName}...`);
+                
+                // Debug tool call arguments for JSON parsing issues
+                try {
+                  JSON.stringify(toolCall.args);
+                  console.log(`[PROGRESS] ✅ ${toolCall.toolName} args are valid JSON`);
+                } catch (error) {
+                  console.error(`[PROGRESS] ❌ ${toolCall.toolName} has invalid JSON args:`, error);
+                  console.error(`[PROGRESS] Raw args:`, toolCall.args);
+                }
                 //console.log('[SIMPLE CHAT API] Tool calls attempted:', JSON.stringify(stepResult.toolCalls, null, 2));
               });
             }
@@ -840,12 +865,23 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
 
     console.log('[SIMPLE CHAT API] Returning UI message stream response');
     
+    // 🕐 FINAL TIMING SUMMARY (before return)
+    const totalDuration = Date.now() - requestStartTime;
+    console.log(`\n[TIMING SUMMARY] 📊 Total Request Duration: ${totalDuration}ms`);
+    console.log('[TIMING BREAKDOWN]:');
+    Object.entries(timings).forEach(([step, duration]) => {
+      const percentage = ((duration / totalDuration) * 100).toFixed(1);
+      console.log(`  • ${step}: ${duration}ms (${percentage}%)`);
+    });
+    console.log('');
+    
     // Store sources to attach to message metadata
     let capturedSources: any[] = [];
     
     return result.toUIMessageStreamResponse<ExtendedUIMessage>({
       originalMessages: messages, // keeps strong typing of metadata on the client
-      sendReasoning: true,        // forwards reasoning parts when provider supports them
+      sendReasoning: true, // Enable reasoning and tool call streaming
+      sendSources: isWebSearchEnabled, // Send sources if web search is enabled
       messageMetadata: ({ part }: { part: any }) => {
         // Attach metadata at start/finish (visible on client as message.metadata)
         if (part.type === 'start') {
@@ -861,8 +897,9 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           };
         }
       },
-      onFinish: async ({ messages: finalMessages }: { messages: any }) => {
-        
+      onFinish: ({ messages: finalMessages }: { messages: any }) => {
+        // Process in background to avoid blocking streaming
+        setImmediate(async () => {
         try {
           // Sanitize messages to remove large binary data before saving
           const sanitizedMessages = finalMessages.map((msg: any) => {
@@ -1018,18 +1055,9 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
         } catch (error) {
           console.error('[SIMPLE CHAT API] Error in onFinish:', error);
         }
+        });
       },
     });
-    
-    // 🕐 FINAL TIMING SUMMARY
-    const totalDuration = Date.now() - requestStartTime;
-    console.log(`\n[TIMING SUMMARY] 📊 Total Request Duration: ${totalDuration}ms`);
-    console.log('[TIMING BREAKDOWN]:');
-    Object.entries(timings).forEach(([step, duration]) => {
-      const percentage = ((duration / totalDuration) * 100).toFixed(1);
-      console.log(`  • ${step}: ${duration}ms (${percentage}%)`);
-    });
-    console.log('');
 
   } catch (error) {
     console.error('[SIMPLE CHAT API] ERROR:', error);

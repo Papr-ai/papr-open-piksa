@@ -23,6 +23,13 @@ interface ImagePromptContext {
   seedImages?: string[];
   seedImageTypes?: ('character' | 'environment' | 'prop' | 'other')[];
   isEditing?: boolean; // Flag to determine if this is for editing vs creation
+  
+  // Enhanced book context
+  styleBible?: string; // Art style guidelines from book creation
+  bookThemes?: string[]; // Main themes of the book
+  bookGenre?: string; // Book genre for style context
+  targetAge?: string; // Target age group for appropriate style
+  conversationContext?: string; // Full conversation context with style details
 }
 
 // Schema for image creation prompts
@@ -229,24 +236,50 @@ PROCESS
 function buildCreationUserPrompt(context: ImagePromptContext): string {
   let prompt = `REQUEST: ${context.description}`;
 
-  if (context.sceneContext) {
-    prompt += `\n\nCONTEXT: ${context.sceneContext}`;
+  // Enhanced book context for better style consistency
+  if (context.bookTitle) {
+    prompt += `\n\nBOOK: "${context.bookTitle}"`;
+    
+    if (context.bookGenre) {
+      prompt += ` (${context.bookGenre})`;
+    }
+    
+    if (context.targetAge) {
+      prompt += ` for ages ${context.targetAge}`;
+    }
   }
 
-  if (context.style) {
+  // Style Bible is the most important for visual consistency
+  if (context.styleBible) {
+    prompt += `\n\nART STYLE REQUIREMENTS: ${context.styleBible}`;
+  } else if (context.style) {
     prompt += `\n\nSTYLE PREFERENCE: ${context.style}`;
+  }
+
+  // Book themes provide emotional and visual context
+  if (context.bookThemes && context.bookThemes.length > 0) {
+    prompt += `\n\nBOOK THEMES: ${context.bookThemes.join(', ')} - ensure the image reflects these themes`;
+  }
+
+  if (context.sceneContext) {
+    prompt += `\n\nSCENE CONTEXT: ${context.sceneContext}`;
   }
 
   if (context.aspectRatio) {
     prompt += `\n\nASPECT RATIO: ${context.aspectRatio}`;
   }
 
-  if (context.bookTitle) {
-    prompt += `\n\nBOOK CONTEXT: "${context.bookTitle}"`;
-  }
-
   if (context.priorScene) {
     prompt += `\n\nPRIOR SCENE: ${context.priorScene}`;
+  }
+
+  // Add seed image guidance for editing
+  if (context.seedImages && context.seedImages.length > 0) {
+    prompt += `\n\nSEED IMAGES: ${context.seedImages.length} reference image(s) provided`;
+    if (context.seedImageTypes && context.seedImageTypes.length > 0) {
+      prompt += ` (${context.seedImageTypes.join(', ')})`;
+    }
+    prompt += ` - maintain consistency with these images while following the art style requirements`;
   }
 
   return prompt;
@@ -266,12 +299,29 @@ function buildEditingUserPrompt(context: ImagePromptContext): string {
     }
   }
 
-  if (context.sceneContext) {
-    prompt += `\n\nCONTEXT: ${context.sceneContext}`;
+  // Enhanced book context for editing consistency
+  if (context.bookTitle) {
+    prompt += `\n\nBOOK CONTEXT: "${context.bookTitle}"`;
+    
+    if (context.bookGenre && context.targetAge) {
+      prompt += ` (${context.bookGenre} for ages ${context.targetAge})`;
+    }
   }
 
-  if (context.style) {
+  // Style Bible is critical for maintaining visual consistency when editing
+  if (context.styleBible) {
+    prompt += `\n\nMAINTAIN ART STYLE: ${context.styleBible}`;
+  } else if (context.style) {
     prompt += `\n\nSTYLE PREFERENCE: ${context.style}`;
+  }
+
+  // Book themes should be preserved in edits
+  if (context.bookThemes && context.bookThemes.length > 0) {
+    prompt += `\n\nPRESERVE BOOK THEMES: ${context.bookThemes.join(', ')}`;
+  }
+
+  if (context.sceneContext) {
+    prompt += `\n\nCONTEXT: ${context.sceneContext}`;
   }
 
   return prompt;

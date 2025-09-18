@@ -1,7 +1,7 @@
 'use client';
 
 import type { FileUIPart, UIMessage } from 'ai';
-import { DefaultChatTransport } from 'ai';
+import { DefaultChatTransport, TextStreamChatTransport } from 'ai';
 
 import { useChat } from '@ai-sdk/react';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
@@ -70,6 +70,7 @@ export function Chat({
   selectedVisibilityType,
   isReadonly,
   documentId,
+  bookId,
 }: {
   id: string;
   initialMessages: Array<UIMessage>;
@@ -77,7 +78,53 @@ export function Chat({
   selectedVisibilityType: VisibilityType;
   isReadonly: boolean;
   documentId?: string;
+  bookId?: string;
 }) {
+  // Debug initial messages for artifact restoration
+  console.log('[Chat] Initializing with messages:', {
+    messageCount: initialMessages?.length || 0,
+    hasToolCalls: initialMessages?.some((msg: any) => (msg.toolCalls?.length > 0) || (msg.tool_calls?.length > 0)),
+    toolCallTypes: initialMessages?.flatMap((msg: any) => 
+      (msg.toolCalls?.map((tc: any) => tc.toolName || tc.function?.name) || [])
+        .concat(msg.tool_calls?.map((tc: any) => tc.toolName || tc.function?.name) || [])
+    ),
+    bookId,
+    documentId
+  });
+
+  // Debug tool call structure
+  const messagesWithToolCalls = initialMessages?.filter((msg: any) => 
+    (msg.toolCalls?.length > 0) || (msg.tool_calls?.length > 0)
+  ) || [];
+  
+  if (messagesWithToolCalls.length > 0) {
+    const firstMsg = messagesWithToolCalls[0] as any;
+    console.log('[Chat] Sample tool call structures:', {
+      firstMessageWithToolCalls: {
+        id: firstMsg?.id,
+        role: firstMsg?.role,
+        toolCalls: firstMsg?.toolCalls,
+        tool_calls: firstMsg?.tool_calls,
+        parts: firstMsg?.parts?.slice(0, 2) // First 2 parts for brevity
+      }
+    });
+
+    // Look for createBookArtifact parts specifically
+    const createBookMessages = messagesWithToolCalls.filter((msg: any) => 
+      msg.tool_calls?.some((tc: any) => tc.function?.name === 'createBookArtifact')
+    );
+    
+    if (createBookMessages.length > 0) {
+      const bookMsg = createBookMessages[0] as any;
+      console.log('[Chat] createBookArtifact message parts:', {
+        messageId: bookMsg.id,
+        partsCount: bookMsg.parts?.length,
+        partTypes: bookMsg.parts?.map((p: any) => ({ type: p.type, state: p.state })),
+        toolResultParts: bookMsg.parts?.filter((p: any) => p.type?.includes('createBookArtifact'))
+      });
+    }
+  }
+
   // Mobile detection hook
   const isMobile = useIsMobile();
   
@@ -98,6 +145,10 @@ export function Chat({
     messages: [] as any[],
     error: null as string | null,
   });
+
+  // Track picture book state from sessionStorage
+  const [isPictureBook, setIsPictureBook] = useState(false);
+  const isPictureBookRef = useRef(false);
 
   useEffect(() => {
     const handleMemoryToggle = (event: CustomEvent) => {
@@ -131,6 +182,7 @@ export function Chat({
       window.removeEventListener('web-search-toggle-changed', handleWebSearchToggle as EventListener);
     };
   }, []);
+
   const { mutate } = useSWRConfig();
   const [isClient, setIsClient] = useState(false);
   // Breadcrumb title updater: update once when assistant starts responding
@@ -181,6 +233,19 @@ export function Chat({
     selectedChatModelRef.current = selectedChatModel;
   }, [selectedChatModel]);
 
+  // Read picture book flag from sessionStorage on mount
+  useEffect(() => {
+    const pictureBookFlag = sessionStorage.getItem(`is-picture-book-${id}`);
+    if (pictureBookFlag !== null) {
+      const isPictureBookValue = pictureBookFlag === 'true';
+      setIsPictureBook(isPictureBookValue);
+      isPictureBookRef.current = isPictureBookValue;
+      console.log('[Chat] Picture book flag loaded from sessionStorage:', isPictureBookValue);
+      // Clean up sessionStorage after reading
+      sessionStorage.removeItem(`is-picture-book-${id}`);
+    }
+  }, [id]);
+
   const {
     messages,
     setMessages,
@@ -191,7 +256,7 @@ export function Chat({
   } = useChat({
     id,
     messages: initialMessages,
-    experimental_throttle: 100,
+    experimental_throttle: 50, // Add throttle to accumulate deltas into larger chunks (50ms)
     generateId: generateUUID,
     transport: new DefaultChatTransport({
       api: '/api/chat-simple',
@@ -202,18 +267,24 @@ export function Chat({
         // Use refs to get current values, avoiding closure issues
         const currentMemoryState = memoryEnabledRef.current;
         const currentWebSearchState = webSearchEnabledRef.current;
+        const currentPictureBookState = isPictureBookRef.current;
         console.log('[Chat] Sending headers with memory enabled:', currentMemoryState);
         console.log('[Chat] Sending headers with web search enabled:', currentWebSearchState);
+        console.log('[Chat] Sending headers with picture book mode:', currentPictureBookState);
+        console.log('[Chat] Sending headers with bookId:', bookId);
         return {
           'X-Memory-Enabled': currentMemoryState ? 'true' : 'false',
           'X-Web-Search-Enabled': currentWebSearchState ? 'true' : 'false',
+          'X-Is-Picture-Book': currentPictureBookState ? 'true' : 'false',
           'X-Context': selectedContextsRef.current.length > 0 ? JSON.stringify(selectedContextsRef.current) : '',
           'X-Interaction-Mode': 'chat',
+          'X-Book-Id': bookId || '',
         };
       },
     }),
 
-    onFinish: () => {
+    onFinish: (finishInfo) => {
+      console.log('[Chat] useChat onFinish called with:', finishInfo);
       // Refresh chat list
       mutate(unstable_serialize(getChatHistoryPaginationKey));
       // Fetch chat title once and update breadcrumb
@@ -223,6 +294,12 @@ export function Chat({
           if (data?.title) setTitle(data.title);
         })
         .catch(() => {});
+    },
+    onData: (data) => {
+      console.log('[Chat] 📊 onData called with:', data);
+    },
+    onToolCall: (toolCall) => {
+      console.log('[Chat] 🔧 onToolCall called with:', toolCall);
     },
     onError: (error: any) => {
       console.error('Chat error:', error);
@@ -237,6 +314,15 @@ export function Chat({
       toast.error('An error occurred, please try again!');
     },
   });
+
+  // Track status changes for debugging
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (prevStatusRef.current !== status) {
+      console.log(`[Chat] 🚦 STATUS CHANGE: ${prevStatusRef.current} -> ${status}`);
+      prevStatusRef.current = status;
+    }
+  }, [status]);
 
   // Log the selected model for debugging
   useEffect(() => {
@@ -281,6 +367,173 @@ export function Chat({
   const handleVoiceStateChange = useCallback((state: any) => {
     setVoiceState(state);
   }, []);
+
+  // Auto-open book workflow artifact when bookId is provided
+  useEffect(() => {
+    console.log('[Chat] useEffect triggered with:', { 
+      bookId, 
+      hasSession: !!session, 
+      userId: session?.user?.id,
+      willRun: !!(bookId && session?.user?.id)
+    });
+    
+    if (bookId && session?.user?.id) {
+      console.log('[Chat] Auto-opening book workflow artifact for bookId:', bookId);
+      
+      // Directly open the book creation artifact without sending a message
+      const openBookArtifact = async () => {
+        try {
+          // Call the API to get the workflow state (since getWorkflowFromDatabase needs server-side access)
+          console.log('[Chat] Loading workflow state for bookId:', bookId);
+          
+          // Add timeout to prevent infinite loading
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+          
+          const response = await fetch(`/api/books/${bookId}/workflow-progress`, {
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          console.log('[Chat] Workflow progress response status:', response.status);
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log('[Chat] Workflow progress data:', data);
+            
+            if (data.workflowState) {
+              console.log('[Chat] Found workflow state, creating artifact:', {
+                bookTitle: data.workflowState.bookTitle,
+                stepsCount: data.workflowState.steps?.length,
+                steps: data.workflowState.steps?.map((s: any) => ({ 
+                  stepNumber: s.stepNumber, 
+                  stepName: s.stepName, 
+                  status: s.status, 
+                  hasData: !!s.data 
+                }))
+              });
+              
+              // Create the artifact directly
+              setArtifact({
+                documentId: bookId,
+                kind: 'book-creation',
+                content: JSON.stringify(data.workflowState),
+                title: `📖 ${data.workflowState.bookTitle || 'Book Creation Workflow'}`,
+                isVisible: true,
+                status: 'idle',
+                boundingBox: {
+                  top: 100,
+                  left: 100,
+                  width: 800,
+                  height: 600,
+                },
+              });
+            } else {
+              console.log('[Chat] No workflow state found, checking for old book format...');
+              await migrateOldBookToWorkflow(bookId);
+            }
+          } else {
+            console.log('[Chat] Workflow progress API failed, checking for old book format...');
+            await migrateOldBookToWorkflow(bookId);
+          }
+        } catch (error) {
+          console.error('[Chat] Error loading book workflow:', error);
+          
+          // Check if it was a timeout
+          if (error instanceof Error && error.name === 'AbortError') {
+            console.error('[Chat] Request timed out after 10 seconds');
+          }
+          
+          // Try to migrate as fallback
+          await migrateOldBookToWorkflow(bookId);
+        }
+      };
+      
+      const migrateOldBookToWorkflow = async (bookId: string) => {
+        try {
+          console.log('[Chat] Attempting to migrate old book to workflow format...');
+          
+          // Check if book has chapters but no Chapter 0 (workflow metadata)
+          const chaptersResponse = await fetch(`/api/books?bookId=${encodeURIComponent(bookId)}`);
+          console.log('[Chat] Chapters API response:', chaptersResponse.status, chaptersResponse.statusText);
+          
+          if (!chaptersResponse.ok) {
+            console.error('[Chat] Failed to fetch chapters for migration:', chaptersResponse.statusText);
+            return;
+          }
+          
+          const chapters = await chaptersResponse.json();
+          console.log('[Chat] Found chapters for migration:', chapters.length);
+          
+          // Check if Chapter 0 exists
+          const hasWorkflowMetadata = chapters.some((ch: any) => ch.chapterNumber === 0);
+          const hasContentChapters = chapters.some((ch: any) => ch.chapterNumber > 0);
+          
+          if (!hasWorkflowMetadata && hasContentChapters) {
+            console.log('[Chat] Old book format detected - has content chapters but no workflow metadata');
+            
+            // Get the first chapter for book title
+            const firstChapter = chapters.find((ch: any) => ch.chapterNumber === 1);
+            const bookTitle = firstChapter?.bookTitle || 'Migrated Book';
+            
+            // Create workflow state for old book
+            const workflowState = {
+              bookId: bookId,
+              bookTitle: bookTitle,
+              bookConcept: 'Migrated from old book format - existing content available in Step 5',
+              targetAge: '3-8 years',
+              currentStep: 5, // Start at Step 5 since content already exists
+              steps: [
+                { stepNumber: 1, stepName: 'Story Planning', status: 'approved', data: null },
+                { stepNumber: 2, stepName: 'Character Creation', status: 'approved', data: null },
+                { stepNumber: 3, stepName: 'Chapter Writing', status: 'approved', data: null },
+                { stepNumber: 4, stepName: 'Environment Design', status: 'approved', data: null },
+                { stepNumber: 5, stepName: 'Scene Composition', status: 'completed', data: { chapters: [] } },
+                { stepNumber: 6, stepName: 'Final Review', status: 'pending', data: null }
+              ],
+              createdAt: new Date(),
+              updatedAt: new Date()
+            };
+            
+            console.log('[Chat] Created workflow state for migration:', workflowState);
+            
+            // Open the workflow artifact with migrated state
+            setArtifact({
+              documentId: bookId,
+              kind: 'book-creation',
+              content: JSON.stringify(workflowState),
+              title: `📖 ${bookTitle} (Migrated)`,
+              isVisible: true,
+              status: 'idle',
+              boundingBox: {
+                top: 100,
+                left: 100,
+                width: 800,
+                height: 600,
+              },
+            });
+            
+            console.log('[Chat] ✅ Successfully migrated old book to workflow format');
+          } else if (hasContentChapters) {
+            console.log('[Chat] Book already has workflow format or no migration needed');
+          } else {
+            console.log('[Chat] No book content found for migration');
+          }
+        } catch (error) {
+          console.error('[Chat] Error migrating old book:', error);
+        }
+      };
+      
+      openBookArtifact();
+    }
+  }, [bookId, session?.user?.id, setArtifact]);
+  // Debug messages as they update - REMOVED TO PREVENT INFINITE LOOPS
+  // This useEffect was causing infinite loops during streaming by triggering re-renders
+  // useEffect(() => {
+  //   const lastMessage = messages[messages.length - 1];
+  //   console.log(`[Chat] 🔄 MESSAGES/STATUS UPDATE:`, { ... });
+  // }, [messages, status]);
+
   // Fetch and set the chat title once when assistant's first message arrives
   useEffect(() => {
     if (messages.length >= 2 && !fetchedTitleRef.current) {

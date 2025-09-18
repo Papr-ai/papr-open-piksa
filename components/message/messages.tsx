@@ -4,7 +4,7 @@ import type { UIMessage } from 'ai';
 import { PreviewMessage, ThinkingMessage } from './message';
 import { useScrollToBottom } from '../common/use-scroll-to-bottom';
 import { Greeting } from '../layout/greeting';
-import { memo, useEffect, useState, useRef } from 'react';
+import { memo, useEffect, useState, useRef, useMemo } from 'react';
 import type { Vote } from '@/lib/db/schema';
 import equal from 'fast-deep-equal';
 import type { UseChatHelpers } from '@ai-sdk/react';
@@ -96,12 +96,7 @@ function PureMessages({
     
     // If the last message is from the assistant, check for content
     if (lastMessage && lastMessage.role === 'assistant') {
-      console.log('[Messages] Checking assistant message for visible content:', {
-        messageId: lastMessage.id,
-        partsCount: lastMessage.parts?.length || 0,
-        parts: lastMessage.parts?.map(p => ({ type: (p as any).type, hasText: !!(p as any).text })),
-        status: status
-      });
+      // Debug logging removed to prevent infinite loops
       
       // Check for any content that should be displayed
       const hasContent = lastMessage.parts && lastMessage.parts.length > 0 && lastMessage.parts.some(part => {
@@ -110,45 +105,45 @@ function PureMessages({
         
         // Check for tool calls
         if (partType === 'tool-invocation') {
-          console.log('[Messages] Found tool-invocation part');
+          // Debug logging removed
           return true;
         }
         
         // Check for reasoning parts
         if (partType === 'reasoning') {
-          console.log('[Messages] Found reasoning part');
+          // Debug logging removed
           return true;
         }
         
         // Check for step-start events
         if (partType === 'step-start') {
-          console.log('[Messages] Found step-start part');
+          // Debug logging removed
           return true;
         }
         
         // Check for text content
         if (partType === 'text' && 'text' in part && typeof part.text === 'string' && part.text.length > 0) {
-          console.log('[Messages] Found text part with content:', (part as any).text.substring(0, 50));
+          // Debug logging removed
           return true;
         }
         
         // Check for parts with reasoning field
         if ('reasoning' in part && typeof part.reasoning === 'string' && part.reasoning.length > 20) {
-          console.log('[Messages] Found part with reasoning field');
+          // Debug logging removed
           return true;
         }
         
         // Check for parts with details array and reasoning
         if ('details' in part && Array.isArray(part.details) && 'reasoning' in part) {
-          console.log('[Messages] Found part with details and reasoning');
+          // Debug logging removed
           return true;
         }
         
-        console.log('[Messages] Part has no visible content:', { type: partType, part });
+        // Debug logging removed
         return false;
       });
       
-      console.log('[Messages] Assistant message hasVisibleContent:', !!hasContent);
+      // Debug logging removed
       setHasVisibleContent(!!hasContent);
     } else {
       setHasVisibleContent(false);
@@ -176,15 +171,15 @@ function PureMessages({
     return /<think>[\s\S]*<\/think>/.test(textContent);
   });
 
-  // Let AI SDK v5 handle thinking states natively - removed custom logic
-  // The useChat hook manages message states and streaming automatically
-  const shouldShowThinking = false; // Disabled custom thinking logic
-  
   // Don't filter messages, just modify how they're displayed
   // This ensures tool calls and reasoning events are always visible
   const displayMessages = messages;
   
   const isLoading = status === 'streaming' || status === 'submitted';
+
+  // Disable global thinking indicator since we now show inline "Processing..." in messages
+  // This prevents duplicate processing indicators
+  const shouldShowThinking = false;
 
   return (
     <div className="relative ">
@@ -210,78 +205,32 @@ function PureMessages({
           // Check if THIS specific message has visible content (not just the last one)
           const messageHasVisibleContent = message.parts && message.parts.length > 0 && message.parts.some(part => {
             const partType = part.type;
-            if (partType === 'tool-invocation') return true;
+            // Handle UI message part types (after streaming conversion)
+            if (partType === 'text' && 'text' in part && typeof part.text === 'string') return true; // Removed length > 0 to allow streaming deltas
             if (partType === 'reasoning') return true;
             if (partType === 'step-start') return true;
-            if (partType === 'text' && 'text' in part && typeof part.text === 'string' && part.text.length > 0) return true;
+            if (partType.startsWith('tool-')) return true; // tool-* parts
+            if (partType === 'dynamic-tool') return true;
+            if (partType === 'file') return true;
+            if (partType === 'source-url' || partType === 'source-document') return true;
+            if (partType.startsWith('data-')) return true; // data-* parts
+            // Additional checks for parts with reasoning content
             if ('reasoning' in part && typeof part.reasoning === 'string' && part.reasoning.length > 20) return true;
             if ('details' in part && Array.isArray(part.details) && 'reasoning' in part) return true;
             return false;
           });
           
-          // Hide empty streaming assistant messages completely
-          // The thinking state is handled by dataStream progress updates instead
+          // Debug logging removed to prevent infinite loops
+          
+          // For empty streaming assistant messages, show them with thinking state
+          // This provides immediate visual feedback while waiting for data stream updates
           const isEmptyStreamingMessage = isStreamingAssistantMessage && !messageHasVisibleContent && 
             index === displayMessages.length - 1; // Only for the last (current) message
           
-          if (isEmptyStreamingMessage) {
-            console.log('[Messages] Hiding empty streaming assistant message:', {
-              messageId: message.id,
-              status,
-              messageHasVisibleContent,
-              partsCount: message.parts?.length || 0,
-              isLastMessage: index === displayMessages.length - 1
-            });
-            return null; // Hide empty streaming messages completely
-          }
+          // Skip reasoning steps augmentation - MessageReasoning component handles this
+          // This was causing infinite loops by creating new message objects on every render
           
-          // Augment the message with reasoning steps if applicable
-          if (reasoningSteps.length > 0 && index === displayMessages.length - 1 && message.role === 'assistant') {
-            // Clone the message to avoid mutating the original
-            const messageWithReasoningSteps = {
-              ...message,
-              parts: [...(message.parts || [])],
-            };
-            
-            // Add reasoning steps as step-start parts
-            reasoningSteps.forEach((step, stepIndex) => {
-              if (stepIndex > 0) { // Skip adding a step boundary at the beginning
-                messageWithReasoningSteps.parts?.push({
-                  type: 'step-start'
-                });
-              }
-            });
-            
-            // AI SDK v5 already includes tool results as parts in the assistant message
-            const combinedMessageWithReasoning = messageWithReasoningSteps;
-
-            return (
-              <div key={message.id}>
-                <PreviewMessage
-                  chatId={chatId}
-                  message={combinedMessageWithReasoning}
-                  isLoading={isLoading}
-                  vote={votes?.find((vote) => vote.messageId === message.id)}
-                  setMessages={setMessages}
-                  reload={reload}
-                  isReadonly={isReadonly}
-                  selectedModelId={selectedModelId}
-                  enableUniversalReasoning={enableUniversalReasoning}
-                  sendMessage={sendMessage}
-                />
-              </div>
-            );
-          }
-          
-          console.log('[Messages] Rendering normal PreviewMessage:', {
-            messageId: message.id,
-            role: message.role,
-            status,
-            messageHasVisibleContent,
-            partsCount: message.parts?.length || 0,
-            isStreamingAssistantMessage,
-            isEmptyStreamingMessage
-          });
+          // Debug logging removed to prevent infinite loops
           
           return (
             <div key={message.id}>

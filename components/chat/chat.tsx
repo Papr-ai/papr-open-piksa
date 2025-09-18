@@ -7,7 +7,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import type { Vote } from '@/lib/db/schema';
 import { fetcher, generateUUID } from '@/lib/utils';
-import { Artifact } from '@/components/artifact/artifact';
+import { Artifact, artifactDefinitions } from '@/components/artifact/artifact';
 import { MultimodalInput } from '@/components/message/multimodal-input';
 import { Messages } from '@/components/message/messages';
 import type { VisibilityType } from '@/components/message/visibility-selector';
@@ -98,7 +98,7 @@ export function Chat({
   const [showLoginModal, setShowLoginModal] = useState(false);
   
   // Access artifact state and setter with chat-specific ID
-  const { artifact, setArtifact } = useArtifact(id);
+  const { artifact, setArtifact, metadata, setMetadata } = useArtifact(id);
 
   // Use the custom context hook
   const { selectedContexts } = useContext();
@@ -165,7 +165,7 @@ export function Chat({
   } = useChat({
     id,
     messages: initialMessages,
-    experimental_throttle: 100,
+    // Removed experimental_throttle for real-time streaming
     generateId: generateUUID,
     transport: new DefaultChatTransport({
       api: '/api/chat-simple',

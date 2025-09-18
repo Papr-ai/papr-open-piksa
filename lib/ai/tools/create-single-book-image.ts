@@ -3,6 +3,82 @@ import { z } from 'zod';
 import type { Session } from 'next-auth';
 import type { DataStreamWriter } from '@/lib/types';
 
+// Helper function to extract key physical features from character description for seed image consistency
+function extractCharacterPhysicalFeatures(characterDescription: string, characterName: string): string {
+  const features = [];
+  const desc = characterDescription.toLowerCase();
+  
+  // Extract age
+  const ageMatches = desc.match(/(?:age|aged?)\s*:?\s*(\d+)|(\d+)\s*years?\s*old|(?:is|was)\s*(\d+)/i);
+  if (ageMatches) {
+    const age = ageMatches[1] || ageMatches[2] || ageMatches[3];
+    features.push(`- Age: ${age} years old`);
+  } else if (desc.includes('child') || desc.includes('kid') || desc.includes('young')) {
+    features.push(`- Age: Child (approximately 5-8 years old)`);
+  }
+  
+  // Extract eye color
+  const eyeColors = ['blue', 'brown', 'green', 'hazel', 'gray', 'grey', 'amber', 'violet', 'dark', 'light'];
+  for (const color of eyeColors) {
+    if (desc.includes(`${color} eye`) || desc.includes(`${color}-eye`)) {
+      features.push(`- Eyes: ${color.charAt(0).toUpperCase() + color.slice(1)} eyes`);
+      break;
+    }
+  }
+  
+  // Extract hair color and style
+  const hairColors = ['black', 'brown', 'blonde', 'blond', 'red', 'auburn', 'ginger', 'gray', 'grey', 'white', 'dark', 'light', 'golden'];
+  const hairStyles = ['curly', 'wavy', 'straight', 'long', 'short', 'braided', 'ponytail', 'pigtails', 'bob'];
+  
+  let hairDescription = '';
+  for (const color of hairColors) {
+    if (desc.includes(`${color} hair`)) {
+      hairDescription = color.charAt(0).toUpperCase() + color.slice(1);
+      break;
+    }
+  }
+  
+  for (const style of hairStyles) {
+    if (desc.includes(`${style} hair`) || desc.includes(`hair is ${style}`)) {
+      hairDescription += (hairDescription ? ', ' : '') + style;
+      break;
+    }
+  }
+  
+  if (hairDescription) {
+    features.push(`- Hair: ${hairDescription} hair`);
+  }
+  
+  // Extract height/size
+  if (desc.includes('tall') || desc.includes('height')) {
+    if (desc.includes('short')) {
+      features.push(`- Height: Short for age`);
+    } else if (desc.includes('tall')) {
+      features.push(`- Height: Tall for age`);
+    }
+  }
+  
+  // Extract distinctive features
+  if (desc.includes('freckle')) features.push(`- Features: Has freckles`);
+  if (desc.includes('dimple')) features.push(`- Features: Has dimples`);
+  if (desc.includes('glasses')) features.push(`- Accessories: Wears glasses`);
+  
+  // Extract clothing/outfit details
+  const clothingMatches = desc.match(/wearing\s+([^.]+)|dressed\s+in\s+([^.]+)|outfit[:\s]+([^.]+)/i);
+  if (clothingMatches) {
+    const outfit = clothingMatches[1] || clothingMatches[2] || clothingMatches[3];
+    features.push(`- Clothing: ${outfit.trim()}`);
+  }
+  
+  // If no features found, add a general note
+  if (features.length === 0) {
+    features.push(`- Maintain all physical features exactly as shown in seed image`);
+    features.push(`- Keep consistent appearance throughout the book`);
+  }
+  
+  return features.join('\n');
+}
+
 interface CreateSingleBookImageProps {
   session: Session;
   dataStream: DataStreamWriter;
@@ -175,6 +251,19 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
           if (role) enhancedDescription += ` Role: ${role}`;
           if (height) enhancedDescription += ` Height: ${height}`;
           if (relativeSize) enhancedDescription += ` Size relative to others: ${relativeSize}`;
+          
+          // Extract and emphasize key physical features for seed image consistency
+          if (physicalDescription || description) {
+            const fullDescription = `${description} ${physicalDescription || ''}`;
+            const physicalFeatures = extractCharacterPhysicalFeatures(fullDescription, name);
+            if (physicalFeatures) {
+              enhancedDescription += `
+
+🎯 CRITICAL PHYSICAL FEATURES TO MAINTAIN (especially when using seed images):
+${physicalFeatures}`;
+            }
+          }
+          
           enhancedDescription += ` Style: ${styleBible || 'watercolor and ink line illustration'}`;
         } else if (imageType === 'environment') {
           enhancedDescription = `Empty environment plate: ${name}. ${description}`;
@@ -191,91 +280,51 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
             enhancedDescription += ` Character Heights: ${heightDescriptions}`;
           }
           if (environment) enhancedDescription += ` Environment: ${environment}`;
+          
+          // Add character consistency notes for scenes with seed images
+          if (validSeedImages.length > 0 && characters?.length) {
+            enhancedDescription += `
+
+🎯 CRITICAL CHARACTER CONSISTENCY (when using character seed images):
+- Maintain EXACT physical features from seed character portraits (age, eye color, hair style, distinctive features)
+- Keep consistent clothing/outfits as shown in character seeds
+- Preserve character proportions and relative heights as specified
+- Ensure characters look identical to their seed portraits in this scene`;
+          }
+          
           enhancedDescription += ` Style: ${styleBible || 'watercolor and ink line illustration'}`;
         }
 
-        // Create image directly using appropriate approach based on seed images
-        if (validSeedImages.length > 1) {
-          // Multiple seeds: merge + edit approach
-          console.log(`[createSingleBookImage] Using merge+edit approach with ${validSeedImages.length} seeds`);
-          
-          const { mergeImages } = await import('./merge-images');
-          const { editImage } = await import('./edit-image');
-          
-          // First merge the seed images (use same logic as optimizeImageCreation)
-          const maxImages = Math.min(validSeedImages.length, 6);
-          const imagesToMerge = validSeedImages.slice(0, maxImages).map((imageUrl, index) => {
-            const positions = [
-              '1x1', '1x2', '1x3', 
-              '2x1', '2x2', '2x3'
-            ];
-            return {
-              imageUrl,
-              position: positions[index] || '1x1',
-              spanRows: 1,
-              spanCols: 1
-            };
-          });
-          
-          const mergeResult = await (mergeImages({ session, dataStream }).execute as any)({
-            images: imagesToMerge,
-            backgroundColor: '#ffffff',
-            outputWidth: 1024,
-            outputHeight: 1024
-          });
-          
-          if (mergeResult.mergedImageUrl) {
-            // Then edit the merged image with the description
-            const editResult = await (editImage({ session, dataStream }).execute as any)({
-              imageUrl: mergeResult.mergedImageUrl,
-              prompt: enhancedDescription,
-              editType: 'modify',
-              preserveOriginal: true
-            });
-            
-            imageResult = {
-              success: !!editResult.editedImageUrl,
-              imageUrl: editResult.editedImageUrl,
-              approach: 'merge_edit'
-            };
-          } else {
-            throw new Error('Failed to merge seed images');
-          }
-          
-        } else if (validSeedImages.length === 1) {
-          // Single seed: edit approach
-          console.log('[createSingleBookImage] Using edit approach with single seed');
-          
-          const { editImage } = await import('./edit-image');
-          const editResult = await (editImage({ session, dataStream }).execute as any)({
-            imageUrl: validSeedImages[0],
-            prompt: enhancedDescription,
-            editType: 'modify',
-            preserveOriginal: true
-          });
-          
-          imageResult = {
-            success: !!editResult.editedImageUrl,
-            imageUrl: editResult.editedImageUrl,
-            approach: 'edit'
-          };
-          
-        } else {
-          // No seeds: generate approach
-          console.log('[createSingleBookImage] Using generate approach (no seeds)');
-          
-          const { generateImage } = await import('./generate-image');
-          const generateResult = await (generateImage({ session, dataStream }).execute as any)({
-            prompt: enhancedDescription,
-            aspectRatio: aspectRatio || '4:3'
-          });
-          
-          imageResult = {
-            success: !!generateResult.imageUrl,
-            imageUrl: generateResult.imageUrl,
-            approach: 'generate'
-          };
-        }
+        // Use optimizeImageCreation for enhanced prompt optimization with book context
+        console.log('[createSingleBookImage] Using optimizeImageCreation for enhanced book context');
+        
+        const { optimizeImageCreation } = await import('@/lib/ai/image-creation-optimizer');
+        
+        // Extract book context from styleBible and other parameters
+        const bookContext = {
+          styleBible,
+          bookTitle,
+          // Extract themes and genre from styleBible if available
+          bookThemes: styleBible?.includes('theme') ? [styleBible.split('theme')[1]?.split(',')[0]?.trim()] : undefined,
+          bookGenre: styleBible?.includes('children') ? 'children\'s book' : undefined,
+          targetAge: styleBible?.includes('age') ? styleBible.split('age')[1]?.split(',')[0]?.trim() : undefined,
+        };
+        
+        const optimizedResult = await optimizeImageCreation({
+          description: enhancedDescription,
+          seedImages: validSeedImages,
+          seedImageTypes: validSeedImages.map(() => imageType as any),
+          sceneContext: `Book image creation for ${bookTitle}`,
+          styleConsistency: true,
+          aspectRatio: (aspectRatio as any) || '4:3',
+          ...bookContext
+        }, session.user?.id!);
+        
+        imageResult = {
+          success: !!optimizedResult.imageUrl,
+          imageUrl: optimizedResult.imageUrl,
+          approach: optimizedResult.approach
+        };
 
         if (imageResult.success && imageResult.imageUrl) {
           let memoryId: string | null = null;
@@ -338,26 +387,42 @@ export const createSingleBookImage = ({ session, dataStream }: CreateSingleBookI
             console.error(`[createSingleBookImage] ❌ Error saving "${name}" to database:`, dbError);
           }
 
-          // **NEW: Auto-insert scene images into book content**
+          // **NEW: Auto-insert scene images into book content (only for traditional chapter-based books)**
           if (imageType === 'scene') {
             try {
-              console.log(`[createSingleBookImage] Auto-inserting scene image for ${name}`);
+              // Check if this is a book creation workflow (which uses chapterNumber: 0 for workflow state)
+              // Skip auto-insertion for workflow books as they handle images differently
+              const { getBookChaptersByBookId } = await import('@/lib/db/book-queries');
+              const chapters = await getBookChaptersByBookId(bookId, session.user.id);
+              const workflowRecord = chapters.find(ch => ch.chapterNumber === 0);
               
-              const { insertSceneImageIntoBook, extractSceneInfo } = await import('@/lib/ai/book-content-updater');
+              let insertionResult;
+              let chapterNumber = 0; // Default for workflow books
               
-              // Extract chapter number from scene ID or use a default
-              const sceneInfo = extractSceneInfo(name);
-              const chapterNumber = sceneInfo.sceneNumber || 1; // Default to chapter 1 if not found
-              
-              const insertionResult = await insertSceneImageIntoBook({
-                bookId,
-                chapterNumber,
-                sceneId: name,
-                imageUrl: imageResult.imageUrl,
-                synopsis: description,
-                storyContext: conversationContext,
-                userId: session.user.id
-              });
+              if (workflowRecord) {
+                console.log(`[createSingleBookImage] 📚 Detected book creation workflow - skipping auto-insertion (images handled by workflow)`);
+                // Skip the insertion logic for workflow books
+                insertionResult = { success: true, updatedContent: '', skipReason: 'workflow-book' };
+                chapterNumber = 0; // Workflow books use chapter 0
+              } else {
+                console.log(`[createSingleBookImage] Auto-inserting scene image for ${name}`);
+                
+                const { insertSceneImageIntoBook, extractSceneInfo } = await import('@/lib/ai/book-content-updater');
+                
+                // Extract chapter number from scene ID or use a default
+                const sceneInfo = extractSceneInfo(name);
+                chapterNumber = sceneInfo.sceneNumber || 1; // Default to chapter 1 if not found
+                
+                insertionResult = await insertSceneImageIntoBook({
+                  bookId,
+                  chapterNumber,
+                  sceneId: name,
+                  imageUrl: imageResult.imageUrl,
+                  synopsis: description,
+                  storyContext: conversationContext,
+                  userId: session.user.id
+                });
+              }
               
               if (insertionResult.success) {
                 console.log(`[createSingleBookImage] ✅ Successfully inserted scene image into book`);
@@ -519,20 +584,73 @@ async function createCharacterPortrait(params: any) {
 }
 
 async function createEnvironmentImage(params: any) {
-  const { createImage } = await import('./create-image');
-  const imageTool = createImage({ session: params.session });
+  console.log('[createSingleBookImage] Creating UNIQUE environment with enhanced prompts:', params.name);
   
-  const prompt = `Create an empty top-view environment image of ${params.name}. ${params.description}. Time: ${params.timeOfDay}, Weather: ${params.weather}. Style: ${params.styleBible}. Environment should be completely empty with no characters for later character placement.`;
+  // Use optimizeImageCreation for better prompt optimization
+  const { optimizeImageCreation } = await import('@/lib/ai/image-creation-optimizer');
   
-  if (!imageTool.execute) {
-    throw new Error('Image tool execute method is not available');
+  // Create a much more detailed and unique environment description
+  const uniqueIdentifier = `${params.name}_${params.timeOfDay}_${params.weather}_${Date.now()}`;
+  const environmentDescription = `UNIQUE ENVIRONMENT MASTER PLATE: Create a completely original and distinct "${params.name}" environment that has never been created before. 
+
+SPECIFIC LOCATION: ${params.name}
+DETAILED DESCRIPTION: ${params.description}
+TIME OF DAY: ${params.timeOfDay} - ensure lighting, shadows, and atmosphere reflect this specific time
+WEATHER CONDITIONS: ${params.weather} - show clear weather effects and atmospheric conditions
+UNIQUE ELEMENTS: Include specific architectural details, unique props, distinctive lighting, and characteristic features that make this "${params.name}" location completely different from any other environment
+COMPOSITION: Wide establishing shot showing the complete environment space, empty of people but rich in environmental storytelling details
+VISUAL STYLE: ${params.styleBible}
+
+CRITICAL: This must be a completely unique interpretation of "${params.name}" - avoid generic or similar-looking environments. Focus on distinctive visual elements that make this location immediately recognizable and different from other locations.
+
+Unique ID: ${uniqueIdentifier}`;
+  
+  try {
+    const optimizedResult = await optimizeImageCreation({
+      description: environmentDescription,
+      seedImages: [], // Let it search memory automatically if no seeds provided by agent
+      seedImageTypes: ['environment'],
+      sceneContext: `Empty environment master plate for book scenes - ${params.name}`,
+      styleConsistency: true,
+      aspectRatio: '4:3',
+      
+      // Enhanced book context
+      styleBible: params.styleBible,
+      bookTitle: params.bookTitle,
+      bookGenre: params.styleBible?.includes('children') ? 'children\'s book' : undefined,
+      targetAge: params.styleBible?.includes('age') ? params.styleBible.split('age')[1]?.split(',')[0]?.trim() : undefined
+    }, params.session.user?.id!);
+
+    console.log('[createSingleBookImage] Environment optimization complete:', {
+      approach: optimizedResult.approach,
+      reasoning: optimizedResult.reasoning.substring(0, 100) + '...'
+    });
+
+    return {
+      success: true,
+      imageUrl: optimizedResult.imageUrl,
+      actualPrompt: optimizedResult.actualPrompt,
+      approach: optimizedResult.approach,
+      seedImagesUsed: optimizedResult.seedImagesUsed,
+      reasoning: optimizedResult.reasoning
+    };
+  } catch (error) {
+    console.error('[createSingleBookImage] Environment optimization failed:', error);
+    
+    // Fallback to basic createImage
+    const { createImage } = await import('./create-image');
+    const imageTool = createImage({ session: params.session });
+    
+    if (!imageTool.execute) {
+      throw new Error('Image tool execute method is not available');
+    }
+    
+    return await imageTool.execute({
+      description: environmentDescription,
+      aspectRatio: '4:3',
+      styleConsistency: true
+    }, { toolCallId: 'environment-fallback-' + Date.now(), messages: [] });
   }
-  
-  return await imageTool.execute({
-    description: prompt,
-    aspectRatio: '1:1',
-    styleConsistency: true
-  }, { toolCallId: 'environment-' + Date.now(), messages: [] });
 }
 
 async function createSceneComposition(params: any) {
@@ -577,6 +695,12 @@ async function saveImageToMemory(params: any): Promise<string | null> {
       baseURL: process.env.PAPR_MEMORY_API_URL || 'https://memory.papr.ai',
     });
 
+    // Convert complex metadata objects to strings for memory validation
+    const sanitizedMetadata = { ...params.metadata };
+    if (sanitizedMetadata.characterHeights && typeof sanitizedMetadata.characterHeights === 'object') {
+      sanitizedMetadata.characterHeights = JSON.stringify(sanitizedMetadata.characterHeights);
+    }
+
     const memoryParams = {
       content,
       type: 'text' as const,
@@ -594,7 +718,7 @@ async function saveImageToMemory(params: any): Promise<string | null> {
           image_url: params.imageUrl,
           app_user_id: params.session.user.id,
           tool: 'createSingleBookImage',
-          ...params.metadata
+          ...sanitizedMetadata
         }
       },
       skip_background_processing: false

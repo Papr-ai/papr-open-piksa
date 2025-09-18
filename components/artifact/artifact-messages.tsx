@@ -1,5 +1,6 @@
 import { PreviewMessage, ThinkingMessage } from '../message/message';
 import { useScrollToBottom } from '../common/use-scroll-to-bottom';
+import { Greeting } from '../layout/greeting';
 import type { Vote } from '@/lib/db/schema';
 import type { UIMessage } from 'ai';
 import { memo } from 'react';
@@ -25,6 +26,8 @@ function extractTextFromMessage(message: UIMessage): string {
   
   return '';
 }
+
+// Removed hasVisibleContent function - no longer needed with simplified streaming logic
 
 interface ArtifactMessagesProps {
   chatId: string;
@@ -57,42 +60,13 @@ function PureArtifactMessages({
   const [messagesContainerRef, messagesEndRef, scrollToBottom] =
     useScrollToBottom<HTMLDivElement>();
 
-  // Logic for showing thinking state - same as main Messages component
-  const isReasoningModel = selectedModelId ? modelSupportsReasoning(selectedModelId) : false;
-
-  // Check if there's visible content in the last message
-  const hasVisibleContent = messages.length > 0 && messages[messages.length - 1].role === 'assistant' && (
-    extractTextFromMessage(messages[messages.length - 1]).trim() ||
-    messages[messages.length - 1].parts?.some(part => part.type === 'text' && (part as any).text?.trim()) ||
-    (messages[messages.length - 1] as any).toolInvocations?.some((t: any) => t.state === 'result') ||
-    (messages[messages.length - 1] as any).tool_calls?.some((tc: any) => tc.function?.output)
-  );
-
-  // Determine if we should show the thinking state
-  const shouldShowThinking = 
-    !isReasoningModel ? 
-      // Show loading indicator during submit state or streaming without visible content
-      ((status === 'submitted' || status === 'streaming') && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'user') ||
-      // Also show during streaming if the last message is an assistant message without visible content
-      (status === 'streaming' && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'assistant' && 
-       !hasVisibleContent)
-      :
-      // For reasoning model, show if no message with reasoning is being displayed
-      ((status === 'submitted' || status === 'streaming') && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'user' && 
-       !hasVisibleContent) ||
-      // Also show during streaming if the last message is an assistant message without visible content
-      (status === 'streaming' && 
-       messages.length > 0 && 
-       messages[messages.length - 1].role === 'assistant' && 
-       !hasVisibleContent);
-
+  // Simplified streaming logic - always show content immediately
   const isLoading = status === 'streaming' || status === 'submitted';
+  
+  // Show thinking indicator only when submitted and no assistant message yet
+  const shouldShowThinking = status === 'submitted' && 
+    messages.length > 0 && 
+    messages[messages.length - 1].role === 'user';
 
   return (
     <div
@@ -100,41 +74,28 @@ function PureArtifactMessages({
       className="flex flex-col size-full gap-4 items-center overflow-y-scroll px-4 pt-20"
     >
       <div className="w-[95%] flex flex-col items-center">
+        {messages.length === 0 && <Greeting />}
+        
         {messages.map((message, index) => {
-          // For the last assistant message during streaming
-          const isLastAssistantMessage = 
-            status === 'streaming' && 
-            index === messages.length - 1 && 
-            message.role === 'assistant';
-          
-          // Keep showing the thinking indicator alongside empty assistant messages
-          if (isLastAssistantMessage && !hasVisibleContent) {
-            return (
-              <div key={message.id}>
-                <ThinkingMessage selectedModelId={selectedModelId} />
-              </div>
-            );
-          }
-
           return (
-          <PreviewMessage
-            chatId={chatId}
-            key={message.id}
-            message={message}
+            <PreviewMessage
+              chatId={chatId}
+              key={message.id}
+              message={message}
               isLoading={isLoading && index === messages.length - 1}
-            vote={
-              votes
-                ? votes.find((vote) => vote.messageId === message.id)
-                : undefined
-            }
-            setMessages={setMessages}
-            reload={reload}
-            isReadonly={isReadonly}
+              vote={
+                votes
+                  ? votes.find((vote) => vote.messageId === message.id)
+                  : undefined
+              }
+              setMessages={setMessages}
+              reload={reload}
+              isReadonly={isReadonly}
               selectedModelId={selectedModelId}
               setInput={setInput}
               handleSubmit={handleSubmit}
               sendMessage={sendMessage}
-          />
+            />
           );
         })}
 

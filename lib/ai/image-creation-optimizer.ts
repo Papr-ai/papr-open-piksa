@@ -9,6 +9,13 @@ import { optimizeImagePrompt } from '@/lib/ai/image-prompt-optimizer';
 interface ImageCreationContext extends CreateImageInput {
   userId?: string;
   seedImageTypes?: ('character' | 'environment' | 'prop' | 'other')[];
+  
+  // Enhanced book context
+  styleBible?: string;
+  bookThemes?: string[];
+  bookGenre?: string;
+  targetAge?: string;
+  conversationContext?: string;
 }
 
 interface OptimizedImageResult {
@@ -100,7 +107,14 @@ export async function optimizeImageCreation(
       seedImages: validSeedImages,
       seedImageTypes: context.seedImageTypes,
       userId: userId,
-      isEditing: validSeedImages.length > 0 // Use editing mode if we have seed images
+      isEditing: validSeedImages.length > 0, // Use editing mode if we have seed images
+      
+      // Pass enhanced book context
+      styleBible: context.styleBible,
+      bookThemes: context.bookThemes,
+      bookGenre: context.bookGenre,
+      targetAge: context.targetAge,
+      conversationContext: context.conversationContext
     });
     
     optimizedDescription = promptOptimization.optimizedPrompt;

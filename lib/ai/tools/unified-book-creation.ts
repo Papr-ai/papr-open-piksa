@@ -1,0 +1,1367 @@
+import { z } from 'zod';
+import { tool } from 'ai';
+import type { Session } from 'next-auth';
+import type { DataStreamWriter } from '@/lib/types';
+import { generateUUID } from '@/lib/utils';
+import type { BookCreationStep, BookArtifactState } from './book-creation-constants';
+import { 
+  BOOK_CREATION_STEPS, 
+  StepDataSchema,
+  ChapterWritingDataSchema,
+  StoryPlanningDataSchema,
+  CharacterCreationDataSchema,
+  EnvironmentDesignDataSchema,
+  SceneCompositionDataSchema,
+  FinalReviewDataSchema
+} from './book-creation-constants';
+
+// Unified Book Creation Artifact Schema
+const unifiedBookCreationSchema = z.object({
+  action: z.enum([
+    'initialize',     // Create new book artifact
+    'update_step',    // Update a specific step with new content
+    'approve_step',   // User approval from artifact UI
+    'regenerate',     // Regenerate content for current step
+    'finalize'        // Complete the book creation process
+  ]).describe('Action to perform in the book creation workflow'),
+  
+  bookId: z.string().optional().describe('Book ID for existing book workflow'),
+  
+  // Initial book setup (for initialize action)
+  bookTitle: z.string().optional().describe('Title of the book'),
+  bookConcept: z.string().optional().describe('High-level book concept and story idea'),
+  targetAge: z.string().optional().describe('Target age group'),
+  
+  // Step-specific data (for update_step action)
+  stepNumber: z.number().optional().describe('Step number to update (1-6)'),
+  stepData: StepDataSchema.optional().describe('Data for the specific step - must match the step-specific Zod schema'),
+  
+  // Book context for step processing
+  currentBookTitle: z.string().optional().describe('Current book title for context'),
+  
+  // User feedback (for approve_step action)
+  approved: z.boolean().optional().describe('Whether the user approved the current step'),
+  feedback: z.string().optional().describe('User feedback for improvements'),
+  
+  // Context preservation
+  conversationContext: z.string().optional().describe('Full context from the conversation to maintain consistency'),
+  
+  // Common AI agent additional fields (these will be ignored but won't cause validation errors)
+  stepName: z.string().optional().describe('Step name (ignored, for AI agent compatibility)'),
+  status: z.string().optional().describe('Status (ignored, for AI agent compatibility)')
+}).passthrough(); // Allow additional properties to avoid validation errors
+
+type UnifiedBookCreationInput = z.infer<typeof unifiedBookCreationSchema>;
+
+// Generate example chapter data for documentation
+const exampleChapter = {
+  chapterNumber: 1,
+  title: "Chapter Title", 
+  scenes: [
+    {
+      sceneNumber: 1,
+      title: "Scene Title",
+      text: "## Hook\nMira discovers something mysterious...\n\n## Rising Action\nShe investigates and finds...\n\n## Dialogue\n> \"What could this mean?\" Mira wondered.\n\n## Climax\nThe mystery reveals itself!",
+      characters: ["Mira", "Kip"],
+      illustrationNotes: "Show Mira looking at the mysterious object with wonder"
+    }
+  ]
+};
+
+// Example input for update_step action with chapter data
+const exampleUpdateStepInput = {
+  action: "update_step",
+  bookId: "book-id-from-context",
+  stepNumber: 3,
+  stepData: {
+    chapters: [exampleChapter]
+  }
+};
+
+export const createBookArtifact = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
+  tool({
+    description: `Unified Book Creation Tool - Creates a persistent artifact UI for step-by-step book creation.
+    
+    This tool manages the entire book creation workflow in a single artifact interface with the following steps:
+    
+    1. Story Planning - High-level concept, themes, character outlines
+    2. Character Creation - Character portraits using existing tools
+    3. Chapter Writing - Chapters with scenes array (NOT beats array). Each scene has: text (markdown), characters, illustrationNotes
+    4. Environment Design - Environment master plates
+    5. Final Chapter Content - Complete chapters with fully written scenes (PRESERVE EXACT chapter titles from Step 3, expand scene content)
+    6. Final Review - Complete book review and finalization
+    
+    ACTIONS:
+    - initialize: Create new book artifact with initial concept
+    - update_step: Update a specific step with validated structured content
+    - approve_step: User approves/rejects step from artifact UI
+    - regenerate: Regenerate content for current step based on feedback
+    - finalize: Complete the book creation process`,
+    
+    inputSchema: unifiedBookCreationSchema,
+    
+    execute: async (input: UnifiedBookCreationInput) => {
+      const { action, bookId, bookTitle, bookConcept, targetAge, stepNumber, stepData, approved, feedback, conversationContext, currentBookTitle } = input;
+      
+      // Generate or use existing book ID
+      const currentBookId = bookId || generateUUID();
+      
+      switch (action) {
+        case 'initialize':
+          // Create new book artifact with initial concept
+          
+          // First, check if an existing workflow exists for this book
+          let existingWorkflow: BookArtifactState | null = null;
+          try {
+            existingWorkflow = await getWorkflowFromDatabase(currentBookId, session);
+          } catch (error) {
+            console.error('[createBookArtifact] Error checking for existing workflow:', error);
+          }
+          
+          // If existing workflow found, return it instead of creating new
+          if (existingWorkflow) {
+            console.log('[createBookArtifact] ✅ Found existing workflow, returning saved state');
+            return {
+              success: true,
+              bookId: existingWorkflow.bookId,
+              nextAction: `Continue with Step ${existingWorkflow.currentStep}: ${BOOK_CREATION_STEPS.find(s => s.number === existingWorkflow.currentStep)?.name}`,
+              message: `Resumed existing book creation workflow for "${existingWorkflow.bookTitle}". Currently on Step ${existingWorkflow.currentStep}.`,
+              artifactState: existingWorkflow
+            };
+          }
+          
+          // Parse the story content to extract structured data
+          const parseStoryContent = (content: string) => {
+            const themes = [];
+            const themePatterns = [
+              /themes?:?\s*([^\n]+)/i,
+              /topics?:?\s*([^\n]+)/i,
+              /(adventure|family|friendship|learning|exploration|discovery)/gi
+            ];
+            
+            for (const pattern of themePatterns) {
+              const match = content.match(pattern);
+              if (match) {
+                if (match[1]) {
+                  themes.push(...match[1].split(/[,;]/).map(t => t.trim()).filter(Boolean));
+                } else if (match[0]) {
+                  themes.push(match[0]);
+                }
+              }
+            }
+            
+            const lines = content.split('\n').filter(line => line.trim());
+            const premise = lines.find(line => !line.startsWith('#') && line.length > 50) || 
+                           lines.slice(0, 3).join(' ').substring(0, 200) + '...';
+            
+            const styleGuide = content.includes('style') || content.includes('picture book') 
+              ? 'Children\'s picture book style with vibrant illustrations'
+              : 'Family-friendly storytelling style';
+            
+            return {
+              premise: premise || 'Story concept to be developed',
+              themes: [...new Set(themes)].slice(0, 5) || ['Adventure', 'Family'],
+              styleGuide,
+              fullContent: content
+            };
+          };
+
+          // Parse the book concept if provided
+          const parsedContent = bookConcept ? parseStoryContent(bookConcept) : null;
+
+          const initialState: BookArtifactState = {
+            bookId: currentBookId,
+            bookTitle: bookTitle || 'Untitled Book',
+            bookConcept: bookConcept || '',
+            targetAge: targetAge || '3-8 years',
+            currentStep: 1,
+            steps: BOOK_CREATION_STEPS.map(step => ({
+              stepNumber: step.number,
+              stepName: step.name,
+              status: step.number === 1 ? 'in_progress' : 'pending',
+              data: step.number === 1 && parsedContent ? {
+                content: parsedContent.fullContent,
+                premise: parsedContent.premise,
+                themes: parsedContent.themes,
+                styleBible: parsedContent.styleGuide
+              } : undefined
+            })),
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+          
+          // Save initial workflow state to database
+          try {
+            await saveWorkflowToDatabase(initialState, session);
+            console.log('[createBookArtifact] ✅ Initial workflow state saved to database');
+          } catch (error) {
+            console.error('[createBookArtifact] Error saving initial workflow:', error);
+          }
+          
+          // Send initial artifact content to the artifact system
+          console.log('[createBookArtifact] ✅ Initial state ready for tool result:', JSON.stringify(initialState, null, 2));
+          
+          // CRITICAL: Send the initial state to the artifact system using the original stream event type
+          dataStream.write?.({
+            type: 'book-creation-state',
+            content: initialState
+          });
+          
+          // Store book creation workflow in memory and task database
+          try {
+            // Store in memory for context
+            const memoryContent = {
+              type: 'book_workflow',
+              bookId: currentBookId,
+              bookTitle: bookTitle || 'Untitled Book',
+              bookConcept: bookConcept || '',
+              targetAge: targetAge || '3-8 years',
+              steps: BOOK_CREATION_STEPS.map(step => ({
+                stepNumber: step.number,
+                stepName: step.name,
+                status: step.number === 1 ? 'in_progress' : 'pending',
+                description: step.description
+              })),
+              createdAt: new Date().toISOString(),
+              currentStep: 1
+            };
+            
+            // Store workflow in memory
+            dataStream.write?.({
+              type: 'add-memory',
+              content: {
+                content: `Book Creation Workflow: ${bookTitle}\n\n${JSON.stringify(memoryContent, null, 2)}`,
+                category: 'book_workflow',
+                metadata: {
+                  bookId: currentBookId,
+                  workflowType: 'book_creation',
+                  currentStep: 1
+                }
+              }
+            });
+            
+          } catch (error) {
+            console.error('[createBookArtifact] Error storing workflow:', error);
+          }
+          
+          return {
+            success: true,
+            action: 'initialize',
+            bookId: currentBookId,
+            artifactCreated: true,
+            currentStep: 1,
+            nextAction: 'Agent should now work on Step 1: Story Planning using existing book planning tools',
+            message: `Book creation artifact initialized for "${bookTitle}". Starting with Step 1: Story Planning.`,
+            artifactState: initialState // Include the state in the tool result
+          };
+          
+        case 'update_step':
+          // Agent updates a specific step with generated content
+          if (!stepNumber || !stepData) {
+            return {
+              success: false,
+              error: 'stepNumber and stepData are required for update_step action'
+            };
+          }
+
+          // Use stepData as-is - trust the AI SDK and Zod schemas completely
+          const validatedStepData = stepData;
+          
+          // Step 5 now uses the same chapters structure as Step 3 - no special validation needed
+          
+          console.log(`[createBookArtifact] ✅ Step ${stepNumber} data accepted directly from AI SDK`);
+          
+          if (stepNumber < 1 || stepNumber > 6) {
+            return {
+              success: false,
+              error: `Invalid step number: ${stepNumber}. Must be 1-6.`
+            };
+          }
+          
+          // First, retrieve existing workflow state from database to preserve previous step data
+          let existingWorkflowState: BookArtifactState | null = null;
+          try {
+            existingWorkflowState = await getWorkflowFromDatabase(currentBookId, session);
+            console.log('[createBookArtifact] 🔍 Retrieved existing workflow state:', existingWorkflowState ? 'Found' : 'Not found');
+            if (existingWorkflowState) {
+              console.log('[createBookArtifact] 🔍 Existing steps with data:', existingWorkflowState.steps.map(s => ({ 
+                stepNumber: s.stepNumber, 
+                status: s.status, 
+                hasData: !!s.data 
+              })));
+            }
+          } catch (error) {
+            console.error('[createBookArtifact] Error retrieving existing workflow:', error);
+          }
+          
+          // Process the validated step data based on step number
+          let processedStepData = validatedStepData;
+          
+          // For step 2 (Character Creation), enrich character data with images from memory/database
+          if (stepNumber === 2 && validatedStepData.characters && session?.user?.id) {
+            try {
+              processedStepData = await enrichCharacterDataWithImages(validatedStepData, currentBookId, session);
+            } catch (error) {
+              console.error('[createBookArtifact] Error enriching character data:', error);
+              // Continue with validated data if enrichment fails
+            }
+          }
+          
+          // For step 4 (Environment Design), enrich environment data with images from memory/database
+          if (stepNumber === 4 && validatedStepData.environments && session?.user?.id) {
+            try {
+              processedStepData = await enrichEnvironmentDataWithImages(validatedStepData, currentBookId, session);
+            } catch (error) {
+              console.error('[createBookArtifact] Error enriching environment data:', error);
+              // Continue with original data if enrichment fails
+            }
+          }
+          
+          // Preserve existing step data and only update the current step
+          const preservedSteps = existingWorkflowState?.steps || BOOK_CREATION_STEPS.map(step => ({
+            stepNumber: step.number,
+            stepName: step.name,
+            status: 'pending' as const,
+            data: undefined
+          }));
+          
+          console.log('[createBookArtifact] 🔍 Preserved steps before update:', preservedSteps.map(s => ({ 
+            stepNumber: s.stepNumber, 
+            status: s.status, 
+            hasData: !!s.data 
+          })));
+          
+          // Update only the current step while preserving others
+          const updatedSteps = preservedSteps.map(step => {
+            if (step.stepNumber === stepNumber) {
+              return {
+                ...step,
+                status: 'completed' as const,
+                data: processedStepData
+              };
+            } else if (step.stepNumber < stepNumber) {
+              // Keep previous steps as approved with their existing data
+              return {
+                ...step,
+                status: 'approved' as const
+              };
+            } else {
+              // Keep future steps as pending
+              return {
+                ...step,
+                status: 'pending' as const
+              };
+            }
+          });
+          
+          console.log('[createBookArtifact] 🔍 Updated steps after processing:', updatedSteps.map(s => ({ 
+            stepNumber: s.stepNumber, 
+            status: s.status, 
+            hasData: !!s.data 
+          })));
+          
+          // Auto-finalize when Step 5 is completed
+          if (stepNumber === 5) {
+            console.log('[createBookArtifact] 🎯 Step 5 completed, auto-finalizing Step 6...');
+            
+            // Create Step 6 final review data
+            const step6Data = {
+              status: 'completed',
+              bookTitle: existingWorkflowState?.bookTitle || 'Book Creation',
+              totalSteps: 6,
+              completedSteps: 6,
+              bookSummary: `${existingWorkflowState?.bookTitle || 'Book Creation'} - A ${targetAge || existingWorkflowState?.targetAge || '3-8 years'} children's book`,
+              bookConcept: bookConcept || existingWorkflowState?.bookConcept || '',
+              
+              // Count assets from previous steps with safe property access
+              totalCharacters: (() => {
+                const step2Data = updatedSteps.find(s => s.stepNumber === 2)?.data;
+                return (step2Data && typeof step2Data === 'object' && 'characters' in step2Data && Array.isArray(step2Data.characters)) ? step2Data.characters.length : 0;
+              })(),
+              totalEnvironments: (() => {
+                const step4Data = updatedSteps.find(s => s.stepNumber === 4)?.data;
+                return (step4Data && typeof step4Data === 'object' && 'environments' in step4Data && Array.isArray(step4Data.environments)) ? step4Data.environments.length : 0;
+              })(),
+              totalScenes: (() => {
+                const step5Data = updatedSteps.find(s => s.stepNumber === 5)?.data;
+                if (step5Data && typeof step5Data === 'object') {
+                  if ('scenes' in step5Data && Array.isArray(step5Data.scenes)) return step5Data.scenes.length;
+                  if ('scenesToCompose' in step5Data && Array.isArray(step5Data.scenesToCompose)) return step5Data.scenesToCompose.length;
+                }
+                return 0;
+              })(),
+              
+              // Calculate total pages (estimate based on scenes)
+              totalPages: (() => {
+                const step5Data = updatedSteps.find(s => s.stepNumber === 5)?.data;
+                let sceneCount = 6; // default
+                if (step5Data && typeof step5Data === 'object') {
+                  if ('scenes' in step5Data && Array.isArray(step5Data.scenes)) sceneCount = step5Data.scenes.length;
+                  else if ('scenesToCompose' in step5Data && Array.isArray(step5Data.scenesToCompose)) sceneCount = step5Data.scenesToCompose.length;
+                }
+                return Math.max(12, sceneCount * 2);
+              })(),
+              
+              finalizedAt: new Date().toISOString()
+            };
+            
+            // Update Step 6 to completed
+            updatedSteps.forEach(step => {
+              if (step.stepNumber === 6) {
+                step.status = 'completed' as const;
+                step.data = step6Data;
+              }
+            });
+            
+            console.log('[createBookArtifact] 🎉 Step 6 auto-finalized with completion data');
+          }
+          
+          // Send artifact content update using text-delta (which we know works)
+          const stepUpdate = {
+            currentStep: stepNumber,
+            steps: [{
+              stepNumber,
+              status: 'completed',
+              data: processedStepData
+            }],
+            updatedAt: new Date().toISOString()
+          };
+          
+          // Update the artifact content directly with preserved step data
+          // Extract actual book title from step data if available (e.g., from Step 1 or Step 3)
+          let actualBookTitle = currentBookTitle || bookTitle || existingWorkflowState?.bookTitle;
+          
+          console.log('[createBookArtifact] 🔍 Title extraction debug:', {
+            currentBookTitle,
+            bookTitle,
+            existingTitle: existingWorkflowState?.bookTitle,
+            stepNumber,
+            stepDataKeys: stepData ? Object.keys(stepData) : 'no stepData'
+          });
+          
+          // Try to extract book title from current step data with safe property access
+          if (stepNumber === 1 && stepData && typeof stepData === 'object' && 'titleOptions' in stepData && Array.isArray(stepData.titleOptions) && stepData.titleOptions.length > 0) {
+            // Use first title option from Story Planning step
+            actualBookTitle = stepData.titleOptions[0];
+            console.log('[createBookArtifact] ✅ Found title in Step 1 titleOptions:', actualBookTitle);
+          } else if (stepNumber === 3 && stepData && typeof stepData === 'object' && 'conversationContext' in stepData && typeof stepData.conversationContext === 'string') {
+            // Extract from conversation context in Chapter Writing step
+            const titleMatch = stepData.conversationContext.match(/Book Title:\s*([^.]+)/);
+            if (titleMatch) {
+              actualBookTitle = titleMatch[1].trim();
+              console.log('[createBookArtifact] ✅ Found title in Step 3 conversationContext:', actualBookTitle);
+            }
+          }
+          
+          // Enhanced fallback: Check all steps for title information
+          if (!actualBookTitle || actualBookTitle === 'Book Creation' || actualBookTitle === 'Untitled Book') {
+            console.log('[createBookArtifact] 🔍 Searching all steps for title...');
+            
+            // Check existing workflow state first with safe property access
+            if (existingWorkflowState?.steps) {
+              for (const step of existingWorkflowState.steps) {
+                const stepData = step.data;
+                if (stepData && typeof stepData === 'object') {
+                  if ('titleOptions' in stepData && Array.isArray(stepData.titleOptions) && stepData.titleOptions.length > 0) {
+                    actualBookTitle = stepData.titleOptions[0];
+                    console.log('[createBookArtifact] ✅ Found title in existing step titleOptions:', actualBookTitle);
+                    break;
+                  }
+                  if ('conversationContext' in stepData && typeof stepData.conversationContext === 'string') {
+                    const titleMatch = stepData.conversationContext.match(/Book Title:\s*([^.\n]+)/);
+                    if (titleMatch) {
+                      actualBookTitle = titleMatch[1].trim();
+                      console.log('[createBookArtifact] ✅ Found title in existing step conversationContext:', actualBookTitle);
+                      break;
+                    }
+                  }
+                  // Check for title in step data directly
+                  if ('bookTitle' in stepData && typeof stepData.bookTitle === 'string') {
+                    actualBookTitle = stepData.bookTitle;
+                    console.log('[createBookArtifact] ✅ Found title in existing step data.bookTitle:', actualBookTitle);
+                    break;
+                  }
+                }
+              }
+            }
+            
+            // Check updated steps with safe property access
+            for (const step of updatedSteps) {
+              const stepData = step.data;
+              if (stepData && typeof stepData === 'object') {
+                if ('titleOptions' in stepData && Array.isArray(stepData.titleOptions) && stepData.titleOptions.length > 0) {
+                  actualBookTitle = stepData.titleOptions[0];
+                  console.log('[createBookArtifact] ✅ Found title in updated step titleOptions:', actualBookTitle);
+                  break;
+                }
+                if ('conversationContext' in stepData && typeof stepData.conversationContext === 'string') {
+                  const titleMatch = stepData.conversationContext.match(/Book Title:\s*([^.\n]+)/);
+                  if (titleMatch) {
+                    actualBookTitle = titleMatch[1].trim();
+                    console.log('[createBookArtifact] ✅ Found title in updated step conversationContext:', actualBookTitle);
+                    break;
+                  }
+                }
+                if ('bookTitle' in stepData && typeof stepData.bookTitle === 'string') {
+                  actualBookTitle = stepData.bookTitle;
+                  console.log('[createBookArtifact] ✅ Found title in updated step data.bookTitle:', actualBookTitle);
+                  break;
+                }
+              }
+            }
+          }
+          
+          // Use typed data from Step 1 for book title (no manual parsing needed)
+          if (stepNumber === 1 && processedStepData && typeof processedStepData === 'object' && 'bookTitle' in processedStepData && typeof processedStepData.bookTitle === 'string') {
+            actualBookTitle = processedStepData.bookTitle;
+            console.log('[createBookArtifact] ✅ Found book title in Step 1 typed data:', actualBookTitle);
+          }
+          
+          console.log('[createBookArtifact] 🎯 Final book title:', actualBookTitle);
+
+          const updatedArtifactState: BookArtifactState = {
+            bookId: currentBookId,
+            bookTitle: actualBookTitle || 'Book Creation',
+            bookConcept: bookConcept || existingWorkflowState?.bookConcept || '',
+            targetAge: targetAge || existingWorkflowState?.targetAge || '3-8 years',
+            currentStep: stepNumber === 5 ? 6 : stepNumber, // Auto-advance to Step 6 when Step 5 is completed
+            steps: updatedSteps,
+            createdAt: existingWorkflowState?.createdAt || new Date(),
+            updatedAt: new Date()
+          };
+          
+          // Save updated workflow state to database
+          try {
+            await saveWorkflowToDatabase(updatedArtifactState, session);
+            console.log('[createBookArtifact] ✅ Workflow state saved to database');
+          } catch (error) {
+            console.error('[createBookArtifact] Error saving workflow to database:', error);
+          }
+          
+          // Update artifact content using multiple stream types for compatibility
+          console.log('[createBookArtifact] ✅ Updated state ready for tool result:', JSON.stringify(updatedArtifactState, null, 2));
+          
+          // CRITICAL: Send the updated state to the artifact system using the original stream event type
+          dataStream.write?.({
+            type: 'book-creation-state',
+            content: updatedArtifactState
+          });
+          
+          // Update workflow progress in memory
+          try {
+            const stepName = BOOK_CREATION_STEPS.find(s => s.number === stepNumber)?.name || `Step ${stepNumber}`;
+            dataStream.write?.({
+              type: 'add-memory',
+              content: {
+                content: `Book Creation Progress: ${stepName} completed for book ${currentBookId}\n\nStep Data:\n${JSON.stringify(processedStepData, null, 2)}`,
+                category: 'book_workflow_progress',
+                metadata: {
+                  bookId: currentBookId,
+                  stepNumber,
+                  stepName,
+                  status: 'completed',
+                  completedAt: new Date().toISOString()
+                }
+              }
+            });
+          } catch (error) {
+            console.error('[createBookArtifact] Error storing step progress:', error);
+          }
+          
+          return {
+            success: true,
+            action: 'update_step',
+            bookId: currentBookId,
+            stepNumber,
+            stepUpdated: true,
+            awaitingUserApproval: true,
+            message: `Step ${stepNumber} updated and ready for user approval in the artifact.`,
+            artifactState: updatedArtifactState // Include the updated state in the tool result
+          };
+          
+        case 'approve_step':
+          // Handle user approval from artifact UI
+          console.log('[createBookArtifact] 🔍 APPROVE_STEP called with:', { approved, stepNumber, feedback });
+          console.log('[createBookArtifact] 🔍 This should only happen from user interaction in artifact UI');
+          
+          if (approved) {
+            const nextStep = (stepNumber || 1) + 1;
+            
+            // Send artifact update to show step approval and progression
+            dataStream.write?.({
+              type: 'text-delta',
+              content: JSON.stringify({
+                currentStep: nextStep <= 6 ? nextStep : stepNumber,
+                steps: [{
+                  stepNumber: stepNumber || 1,
+                  status: 'approved'
+                }],
+                updatedAt: new Date().toISOString()
+              })
+            });
+            
+            return {
+              success: true,
+              action: 'approve_step',
+              bookId: currentBookId,
+              stepApproved: true,
+              currentStep: nextStep <= 6 ? nextStep : stepNumber,
+              nextAction: nextStep <= 6 ? 
+                `Agent should now work on Step ${nextStep}: ${BOOK_CREATION_STEPS[nextStep - 1]?.name}` :
+                'All steps completed. Ready for final review.',
+              message: nextStep <= 6 ? 
+                `Step ${stepNumber} approved. Moving to Step ${nextStep}.` :
+                'All steps completed! Book creation finished.'
+            };
+          } else {
+            // User requested changes
+            // Send artifact update to show step needs revision
+            dataStream.write?.({
+              type: 'text-delta',
+              content: JSON.stringify({
+                steps: [{
+                  stepNumber: stepNumber || 1,
+                  status: 'needs_revision',
+                  feedback: feedback || 'User requested changes'
+                }],
+                updatedAt: new Date().toISOString()
+              })
+            });
+            
+            return {
+              success: true,
+              action: 'approve_step',
+              bookId: currentBookId,
+              stepApproved: false,
+              needsRevision: true,
+              userFeedback: feedback,
+              nextAction: `Agent should revise Step ${stepNumber} based on user feedback`,
+              message: `Step ${stepNumber} needs revision. User feedback: ${feedback || 'No specific feedback provided'}`
+            };
+          }
+          
+        case 'regenerate':
+          // Regenerate content for current step
+          // Send artifact update to show step is regenerating
+          dataStream.write?.({
+            type: 'text-delta',
+            content: JSON.stringify({
+              steps: [{
+                stepNumber: stepNumber || 1,
+                status: 'in_progress'
+              }],
+              updatedAt: new Date().toISOString()
+            })
+          });
+          
+          return {
+            success: true,
+            action: 'regenerate',
+            bookId: currentBookId,
+            stepNumber,
+            regenerating: true,
+            nextAction: `Agent should regenerate content for Step ${stepNumber} using existing tools`,
+            message: `Regenerating content for Step ${stepNumber}...`
+          };
+          
+        case 'finalize':
+          // Complete the book creation process and update Step 6
+          console.log('[createBookArtifact] 🎯 FINALIZE: Completing book creation process');
+          
+          // First, retrieve existing workflow state to preserve all previous steps
+          let currentWorkflowState: BookArtifactState | null = null;
+          try {
+            currentWorkflowState = await getWorkflowFromDatabase(currentBookId, session);
+            console.log('[createBookArtifact] 🔍 Retrieved existing workflow for finalization:', currentWorkflowState ? 'Found' : 'Not found');
+          } catch (error) {
+            console.error('[createBookArtifact] Error retrieving existing workflow for finalization:', error);
+          }
+          
+          if (!currentWorkflowState) {
+            return {
+              success: false,
+              error: 'Cannot finalize book: No existing workflow state found'
+            };
+          }
+          
+          // Create Step 6 final review data
+          const step6Data = {
+            status: 'completed',
+            bookTitle: currentWorkflowState.bookTitle,
+            totalSteps: 6,
+            completedSteps: 6,
+            bookSummary: `${currentWorkflowState.bookTitle} - A ${currentWorkflowState.targetAge} children's book`,
+            bookConcept: currentWorkflowState.bookConcept,
+            
+            // Count assets from previous steps with safe property access
+            totalCharacters: (() => {
+              const step2Data = currentWorkflowState.steps.find(s => s.stepNumber === 2)?.data;
+              return (step2Data && typeof step2Data === 'object' && 'characters' in step2Data && Array.isArray(step2Data.characters)) ? step2Data.characters.length : 0;
+            })(),
+            totalEnvironments: (() => {
+              const step4Data = currentWorkflowState.steps.find(s => s.stepNumber === 4)?.data;
+              return (step4Data && typeof step4Data === 'object' && 'environments' in step4Data && Array.isArray(step4Data.environments)) ? step4Data.environments.length : 0;
+            })(),
+            totalScenes: (() => {
+              const step5Data = currentWorkflowState.steps.find(s => s.stepNumber === 5)?.data;
+              if (step5Data && typeof step5Data === 'object') {
+                if ('scenes' in step5Data && Array.isArray(step5Data.scenes)) return step5Data.scenes.length;
+                if ('scenesToCompose' in step5Data && Array.isArray(step5Data.scenesToCompose)) return step5Data.scenesToCompose.length;
+              }
+              return 0;
+            })(),
+            
+            // Calculate total pages (estimate based on scenes)
+            totalPages: (() => {
+              const step5Data = currentWorkflowState.steps.find(s => s.stepNumber === 5)?.data;
+              let sceneCount = 6; // default
+              if (step5Data && typeof step5Data === 'object') {
+                if ('scenes' in step5Data && Array.isArray(step5Data.scenes)) sceneCount = step5Data.scenes.length;
+                else if ('scenesToCompose' in step5Data && Array.isArray(step5Data.scenesToCompose)) sceneCount = step5Data.scenesToCompose.length;
+              }
+              return Math.max(12, sceneCount * 2);
+            })(),
+            
+            finalizedAt: new Date().toISOString()
+          };
+          
+          // Update all steps, marking Step 6 as completed
+          const finalUpdatedSteps = currentWorkflowState.steps.map(step => {
+            if (step.stepNumber === 6) {
+              return {
+                ...step,
+                status: 'completed' as const,
+                data: step6Data
+              };
+            } else if (step.stepNumber < 6) {
+              return {
+                ...step,
+                status: 'approved' as const
+              };
+            } else {
+              return step;
+            }
+          });
+          
+          // Create final workflow state
+          const finalWorkflowState: BookArtifactState = {
+            ...currentWorkflowState,
+            currentStep: 6,
+            steps: finalUpdatedSteps,
+            updatedAt: new Date()
+          };
+          
+          // Save final workflow state to database
+          try {
+            await saveWorkflowToDatabase(finalWorkflowState, session);
+            console.log('[createBookArtifact] ✅ Final workflow state saved to database');
+          } catch (error) {
+            console.error('[createBookArtifact] Error saving final workflow to database:', error);
+          }
+          
+          // Send final artifact update
+          dataStream.write?.({
+            type: 'book-creation-state',
+            content: finalWorkflowState
+          });
+          
+          console.log('[createBookArtifact] 🎉 Book creation finalized with Step 6 completed');
+          
+          return {
+            success: true,
+            action: 'finalize',
+            bookId: currentBookId,
+            bookFinalized: true,
+            message: 'Book creation completed successfully! The book is ready for publishing.',
+            artifactState: finalWorkflowState
+          };
+          
+        default:
+          return {
+            success: false,
+            error: `Unknown action: ${action}`
+          };
+      }
+    }
+  });
+
+/**
+ * Search for existing images in memory and database
+ */
+async function searchExistingImages(
+  bookId: string, 
+  searchQuery: string, 
+  imageType: 'character' | 'environment' | 'scene' | 'any',
+  session: Session
+): Promise<Array<{name: string, imageUrl: string, source: 'memory' | 'database', description?: string}>> {
+  const results: Array<{name: string, imageUrl: string, source: 'memory' | 'database', description?: string}> = [];
+  
+  if (!session?.user?.id) {
+    return results;
+  }
+
+  try {
+    // Search BookProp database FIRST (prioritized for book-specific assets)
+    console.log(`[searchExistingImages] Searching BookProp database first for ${imageType} assets`);
+    const { db } = await import('@/lib/db/db');
+    const { bookProp } = await import('@/lib/db/schema');
+    const { eq, and, like } = await import('drizzle-orm');
+    
+    let typeFilter = imageType;
+    if (imageType === 'any') {
+      // Don't filter by type
+      const dbResults = await db
+        .select()
+        .from(bookProp)
+        .where(
+          and(
+            eq(bookProp.userId, session.user.id),
+            eq(bookProp.bookId, bookId),
+            like(bookProp.name, `%${searchQuery}%`)
+          )
+        )
+        .limit(10);
+      
+      for (const prop of dbResults) {
+        if (prop.imageUrl) {
+          results.push({
+            name: prop.name,
+            imageUrl: prop.imageUrl,
+            source: 'database' as const,
+            description: prop.description || `${prop.type}: ${prop.name}`
+          });
+        }
+      }
+    } else {
+      const dbResults = await db
+        .select()
+        .from(bookProp)
+        .where(
+          and(
+            eq(bookProp.userId, session.user.id),
+            eq(bookProp.bookId, bookId),
+            eq(bookProp.type, typeFilter),
+            like(bookProp.name, `%${searchQuery}%`)
+          )
+        )
+        .limit(10);
+      
+      for (const prop of dbResults) {
+        if (prop.imageUrl) {
+          results.push({
+            name: prop.name,
+            imageUrl: prop.imageUrl,
+            source: 'database' as const,
+            description: prop.description || `${prop.type}: ${prop.name}`
+          });
+        }
+      }
+    }
+
+    console.log(`[searchExistingImages] Found ${results.length} results in BookProp database`);
+
+    // Search memory as fallback (secondary priority)
+    console.log(`[searchExistingImages] Searching memory as fallback for additional ${imageType} assets`);
+    const { createMemoryService } = await import('@/lib/ai/memory/service');
+    const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
+    const apiKey = process.env.PAPR_MEMORY_API_KEY;
+    
+    if (apiKey) {
+      const memoryService = createMemoryService(apiKey);
+      const paprUserId = await ensurePaprUser(session.user.id, apiKey);
+      
+      if (paprUserId) {
+        const memories = await memoryService.searchMemories(
+          paprUserId,
+          `${searchQuery} ${bookId} image portrait`,
+          10
+        );
+
+        for (const memory of memories) {
+          const customMeta = memory.metadata?.customMetadata as any;
+          if (customMeta?.image_url || customMeta?.portrait_url) {
+            const imageUrl = customMeta.image_url || customMeta.portrait_url;
+            const name = customMeta.character_name || customMeta.environment_name || customMeta.scene_name || 'Unknown';
+            const memoryType = customMeta.kind || 'unknown';
+            
+            // Only add if not already found in BookProp (avoid duplicates)
+            const alreadyExists = results.some(r => r.name === name && r.imageUrl === imageUrl);
+            
+            if (!alreadyExists && (imageType === 'any' || imageType === memoryType)) {
+              results.push({
+                name,
+                imageUrl,
+                source: 'memory' as const,
+                description: memory.content?.substring(0, 100)
+              });
+            }
+          }
+        }
+      }
+    }
+
+    console.log(`[searchExistingImages] Total results found: ${results.length} (BookProp + Memory)`);
+
+  } catch (error) {
+    console.error('[searchExistingImages] Error searching for existing images:', error);
+  }
+
+  return results;
+}
+
+/**
+ * Enrich character data with images from memory and database
+ */
+async function enrichCharacterDataWithImages(stepData: any, bookId: string, session: Session): Promise<any> {
+  if (!stepData.characters || !Array.isArray(stepData.characters)) {
+    return stepData;
+  }
+
+  const enrichedCharacters = [];
+  
+  for (const character of stepData.characters) {
+    const enrichedCharacter = { ...character };
+    
+    // Try to find character image in BookProp database FIRST (prioritized)
+    if (session?.user?.id) {
+      try {
+        const characterName = character.name || character.characterName;
+        console.log(`[enrichCharacterData] Checking BookProp database first for character: ${characterName}`);
+        
+        // Try to get character from book_props table
+        const { db } = await import('@/lib/db/db');
+        const { bookProp } = await import('@/lib/db/schema');
+        const { eq, and } = await import('drizzle-orm');
+        
+        const characterProp = await db
+          .select()
+          .from(bookProp)
+          .where(
+            and(
+              eq(bookProp.userId, session.user.id),
+              eq(bookProp.bookId, bookId),
+              eq(bookProp.type, 'character'),
+              eq(bookProp.name, characterName)
+            )
+          )
+          .limit(1);
+        
+        if (characterProp.length > 0 && characterProp[0].imageUrl) {
+          enrichedCharacter.portraitUrl = characterProp[0].imageUrl;
+          enrichedCharacter.imageUrl = characterProp[0].imageUrl;
+          console.log(`[enrichCharacterData] ✅ Found portrait in BookProp database for ${characterName}:`, characterProp[0].imageUrl.substring(0, 50));
+        }
+      } catch (error) {
+        console.error(`[enrichCharacterData] Error checking BookProp database for ${character.name}:`, error);
+      }
+    }
+
+    // If not found in BookProp, try memory as fallback
+    if (!enrichedCharacter.portraitUrl && !enrichedCharacter.imageUrl) {
+      try {
+        const { createMemoryService } = await import('@/lib/ai/memory/service');
+        const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
+        const apiKey = process.env.PAPR_MEMORY_API_KEY;
+        
+        if (apiKey && session?.user?.id) {
+          const memoryService = createMemoryService(apiKey);
+          const paprUserId = await ensurePaprUser(session.user.id, apiKey);
+          
+          if (paprUserId) {
+            // Search for character portrait in memory
+            const characterName = character.name || character.characterName;
+            console.log(`[enrichCharacterData] Checking memory as fallback for character: ${characterName}`);
+            const memories = await memoryService.searchMemories(
+              paprUserId,
+              `character portrait ${characterName} book ${bookId}`,
+              5
+            );
+
+            // Look for character-specific memories with images
+            const characterMemory = memories.find((m: any) => {
+              const customMeta = m.metadata?.customMetadata as any;
+              return customMeta?.character_name === characterName &&
+                customMeta?.book_id === bookId &&
+                (customMeta?.kind === 'character' || customMeta?.content_type === 'character_portrait') &&
+                (customMeta?.image_url || customMeta?.portrait_url);
+            });
+
+            if (characterMemory) {
+              const customMeta = characterMemory.metadata?.customMetadata as any;
+              enrichedCharacter.portraitUrl = customMeta?.image_url || customMeta?.portrait_url;
+              enrichedCharacter.imageUrl = customMeta?.image_url || customMeta?.portrait_url;
+              console.log(`[enrichCharacterData] ✅ Found portrait in memory for ${characterName}:`, enrichedCharacter.portraitUrl?.substring(0, 50));
+            } else {
+              console.log(`[enrichCharacterData] No portrait found in memory for ${characterName}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[enrichCharacterData] Error searching memory for ${character.name}:`, error);
+      }
+    }
+
+    
+    enrichedCharacters.push(enrichedCharacter);
+  }
+
+  console.log(`[enrichCharacterData] Final enriched characters:`, enrichedCharacters.map(c => ({
+    name: c.name,
+    hasPortraitUrl: !!c.portraitUrl,
+    hasImageUrl: !!c.imageUrl,
+    portraitUrl: c.portraitUrl?.substring(0, 50) + '...'
+  })));
+
+  return {
+    ...stepData,
+    characters: enrichedCharacters
+  };
+}
+
+/**
+ * Enrich environment data with images from memory and database
+ */
+async function enrichEnvironmentDataWithImages(stepData: any, bookId: string, session: Session): Promise<any> {
+  if (!stepData.environments || !Array.isArray(stepData.environments)) {
+    return stepData;
+  }
+
+  const enrichedEnvironments = [];
+  
+  for (const environment of stepData.environments) {
+    const enrichedEnvironment = { ...environment };
+    
+    // If environment already has existingReference, preserve it
+    if (environment.existingReference) {
+      enrichedEnvironment.imageUrl = environment.existingReference;
+      enrichedEnvironment.environmentUrl = environment.existingReference;
+      console.log(`[enrichEnvironmentData] Using existing reference for ${environment.name}:`, environment.existingReference?.substring(0, 50));
+      enrichedEnvironments.push(enrichedEnvironment);
+      continue;
+    }
+    
+    // Try to find environment image in BookProp database FIRST (prioritized)
+    if (session?.user?.id) {
+      try {
+        const environmentName = environment.name || environment.environmentName;
+        console.log(`[enrichEnvironmentData] Checking BookProp database first for environment: ${environmentName}`);
+        
+        // Try to get environment from book_props table
+        const { db } = await import('@/lib/db/db');
+        const { bookProp } = await import('@/lib/db/schema');
+        const { eq, and } = await import('drizzle-orm');
+        
+        const environmentProp = await db
+          .select()
+          .from(bookProp)
+          .where(
+            and(
+              eq(bookProp.userId, session.user.id),
+              eq(bookProp.bookId, bookId),
+              eq(bookProp.type, 'environment'),
+              eq(bookProp.name, environmentName)
+            )
+          )
+          .limit(1);
+        
+        if (environmentProp.length > 0 && environmentProp[0].imageUrl) {
+          enrichedEnvironment.imageUrl = environmentProp[0].imageUrl;
+          enrichedEnvironment.environmentUrl = environmentProp[0].imageUrl;
+          console.log(`[enrichEnvironmentData] ✅ Found image in BookProp database for ${environmentName}:`, environmentProp[0].imageUrl.substring(0, 50));
+        }
+      } catch (error) {
+        console.error(`[enrichEnvironmentData] Error checking BookProp database for ${environment.name}:`, error);
+      }
+    }
+
+    // If not found in BookProp, try memory as fallback
+    if (!enrichedEnvironment.imageUrl && !enrichedEnvironment.environmentUrl) {
+      try {
+        const { createMemoryService } = await import('@/lib/ai/memory/service');
+        const { ensurePaprUser } = await import('@/lib/ai/memory/middleware');
+        const apiKey = process.env.PAPR_MEMORY_API_KEY;
+        
+        if (apiKey && session?.user?.id) {
+          const memoryService = createMemoryService(apiKey);
+          const paprUserId = await ensurePaprUser(session.user.id, apiKey);
+          
+          if (paprUserId) {
+            // Search for environment image in memory
+            const environmentName = environment.name || environment.environmentName;
+            console.log(`[enrichEnvironmentData] Checking memory as fallback for environment: ${environmentName}`);
+            const memories = await memoryService.searchMemories(
+              paprUserId,
+              `environment ${environmentName} book ${bookId}`,
+              5
+            );
+
+            // Look for environment-specific memories with images
+            const environmentMemory = memories.find((m: any) => {
+              const customMeta = m.metadata?.customMetadata as any;
+              return customMeta?.environment_name === environmentName &&
+                customMeta?.book_id === bookId &&
+                (customMeta?.kind === 'environment') &&
+                (customMeta?.image_url || customMeta?.environment_url);
+            });
+
+            if (environmentMemory) {
+              const customMeta = environmentMemory.metadata?.customMetadata as any;
+              enrichedEnvironment.imageUrl = customMeta?.image_url || customMeta?.environment_url;
+              enrichedEnvironment.environmentUrl = customMeta?.image_url || customMeta?.environment_url;
+              console.log(`[enrichEnvironmentData] ✅ Found image in memory for ${environmentName}:`, enrichedEnvironment.imageUrl?.substring(0, 50));
+            } else {
+              console.log(`[enrichEnvironmentData] No image found in memory for ${environmentName}`);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[enrichEnvironmentData] Error searching memory for ${environment.name}:`, error);
+      }
+    }
+
+    
+    enrichedEnvironments.push(enrichedEnvironment);
+  }
+
+  return {
+    ...stepData,
+    environments: enrichedEnvironments
+  };
+}
+
+/**
+ * Save workflow state to database (Books table with workflow_state column)
+ */
+async function saveWorkflowToDatabase(workflowState: BookArtifactState, session: Session): Promise<void> {
+  if (!session?.user?.id) {
+    throw new Error('No user session available');
+  }
+
+  try {
+    const { db } = await import('@/lib/db/db');
+    const { Book } = await import('@/lib/db/schema');
+    const { eq, and } = await import('drizzle-orm');
+    
+    // Check if a workflow record exists for this book
+    const existingRecord = await db
+      .select()
+      .from(Book)
+      .where(
+        and(
+          eq(Book.bookId, workflowState.bookId),
+          eq(Book.userId, session.user.id),
+          eq(Book.chapterNumber, 0) // Use chapter 0 for workflow metadata
+        )
+      )
+      .limit(1);
+
+    // Create a readable summary of the workflow progress
+    const completedSteps = workflowState.steps.filter(step => step.status === 'completed' || step.status === 'approved');
+    const currentStepName = workflowState.steps.find(step => step.stepNumber === workflowState.currentStep)?.stepName || `Step ${workflowState.currentStep}`;
+    
+    const workflowSummary = `Book Creation Workflow Progress:
+- Book: ${workflowState.bookTitle}
+- Target Age: ${workflowState.targetAge}
+- Current Step: ${workflowState.currentStep}/6 (${currentStepName})
+- Completed Steps: ${completedSteps.length}/6
+- Progress: ${Math.round((completedSteps.length / 6) * 100)}%
+
+Book Concept: ${workflowState.bookConcept}
+
+Workflow Data: ${JSON.stringify(workflowState, null, 2)}`;
+
+    const workflowData = {
+      bookId: workflowState.bookId,
+      userId: session.user.id,
+      bookTitle: workflowState.bookTitle,
+      chapterNumber: 0, // Special chapter number for workflow metadata
+      chapterTitle: `${workflowState.bookTitle} - Workflow`, // Use actual book title
+      content: workflowSummary, // Store readable summary with JSON data
+      version: '1',
+      is_latest: true,
+      updatedAt: new Date()
+    };
+
+    if (existingRecord.length > 0) {
+      // Update existing workflow record
+      await db
+        .update(Book)
+        .set(workflowData)
+        .where(
+          and(
+            eq(Book.bookId, workflowState.bookId),
+            eq(Book.userId, session.user.id),
+            eq(Book.chapterNumber, 0)
+          )
+        );
+      
+      console.log(`[saveWorkflowToDatabase] ✅ Updated workflow for book ${workflowState.bookId}`);
+    } else {
+      // Create new workflow record
+      await db
+        .insert(Book)
+        .values(workflowData);
+      
+      console.log(`[saveWorkflowToDatabase] ✅ Created workflow for book ${workflowState.bookId}`);
+    }
+  } catch (error) {
+    console.error('[saveWorkflowToDatabase] Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Retrieve workflow state from database
+ */
+export async function getWorkflowFromDatabase(bookId: string, session: Session): Promise<BookArtifactState | null> {
+  if (!session?.user?.id) {
+    return null;
+  }
+
+  try {
+    const { db } = await import('@/lib/db/db');
+    const { Book } = await import('@/lib/db/schema');
+    const { eq, and } = await import('drizzle-orm');
+    
+    const workflowRecord = await db
+      .select()
+      .from(Book)
+      .where(
+        and(
+          eq(Book.bookId, bookId),
+          eq(Book.userId, session.user.id),
+          eq(Book.chapterNumber, 0) // Workflow metadata is stored in chapter 0
+        )
+      )
+      .limit(1);
+
+    if (workflowRecord.length > 0 && workflowRecord[0].content) {
+      try {
+        // Extract JSON from the workflow summary (it's at the end after "Workflow Data: ")
+        const content = workflowRecord[0].content;
+        console.log(`[getWorkflowFromDatabase] Raw content length: ${content.length}`);
+        console.log(`[getWorkflowFromDatabase] Raw content preview: ${content.substring(0, 200)}...`);
+        
+        const jsonStart = content.indexOf('Workflow Data: ') + 'Workflow Data: '.length;
+        const jsonContent = content.substring(jsonStart);
+        console.log(`[getWorkflowFromDatabase] JSON content length: ${jsonContent.length}`);
+        console.log(`[getWorkflowFromDatabase] JSON content preview: ${jsonContent.substring(0, 300)}...`);
+        
+        const workflowState = JSON.parse(jsonContent) as BookArtifactState;
+        console.log(`[getWorkflowFromDatabase] ✅ Retrieved workflow for book ${bookId}`);
+        console.log(`[getWorkflowFromDatabase] 🔍 Loaded steps with data:`, workflowState.steps.map(s => ({ 
+          stepNumber: s.stepNumber, 
+          status: s.status, 
+          hasData: !!s.data 
+        })));
+        return workflowState;
+      } catch (parseError) {
+        console.error('[getWorkflowFromDatabase] Error parsing workflow JSON:', parseError);
+        return null;
+      }
+    }
+
+    console.log(`[getWorkflowFromDatabase] No workflow found for book ${bookId}`);
+    return null;
+  } catch (error) {
+    console.error('[getWorkflowFromDatabase] Error:', error);
+    return null;
+  }
+}
+
+/**
+ * Search and Use Existing Images Tool - Allows AI agent to find and reuse existing images
+ */
+export const searchAndUseExistingImages = ({ session, dataStream }: { session: Session; dataStream: DataStreamWriter }) =>
+  tool({
+    description: `Search for existing images in memory and database for direct reuse in book creation.
+    
+    🎯 **SIMPLE WORKFLOW**: Find existing images → Show to user → If approved, add URLs directly to book plan
+    
+    **When to use this tool**:
+    - ALWAYS search for existing images BEFORE suggesting new image creation
+    - Before populating character data in book creation steps
+    - Before creating environments or scenes
+    - When user asks "do we have existing images for these characters?"
+    
+    **RECOMMENDED WORKFLOW**:
+    1. **Search**: Use this tool to find existing character/environment images
+    2. **Present**: Show results to user: "I found these existing portraits for [Character]: [images]"
+    3. **User decides**: User says "use those" OR "create new ones"  
+    4. **If approved**: Directly add imageUrl/portraitUrl to character data when updating book steps
+    5. **If rejected**: Then call image creation tools to make new ones
+    
+    **Key Benefits**:
+    - ✅ No duplicate image creation when good ones exist
+    - ✅ User has full control over image selection  
+    - ✅ Direct workflow - just add URLs to step data
+    - ✅ Faster than always creating new images
+    
+    **DO NOT**:
+    ❌ Call image creation tools without checking for existing images first
+    ❌ Assume user wants new images when existing ones might work
+    ❌ Create complex tool chains when simple URL assignment works
+    
+    This tool returns image URLs that can be directly assigned to character.portraitUrl or character.imageUrl in book step data.`,
+    
+    inputSchema: z.object({
+      bookId: z.string().describe('Book ID to search within'),
+      searchQuery: z.string().describe('Search term - character name, environment name, or description keywords'),
+      imageType: z.enum(['character', 'environment', 'scene', 'any']).describe('Type of image to search for'),
+      maxResults: z.number().optional().default(10).describe('Maximum number of results to return')
+    }),
+    
+    execute: async (input) => {
+      const { bookId, searchQuery, imageType, maxResults = 10 } = input;
+      
+      console.log(`[searchAndUseExistingImages] Searching for ${imageType} images with query: "${searchQuery}" in book ${bookId}`);
+      
+      try {
+        const existingImages = await searchExistingImages(bookId, searchQuery, imageType, session);
+        
+        const limitedResults = existingImages.slice(0, maxResults);
+        
+        console.log(`[searchAndUseExistingImages] Found ${limitedResults.length} existing images`);
+        
+        // Stream the results for user visibility
+        dataStream.write?.({
+          type: 'existing-images-search',
+          content: {
+            searchQuery,
+            imageType,
+            resultsCount: limitedResults.length,
+            results: limitedResults
+          }
+        });
+        
+        return {
+          success: true,
+          searchQuery,
+          imageType,
+          resultsFound: limitedResults.length,
+          images: limitedResults,
+          message: limitedResults.length > 0 
+            ? `Found ${limitedResults.length} existing ${imageType} images matching "${searchQuery}". Show these to the user and ask if they want to use them. If approved, directly add the imageUrl to the character data in the book step.`
+            : `No existing ${imageType} images found matching "${searchQuery}". You'll need to create new images if the user wants them.`,
+          usage: {
+            simpleWorkflow: "1. Show images to user → 2. Get approval → 3. Add imageUrl directly to character.portraitUrl in book step data",
+            avoidComplexity: "Don't call image creation tools if user approves existing images - just use the URLs directly"
+          }
+        };
+      } catch (error) {
+        console.error('[searchAndUseExistingImages] Error:', error);
+        return {
+          success: false,
+          error: 'Failed to search for existing images',
+          searchQuery,
+          imageType,
+          resultsFound: 0,
+          images: []
+        };
+      }
+    }
+  });
+
+// Export types for use in UI components
+export type { BookArtifactState, BookCreationStep, UnifiedBookCreationInput };
+export { BOOK_CREATION_STEPS };
