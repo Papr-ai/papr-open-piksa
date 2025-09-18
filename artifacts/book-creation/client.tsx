@@ -289,7 +289,8 @@ Workflow Data: ${JSON.stringify(updatedState, null, 2)}`;
                         bookId: updatedState.bookId,
                         chapterNumber: 0,
                         chapterTitle: `${updatedState.bookTitle} - Workflow`,
-                        content: workflowSummary
+                        content: workflowSummary,
+                        bookTitle: updatedState.bookTitle
                       }),
                     });
                   }

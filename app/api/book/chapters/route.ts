@@ -9,8 +9,8 @@ export async function POST(request: Request) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
 
-    const { bookId, chapterNumber, chapterTitle, content } = await request.json();
-    if (!bookId || !chapterNumber || !chapterTitle) {
+    const { bookId, chapterNumber, chapterTitle, content, bookTitle: providedBookTitle } = await request.json();
+    if (!bookId || chapterNumber === undefined || !chapterTitle) {
       return new NextResponse('Missing required fields: bookId, chapterNumber, chapterTitle', { status: 400 });
     }
 
@@ -18,12 +18,33 @@ export async function POST(request: Request) {
       bookId,
       chapterNumber,
       chapterTitle,
+      providedBookTitle,
       userId: session.user.id,
       contentLength: content?.length || 0
     });
 
-    // Extract book title from the first existing chapter or use a default
-    const bookTitle = `Book ${bookId.slice(0, 8)}`; // Default title, could be improved
+    // Use provided book title or try to get it from existing chapters, fallback to default
+    let bookTitle = providedBookTitle;
+    
+    if (!bookTitle) {
+      try {
+        const { getBookChaptersByBookId } = await import('@/lib/db/book-queries');
+        const existingChapters = await getBookChaptersByBookId(bookId, session.user.id);
+        
+        if (existingChapters.length > 0) {
+          bookTitle = existingChapters[0].bookTitle;
+          console.log('[BOOK CHAPTERS API] Using book title from existing chapters:', bookTitle);
+        } else {
+          bookTitle = `Book ${bookId.slice(0, 8)}`; // Fallback default
+          console.log('[BOOK CHAPTERS API] Using fallback book title:', bookTitle);
+        }
+      } catch (error) {
+        console.warn('[BOOK CHAPTERS API] Could not fetch existing chapters for title, using default');
+        bookTitle = `Book ${bookId.slice(0, 8)}`;
+      }
+    } else {
+      console.log('[BOOK CHAPTERS API] Using provided book title:', bookTitle);
+    }
 
     // Create the new chapter
     const newChapter = await createBookChapter({

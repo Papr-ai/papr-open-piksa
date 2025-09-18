@@ -1,16 +1,26 @@
-export const DEFAULT_CHAT_MODEL: string = 'gpt-5-mini';
+export const DEFAULT_CHAT_MODEL: string = 'auto';
 
 interface ChatModel {
   id: string;
   name: string;
   description: string;
   supportsReasoning: boolean;
-  group: 'OpenAI' | 'Groq' | 'Anthropic' | 'Google';
+  group: 'Auto' | 'OpenAI' | 'Groq' | 'Anthropic' | 'Google';
   isPremium?: boolean;
   supportsWebSearch?: boolean;
 }
 
 export const chatModels: Array<ChatModel> = [
+  // Auto Selection
+  {
+    id: 'auto',
+    name: 'Auto',
+    description: 'Automatically selects the best model for your request',
+    supportsReasoning: true,
+    isPremium: false,
+    group: 'Auto',
+  },
+  
   // OpenAI Models
   {
     id: 'gpt-5',

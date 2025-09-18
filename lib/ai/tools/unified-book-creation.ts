@@ -36,6 +36,9 @@ const unifiedBookCreationSchema = z.object({
   stepNumber: z.number().optional().describe('Step number to update (1-6)'),
   stepData: StepDataSchema.optional().describe('Data for the specific step - must match the step-specific Zod schema'),
   
+  // Memory search acknowledgment (for update_step action)
+  searchedMemory: z.boolean().optional().describe('IMPORTANT: Did you search the user\'s memory before updating this step? Set to true if you used searchMemories tool to find relevant context about the book, characters, plot, or user preferences. Set to false if you did not search memory. RECOMMENDED: Always search memory first to maintain consistency with previous work and user preferences.'),
+  
   // Book context for step processing
   currentBookTitle: z.string().optional().describe('Current book title for context'),
   
@@ -52,6 +55,137 @@ const unifiedBookCreationSchema = z.object({
 }).passthrough(); // Allow additional properties to avoid validation errors
 
 type UnifiedBookCreationInput = z.infer<typeof unifiedBookCreationSchema>;
+
+/**
+ * Smart merge function that preserves existing step data and only updates provided fields
+ * This prevents AI agents from accidentally removing existing content when updating partial data
+ */
+function smartMergeStepData(existingData: any, newData: any, stepNumber: number): any {
+  if (!existingData || typeof existingData !== 'object') {
+    return newData || {};
+  }
+  
+  if (!newData || typeof newData !== 'object') {
+    return existingData;
+  }
+  
+  console.log(`[smartMergeStepData] Step ${stepNumber} merge:`, {
+    existingKeys: Object.keys(existingData),
+    newKeys: Object.keys(newData)
+  });
+  
+  // For arrays, we need special handling to merge intelligently
+  const mergedData = { ...existingData };
+  
+  for (const [key, value] of Object.entries(newData)) {
+    if (value === null || value === undefined) {
+      // Skip null/undefined values - don't overwrite existing data
+      console.log(`[smartMergeStepData] Skipping null/undefined value for key: ${key}`);
+      continue;
+    }
+    
+    if (Array.isArray(value) && Array.isArray(existingData[key])) {
+      // For arrays, merge by unique identifiers when possible
+      if (key === 'characters') {
+        // Merge characters by name
+        mergedData[key] = mergeCharacterArrays(existingData[key], value);
+      } else if (key === 'environments') {
+        // Merge environments by name
+        mergedData[key] = mergeEnvironmentArrays(existingData[key], value);
+      } else if (key === 'chapters') {
+        // Merge chapters by chapterNumber
+        mergedData[key] = mergeChapterArrays(existingData[key], value);
+      } else {
+        // For other arrays, replace completely (safer default)
+        mergedData[key] = value;
+      }
+    } else if (typeof value === 'object' && typeof existingData[key] === 'object') {
+      // Recursively merge objects
+      mergedData[key] = smartMergeStepData(existingData[key], value, stepNumber);
+    } else if (typeof value === 'string' && value.trim() !== '') {
+      // Only update strings if they're not empty
+      mergedData[key] = value;
+    } else if (typeof value !== 'string') {
+      // Update non-string values directly
+      mergedData[key] = value;
+    }
+    // Skip empty strings to preserve existing content
+  }
+  
+  return mergedData;
+}
+
+/**
+ * Merge character arrays by name, preserving existing character data
+ */
+function mergeCharacterArrays(existing: any[], incoming: any[]): any[] {
+  const merged = [...existing];
+  
+  for (const newChar of incoming) {
+    if (!newChar?.name) continue;
+    
+    const existingIndex = merged.findIndex(char => char?.name === newChar.name);
+    if (existingIndex >= 0) {
+      // Update existing character with new data, preserving existing fields
+      merged[existingIndex] = { ...merged[existingIndex], ...newChar };
+      console.log(`[smartMergeStepData] Updated existing character: ${newChar.name}`);
+    } else {
+      // Add new character
+      merged.push(newChar);
+      console.log(`[smartMergeStepData] Added new character: ${newChar.name}`);
+    }
+  }
+  
+  return merged;
+}
+
+/**
+ * Merge environment arrays by name, preserving existing environment data
+ */
+function mergeEnvironmentArrays(existing: any[], incoming: any[]): any[] {
+  const merged = [...existing];
+  
+  for (const newEnv of incoming) {
+    if (!newEnv?.name) continue;
+    
+    const existingIndex = merged.findIndex(env => env?.name === newEnv.name);
+    if (existingIndex >= 0) {
+      // Update existing environment with new data
+      merged[existingIndex] = { ...merged[existingIndex], ...newEnv };
+      console.log(`[smartMergeStepData] Updated existing environment: ${newEnv.name}`);
+    } else {
+      // Add new environment
+      merged.push(newEnv);
+      console.log(`[smartMergeStepData] Added new environment: ${newEnv.name}`);
+    }
+  }
+  
+  return merged;
+}
+
+/**
+ * Merge chapter arrays by chapterNumber, preserving existing chapter data
+ */
+function mergeChapterArrays(existing: any[], incoming: any[]): any[] {
+  const merged = [...existing];
+  
+  for (const newChapter of incoming) {
+    if (newChapter?.chapterNumber === undefined) continue;
+    
+    const existingIndex = merged.findIndex(ch => ch?.chapterNumber === newChapter.chapterNumber);
+    if (existingIndex >= 0) {
+      // Update existing chapter with new data, preserving existing fields
+      merged[existingIndex] = { ...merged[existingIndex], ...newChapter };
+      console.log(`[smartMergeStepData] Updated existing chapter: ${newChapter.chapterNumber}`);
+    } else {
+      // Add new chapter
+      merged.push(newChapter);
+      console.log(`[smartMergeStepData] Added new chapter: ${newChapter.chapterNumber}`);
+    }
+  }
+  
+  return merged.sort((a, b) => (a.chapterNumber || 0) - (b.chapterNumber || 0));
+}
 
 // Generate example chapter data for documentation
 const exampleChapter = {
@@ -91,17 +225,26 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
     5. Final Chapter Content - Complete chapters with fully written scenes (PRESERVE EXACT chapter titles from Step 3, expand scene content)
     6. Final Review - Complete book review and finalization
     
+    🧠 MEMORY SEARCH REQUIREMENT:
+    BEFORE updating any step, you should FIRST use the searchMemories tool to find:
+    - Previous book content and character details
+    - User preferences for writing style, themes, or art direction
+    - Existing story elements to maintain consistency
+    - Any specific requirements or feedback from the user
+    
+    Set searchedMemory: true if you searched memory, false if you skipped it.
+    
     ACTIONS:
     - initialize: Create new book artifact with initial concept
-    - update_step: Update a specific step with validated structured content
+    - update_step: Update a specific step with validated structured content (SEARCH MEMORY FIRST!)
     - approve_step: User approves/rejects step from artifact UI
-    - regenerate: Regenerate content for current step based on feedback
+    - regenerate: Regenerate content for current step based on feedback (SEARCH MEMORY FIRST!)
     - finalize: Complete the book creation process`,
     
     inputSchema: unifiedBookCreationSchema,
     
     execute: async (input: UnifiedBookCreationInput) => {
-      const { action, bookId, bookTitle, bookConcept, targetAge, stepNumber, stepData, approved, feedback, conversationContext, currentBookTitle } = input;
+      const { action, bookId, bookTitle, bookConcept, targetAge, stepNumber, stepData, searchedMemory, approved, feedback, conversationContext, currentBookTitle } = input;
       
       // Generate or use existing book ID
       const currentBookId = bookId || generateUUID();
@@ -263,6 +406,15 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
               error: 'stepNumber and stepData are required for update_step action'
             };
           }
+          
+          // Log memory search acknowledgment
+          if (searchedMemory === true) {
+            console.log(`[createBookArtifact] ✅ AI agent searched memory before updating Step ${stepNumber}`);
+          } else if (searchedMemory === false) {
+            console.log(`[createBookArtifact] ⚠️ AI agent did NOT search memory before updating Step ${stepNumber} - consistency may be affected`);
+          } else {
+            console.log(`[createBookArtifact] ❓ AI agent did not specify whether memory was searched for Step ${stepNumber}`);
+          }
 
           // Use stepData as-is - trust the AI SDK and Zod schemas completely
           const validatedStepData = stepData;
@@ -334,10 +486,20 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
           // Update only the current step while preserving others
           const updatedSteps = preservedSteps.map(step => {
             if (step.stepNumber === stepNumber) {
+              // Smart merge: preserve existing data and only update provided fields
+              const existingStepData = step.data || {};
+              const mergedStepData = smartMergeStepData(existingStepData, processedStepData, stepNumber);
+              
+              console.log(`[createBookArtifact] 🔄 Smart merge for Step ${stepNumber}:`, {
+                existingKeys: Object.keys(existingStepData),
+                newKeys: Object.keys(processedStepData || {}),
+                mergedKeys: Object.keys(mergedStepData)
+              });
+              
               return {
                 ...step,
                 status: 'completed' as const,
-                data: processedStepData
+                data: mergedStepData
               };
             } else if (step.stepNumber < stepNumber) {
               // Keep previous steps as approved with their existing data
@@ -568,6 +730,14 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
             console.error('[createBookArtifact] Error storing step progress:', error);
           }
           
+          // Prepare response message with memory search feedback
+          let responseMessage = `Step ${stepNumber} updated and ready for user approval in the artifact.`;
+          if (searchedMemory === false) {
+            responseMessage += `\n\n💡 Tip: Consider using searchMemories tool before future updates to maintain consistency with previous work and user preferences.`;
+          } else if (searchedMemory === true) {
+            responseMessage += `\n\n✅ Great! You searched memory before updating, which helps maintain consistency.`;
+          }
+          
           return {
             success: true,
             action: 'update_step',
@@ -575,7 +745,8 @@ export const createBookArtifact = ({ session, dataStream }: { session: Session; 
             stepNumber,
             stepUpdated: true,
             awaitingUserApproval: true,
-            message: `Step ${stepNumber} updated and ready for user approval in the artifact.`,
+            searchedMemory: searchedMemory,
+            message: responseMessage,
             artifactState: updatedArtifactState // Include the updated state in the tool result
           };
           

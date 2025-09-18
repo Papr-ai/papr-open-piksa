@@ -25,6 +25,9 @@ export const myProvider = isTestEnvironment
     })
   : customProvider({
       languageModels: {
+        // Auto selection - maps to our preferred default model
+        'auto': groq('openai/gpt-oss-120b'),
+        
         // Old model mappings - keep for backward compatibility
         'chat-model': groq('llama-3.3-70b-versatile'),
         'chat-model-reasoning': openai('o4-mini'),

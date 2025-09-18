@@ -113,9 +113,9 @@ export const SceneCompositionDataSchema = z.object({
   conversationContext: z.string().optional(),
   
   // Allow legacy fields for backward compatibility
-  scenes: z.array(z.any()).optional(),
-  expandedChapters: z.array(z.any()).optional(),
-  scenesToCompose: z.array(z.any()).optional(),
+  scenes: z.array(z.object({}).passthrough()).optional().describe('Legacy scenes array for backward compatibility'),
+  expandedChapters: z.array(z.object({}).passthrough()).optional().describe('Legacy expanded chapters for backward compatibility'),
+  scenesToCompose: z.array(z.object({}).passthrough()).optional().describe('Legacy scenes to compose for backward compatibility'),
   stepTitle: z.string().optional(),
   nextSteps: z.array(z.string()).optional(),
   seedsAndAssets: z.any().optional()

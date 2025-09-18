@@ -63,6 +63,7 @@ interface ProjectGroup {
 }
 
 
+
 export function Chat({
   id,
   initialMessages,
@@ -428,6 +429,10 @@ export function Chat({
                   height: 600,
                 },
               });
+              
+              // Store book context for system prompt enhancement (no visible message)
+              // The book context will be sent via headers and processed by the API
+              console.log('[Chat] Book context will be provided via system prompt enhancement');
             } else {
               console.log('[Chat] No workflow state found, checking for old book format...');
               await migrateOldBookToWorkflow(bookId);
@@ -512,6 +517,10 @@ export function Chat({
                 height: 600,
               },
             });
+            
+            // Store book context for system prompt enhancement (no visible message)
+            // The book context will be sent via headers and processed by the API
+            console.log('[Chat] Book context for migrated book will be provided via system prompt enhancement');
             
             console.log('[Chat] ✅ Successfully migrated old book to workflow format');
           } else if (hasContentChapters) {

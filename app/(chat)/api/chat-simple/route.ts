@@ -148,6 +148,10 @@ export async function POST(request: Request) {
     const isWebSearchEnabled = webSearchHeaderValue === 'true';
     console.log('[SIMPLE CHAT API] Web search enabled:', isWebSearchEnabled);
 
+    // Check for book context from headers
+    const bookId = request.headers.get('X-Book-Id');
+    console.log('[SIMPLE CHAT API] Book ID from headers:', bookId);
+
     // Use selectedChatModel from request body or fallback to default
     // If web search is enabled, ensure we use a web-capable model
     let modelToUse = selectedChatModel || 'gpt-5-mini';
@@ -463,6 +467,49 @@ export async function POST(request: Request) {
     
     // Always include user context if available (regardless of memory toggle)
     let contextualSystemPrompt = baseSystemPrompt;
+    
+    // Add book context if bookId is provided
+    if (bookId && bookId.trim() !== '') {
+      try {
+        const bookContextStart = Date.now();
+        const { getWorkflowFromDatabase } = await import('@/lib/ai/tools/unified-book-creation');
+        const workflowState = await getWorkflowFromDatabase(bookId, session);
+        
+        if (workflowState) {
+          const completedSteps = workflowState.steps?.filter((step: any) => 
+            step.status === 'completed' || step.status === 'approved'
+          ) || [];
+          
+          const currentStepInfo = workflowState.steps?.find((step: any) => 
+            step.stepNumber === workflowState.currentStep
+          );
+          
+          const bookContext = `
+
+📖 CURRENT BOOK PROJECT CONTEXT:
+- Book Title: ${workflowState.bookTitle}
+- Target Age: ${workflowState.targetAge}
+- Book Concept: ${workflowState.bookConcept}
+- Current Step: ${workflowState.currentStep}/6 (${currentStepInfo?.stepName || 'Unknown'})
+- Completed Steps: ${completedSteps.length}/6
+- Book ID: ${workflowState.bookId}
+
+You are currently helping the user with their book project. You have access to the createBookArtifact tool to update any step of the book creation workflow. When the user asks questions about their book or requests changes, use this context to provide relevant assistance.
+
+Step Status:
+${workflowState.steps?.map((step: any) => 
+  `${step.stepNumber}. ${step.stepName}: ${step.status}${step.data ? ' ✓' : ''}`
+).join('\n') || 'No steps found'}
+`;
+
+          contextualSystemPrompt += bookContext;
+          logTiming('Book Context Enhancement', bookContextStart);
+          console.log('[SIMPLE CHAT API] Enhanced system prompt with book context');
+        }
+      } catch (error) {
+        console.error('[SIMPLE CHAT API] Failed to enhance prompt with book context:', error);
+      }
+    }
     
     if (contextString) {
       //console.log('[SIMPLE TEXT CHAT] Adding user context to system prompt:');
