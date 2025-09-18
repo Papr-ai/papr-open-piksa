@@ -98,7 +98,7 @@ export const createSpatialEnvironment = ({ session, dataStream }: { session: Ses
       
       try {
         // Stream progress update
-        dataStream.writeData({
+        dataStream.write?.({
           type: 'progress',
           message: `Creating spatial environment: ${environmentName}`,
           step: 'environment-spatial-creation'
@@ -113,30 +113,28 @@ export const createSpatialEnvironment = ({ session, dataStream }: { session: Ses
           styleBible
         });
         
-        // Use the createSingleBookImage tool for actual image generation
-        const { createSingleBookImage } = await import('./create-single-book-image');
-        const imageCreationTool = createSingleBookImage({ session, dataStream });
+        // Use the createImage tool for actual image generation
+        const { createImage } = await import('./create-image');
+        const imageCreationTool = createImage({ session });
         
         if (imageCreationTool.execute) {
           const result = await imageCreationTool.execute({
-            bookId,
-            imageType: 'environment',
-            name: environmentName,
             description: spatialPrompt,
             styleBible,
             aspectRatio,
-            saveToMemory: true,
-            saveToBookProp: true
-          });
+            styleConsistency: true
+          }, { toolCallId: 'spatial-env-' + Date.now(), messages: [] });
           
           // Save zone information to memory for later use
           await saveEnvironmentZones(bookId, environmentId, zones, session);
+          
+          const imageUrl = typeof result === 'object' && 'imageUrl' in result ? result.imageUrl : undefined;
           
           return {
             success: true,
             environmentId,
             environmentName,
-            imageUrl: result.imageUrl,
+            imageUrl,
             zones: zones.map(zone => ({
               zoneId: zone.zoneId,
               zoneName: zone.zoneName,
@@ -207,7 +205,7 @@ export const createPrescriptiveScene = ({ session, dataStream }: { session: Sess
       
       try {
         // Stream progress update
-        dataStream.writeData({
+        dataStream.write?.({
           type: 'progress',
           message: `Creating prescriptive scene: ${sceneId}`,
           step: 'scene-prescriptive-creation'
@@ -245,17 +243,24 @@ export const createPrescriptiveScene = ({ session, dataStream }: { session: Sess
         
         if (imageCreationTool.execute) {
           const result = await imageCreationTool.execute({
-            prompt: prescriptivePrompt,
+            description: prescriptivePrompt,
             seedImages: seedImages.urls,
-            seedImageTypes: seedImages.types,
-            context: `Book: ${bookId}, Scene: ${sceneId}`,
-            saveToMemory: true
-          });
+            seedImageTypes: (seedImages.types || []).map(type => 
+              ['character', 'environment', 'prop', 'other'].includes(type) 
+                ? type as 'character' | 'environment' | 'prop' | 'other'
+                : 'other'
+            ),
+            sceneContext: `Book: ${bookId}, Scene: ${sceneId}`,
+            aspectRatio: '4:3' as const,
+            styleConsistency: true
+          }, { toolCallId: 'prescriptive-scene-' + Date.now(), messages: [] });
+          
+          const imageUrl = typeof result === 'object' && 'imageUrl' in result ? result.imageUrl : undefined;
           
           return {
             success: true,
             sceneId,
-            imageUrl: result.imageUrl,
+            imageUrl,
             characterPlacements: characterPlacements.map(cp => ({
               character: cp.characterName,
               zone: cp.zoneId,
@@ -362,11 +367,11 @@ The seed images provide the environment base and character appearances - compose
 async function saveEnvironmentZones(bookId: string, environmentId: string, zones: any[], session: Session): Promise<void> {
   // Save zone information to memory for later retrieval
   try {
-    const { addMemory } = await import('@/lib/ai/memory/middleware');
+    const { storeContentInMemory } = await import('@/lib/ai/memory/middleware');
     const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
     
-    if (PAPR_MEMORY_API_KEY) {
-      await addMemory({
+    if (PAPR_MEMORY_API_KEY && session.user?.id) {
+      await storeContentInMemory({
         userId: session.user.id,
         content: JSON.stringify({
           type: 'environment-zones',
@@ -375,6 +380,11 @@ async function saveEnvironmentZones(bookId: string, environmentId: string, zones
           zones
         }),
         type: 'environment-spatial-data',
+        metadata: {
+          bookId,
+          environmentId,
+          type: 'environment-zones'
+        },
         apiKey: PAPR_MEMORY_API_KEY
       });
     }
@@ -386,11 +396,11 @@ async function saveEnvironmentZones(bookId: string, environmentId: string, zones
 async function loadEnvironmentZones(bookId: string, environmentId: string, session: Session): Promise<any[]> {
   // Load zone information from memory
   try {
-    const { searchMemories } = await import('@/lib/ai/memory/middleware');
+    const { searchUserMemories } = await import('@/lib/ai/memory/middleware');
     const PAPR_MEMORY_API_KEY = process.env.PAPR_MEMORY_API_KEY;
     
-    if (PAPR_MEMORY_API_KEY) {
-      const memories = await searchMemories({
+    if (PAPR_MEMORY_API_KEY && session.user?.id) {
+      const memories = await searchUserMemories({
         userId: session.user.id,
         query: `environment zones ${environmentId} ${bookId}`,
         maxResults: 5,
