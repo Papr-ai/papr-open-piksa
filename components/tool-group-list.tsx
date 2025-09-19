@@ -29,7 +29,6 @@ function getToolStatus(text: string): 'starting' | 'processing' | 'complete' | '
 
 function getToolDisplayName(toolName: string): string {
   const toolNameMap: Record<string, string> = {
-    'getWeather': 'Weather',
     'createDocument': 'Create Document',
     'updateDocument': 'Update Document',
     'searchMemories': 'Search Memories',
@@ -38,11 +37,11 @@ function getToolDisplayName(toolName: string): string {
   return toolNameMap[toolName] || toolName.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 }
 
-// Extract the tool action name from the first event (e.g., getWeather, searchMemories)
+// Extract the tool action name from the first event (e.g., searchMemories)
 function getToolActionName(toolEvents: ReasoningEvent[]): string {
   // Try to extract from the first event's text
   const first = toolEvents[0]?.content.text || '';
-  // Look for patterns like 'Calling getWeather' or 'Calling searchMemories'
+  // Look for patterns like 'Calling searchMemories'
   const match = first.match(/Calling ([a-zA-Z0-9_]+)/);
   if (match && match[1]) return match[1];
   // Fallback: use the toolName from the group key (handled in parent)

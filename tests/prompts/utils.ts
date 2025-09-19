@@ -218,7 +218,7 @@ As we move forward, Silicon Valley continues to reinvent itself. While some pred
       {
         type: 'tool-call',
         toolCallId: 'call_456',
-        toolName: 'getWeather',
+        toolName: 'searchMemories',
         input: { latitude: 37.7749, longitude: -122.4194 },
         providerExecuted: false,
         dynamic: false,

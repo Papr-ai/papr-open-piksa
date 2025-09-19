@@ -36,10 +36,6 @@ export type DataStreamDelta = {
     | 'tool-call'
     | 'tool-result'
     | 'progress'
-    | 'github-staged-files'
-    | 'github-selection'
-    | 'repository-approval-request'
-    | 'repository-created'
     | 'project-creation-started';
   content: string | Suggestion | Record<string, any>;
   language?: string;

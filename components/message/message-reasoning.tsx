@@ -273,7 +273,6 @@ export function MessageReasoning({
       event.content.text && (
         // Match any tool-related keywords
         event.content.text.includes('tool call') ||
-        event.content.text.includes('getWeather') ||
         event.content.text.includes('createDocument') ||
         event.content.text.includes('updateDocument') ||
         event.content.text.includes('searchMemories') ||
@@ -293,7 +292,7 @@ export function MessageReasoning({
       /using\s+(\w+)/i,
       /tool\s+(\w+)/i,
       /(\w+)\s+tool/i,
-      /(getWeather|createDocument|updateDocument|searchMemories|get_memory)/i
+      /(createDocument|updateDocument|searchMemories|get_memory)/i
     ];
     
     for (const pattern of toolNamePatterns) {
@@ -309,7 +308,6 @@ export function MessageReasoning({
   // Get friendly tool name for display
   const getToolDisplayName = (toolName: string): string => {
     const toolNameMap: Record<string, string> = {
-      'getWeather': 'Weather',
       'createDocument': 'Create Document',
       'updateDocument': 'Update Document',
       'searchMemories': 'Search Memories',

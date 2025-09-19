@@ -24,7 +24,7 @@ import { ImageEditor } from '@/components/editor/image-editor';
 // Helper function to map database document kinds to valid artifact kinds
 function mapDocumentKindToArtifactKind(kind: string): ArtifactKind {
   // Map old kinds to new valid ones
-  if (kind === 'code' || kind === 'github-code') {
+  if (kind === 'code') {
     return 'text';
   }
   

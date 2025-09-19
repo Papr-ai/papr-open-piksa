@@ -17,7 +17,6 @@ import { deleteMemory } from '@/lib/ai/tools/delete-memory';
 import { shouldAnalyzeConversation, processConversationCompletion } from '@/lib/ai/conversation-insights';
 import { handleNewChatCreation } from '@/lib/ai/chat-history-context';
 import { systemPrompt } from '@/lib/ai/prompts';
-import { getWeather } from '@/lib/ai/tools/get-weather';
 import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { createBook } from '@/lib/ai/tools/create-book';
@@ -29,18 +28,6 @@ import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { createTaskTrackerTools } from '@/lib/ai/tools/task-tracker';
 import { createImage } from '@/lib/ai/tools/create-image';
 import { createWritingTools } from '@/lib/ai/tools/create-writing-tools';
-import { 
-  createListRepositoriesTool,
-  createCreateProjectTool,
-  createGetRepositoryFilesTool,
-  createGetFileContentTool,
-  createSearchFilesTool,
-  createOpenFileExplorerTool,
-  createCreateRepositoryTool,
-  createUpdateStagedFileTool,
-  createGetStagingStateTool,
-  createClearStagedFilesTool
-} from '@/lib/ai/tools/github-integration';
 
 // Helper function to extract domain name from URL
 function extractDomainName(url: string): string {
@@ -86,17 +73,7 @@ function getFriendlyToolName(toolName: string): string {
     // Web search
     'google_search': 'Searching the web',
     
-    // GitHub tools
-    'listRepositories': 'Listing repositories',
-    'createProject': 'Creating project',
-    'getRepositoryFiles': 'Getting repository files',
-    'getFileContent': 'Reading file content',
-    'searchFiles': 'Searching files',
-    'openFileExplorer': 'Opening file explorer',
-    'createRepository': 'Creating repository',
     
-    // Weather
-    'getWeather': 'Getting weather',
     
     // Enhanced book tools
     'createBookPlan': 'Planning book structure',
@@ -338,7 +315,6 @@ export async function POST(request: Request) {
     const tools: any = {};
     
     // Always available tools
-    tools.getWeather = getWeather;
     // TEMPORARILY DISABLED to force unified workflow
     // tools.createDocument = createDocument({ session, dataStream });
     tools.updateDocument = updateDocument({ session, dataStream });
@@ -376,17 +352,6 @@ export async function POST(request: Request) {
     const { getBookWorkflowStatus } = await import('@/lib/ai/tools/book-workflow-status');
     tools.getBookWorkflowStatus = getBookWorkflowStatus({ session });
     
-    // GitHub tools
-    tools.listRepositories = createListRepositoriesTool({ session, dataStream });
-    tools.createProject = createCreateProjectTool({ session, dataStream });
-    tools.getRepositoryFiles = createGetRepositoryFilesTool({ session, dataStream });
-    tools.getFileContent = createGetFileContentTool({ session, dataStream });
-    tools.searchFiles = createSearchFilesTool({ session, dataStream });
-    tools.openFileExplorer = createOpenFileExplorerTool({ session, dataStream });
-    tools.createRepository = createCreateRepositoryTool({ session, dataStream });
-    tools.updateStagedFile = createUpdateStagedFileTool({ session, dataStream });
-    tools.getStagingState = createGetStagingStateTool({ session, dataStream });
-    tools.clearStagedFiles = createClearStagedFilesTool({ session, dataStream });
     
     // Task tracker tools - DISABLED in favor of unified book creation workflow
     // const taskTrackerTools = createTaskTrackerTools(dataStream, session, id);
@@ -806,7 +771,6 @@ Be helpful and concise. Use markdown formatting with headers, bullet points, and
           messages: adjustedModelMessages,
           tools: tools,
           experimental_activeTools: [
-            'getWeather',
             'createBookArtifact',
             'updateDocument',
             'searchBooks',

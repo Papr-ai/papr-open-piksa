@@ -11,69 +11,7 @@ import type { ArtifactKind } from '@/components/artifact/artifact';
 import { ToolInvocation } from './tool-invocation';
 
 // Tool output type definitions based on existing interfaces
-interface WeatherAtLocation {
-  latitude: number;
-  longitude: number;
-  generationtime_ms: number;
-  utc_offset_seconds: number;
-  timezone: string;
-  timezone_abbreviation: string;
-  elevation: number;
-  current_units: {
-    time: string;
-    interval: string;
-    temperature_2m: string;
-  };
-  current: {
-    time: string;
-    interval: number;
-    temperature_2m: number;
-  };
-  hourly_units: {
-    time: string;
-    temperature_2m: string;
-  };
-  hourly: {
-    time: string[];
-    temperature_2m: number[];
-  };
-  daily_units: {
-    time: string;
-    sunrise: string;
-    sunset: string;
-  };
-  daily: {
-    time: string[];
-    sunrise: string[];
-    sunset: string[];
-  };
-}
 
-interface GitHubToolResult {
-  success: boolean;
-  error?: string;
-  repositories?: any[];
-  files?: any[];
-  file?: any;
-  repository?: any;
-  currentPath?: string;
-  repositoryName?: string;
-  searchResults?: any[];
-  searchQuery?: string;
-  editSuggestion?: {
-    message: string;
-    action: string;
-    repository: { owner: string; name: string };
-    filePath: string;
-  };
-  message?: string;
-  branchName?: string;
-  stagedFiles?: any[];
-  stagedFilesCount?: number;
-  clearedCount?: number;
-  requiresApproval?: boolean;
-  project?: any;
-}
 
 // Document tool result type
 interface DocumentToolOutput {
@@ -188,7 +126,6 @@ import { PencilEditIcon, SparklesIcon, LoaderIcon, CopyIcon } from '../common/ic
 import { Markdown } from '../common/markdown';
 import { MessageActions } from './message-actions';
 import { PreviewAttachment } from './preview-attachment';
-import { Weather } from '../weather';
 import equal from 'fast-deep-equal';
 import { cn } from '@/lib/utils';
 import { Button } from '../ui/button';
@@ -216,11 +153,8 @@ import Image from 'next/image';
 import { ContinueButton, shouldShowContinueButton } from './continue-button';
 import { useSession } from 'next-auth/react';
 import { useUserAvatar } from '@/hooks/use-user-avatar';
-import { GitHubRepoResults } from '../github/github-repo-results';
-import { GitHubSearchResults } from '../github/github-search-results';
 import { ChatMemoryResults } from '../memory/chat-memory-results';
 
-import type { Repository } from '@/components/github/github-repo-card';
 
 // Truncated file display component
 function TruncatedFileDisplay({ 
@@ -280,7 +214,7 @@ function TruncatedFileDisplay({
                 onClick={() => {
                   const chatInput = document.querySelector('textarea[placeholder*="Ask"]') as HTMLTextAreaElement;
                   if (chatInput) {
-                    chatInput.value = `Please open the GitHub file explorer for the ${editSuggestion.repository.owner}/${editSuggestion.repository.name} repository so I can edit the ${file.name} file with the full editing interface.`;
+                    chatInput.value = `Please open the file explorer so I can edit the ${file.name} file with the full editing interface.`;
                     chatInput.focus();
                     const event = new Event('input', { bubbles: true });
                     chatInput.dispatchEvent(event);
@@ -291,7 +225,7 @@ function TruncatedFileDisplay({
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
                 </svg>
-                Open GitHub File Explorer
+                Open File Explorer
               </Button>
             </div>
           </div>
@@ -344,7 +278,7 @@ function TruncatedFileDisplay({
                   // Find the chat input and suggest opening file explorer
                   const chatInput = document.querySelector('textarea[placeholder*="Ask"]') as HTMLTextAreaElement;
                   if (chatInput) {
-                    chatInput.value = `Please open the GitHub file explorer so I can edit the ${file.name} file.`;
+                    chatInput.value = `Please open the file explorer so I can edit the ${file.name} file.`;
                     chatInput.focus();
                     const event = new Event('input', { bubbles: true });
                     chatInput.dispatchEvent(event);
@@ -355,7 +289,7 @@ function TruncatedFileDisplay({
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
-                Edit in GitHub
+                Edit File
               </Button>
             </div>
           </div>
@@ -1238,9 +1172,7 @@ const PurePreviewMessage = ({
                       if (state === 'output-available' && output) {
                         return (
                         <div key={toolCallId || key}>
-                          {toolName === 'getWeather' ? (
-                            <Weather weatherAtLocation={output as WeatherAtLocation} />
-                          ) : toolName === 'createDocument' ? (
+                          {toolName === 'createDocument' ? (
                             <DocumentToolResult
                               type="create"
                               result={output as DocumentToolOutput}
@@ -1370,76 +1302,6 @@ const PurePreviewMessage = ({
                               allCompleted={(output as any)?.allCompleted}
                               message={(output as any)?.message}
                             />
-                          ) : [
-                            'listRepositories',
-                            'createProject', 
-                            'getRepositoryFiles',
-                            'getFileContent',
-                            'searchFiles',
-                            'openFileExplorer',
-                            'createRepository',
-                            'requestRepositoryApproval'
-                          ].includes(toolName) ? (
-                            <div className="github-tool-result">
-                              {(output as GitHubToolResult).success ? (
-                                <>
-                                  {(output as GitHubToolResult).repositories && (
-                                    <GitHubRepoResults
-                                      repositories={(output as GitHubToolResult).repositories!}
-                                      onRepositorySelect={(repo: Repository) => {
-                                        console.log('Repository selected:', repo);
-                                      }}
-                                    />
-                                  )}
-                                  {(output as GitHubToolResult).searchResults && (
-                                    <GitHubSearchResults
-                                      searchResults={(output as GitHubToolResult).searchResults!}
-                                      searchQuery={(output as GitHubToolResult).searchQuery || ''}
-                                      onFileSelect={(searchResult: any) => {
-                                        console.log('Search result selected:', searchResult);
-                                      }}
-                                    />
-                                  )}
-                                  {(output as GitHubToolResult).file && (
-                                    <TruncatedFileDisplay 
-                                      file={(output as GitHubToolResult).file!} 
-                                      editSuggestion={(output as GitHubToolResult).editSuggestion}
-                                    />
-                                  )}
-                                  {(output as GitHubToolResult).repository && (
-                                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                                      <div className="flex items-center gap-2 text-green-800 font-medium">
-                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                        Repository Created Successfully
-                                      </div>
-                                      <p className="text-green-700 mt-2">
-                                        Created repository: <strong>{(output as GitHubToolResult).repository!.name}</strong>
-                                      </p>
-                                      <a 
-                                        href={(output as GitHubToolResult).repository!.url} 
-                                        target="_blank" 
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 hover:text-blue-800 underline mt-2 inline-block"
-                                      >
-                                        View on GitHub →
-                                      </a>
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                                  <div className="flex items-center gap-2 text-red-800 font-medium">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                    Error
-                                  </div>
-                                  <p className="text-red-700 mt-2">{(output as GitHubToolResult).error}</p>
-                                </div>
-                              )}
-                            </div>
                           ) : (
                             <pre>{JSON.stringify(output, null, 2)}</pre>
                           )}
@@ -1470,10 +1332,8 @@ const PurePreviewMessage = ({
                     if (state === 'input-available' && input) {
                       console.log('[Message] Tool call input-available:', { toolName, input, state });
                       return (
-                        <div key={toolCallId || key} className={cx({ skeleton: ['getWeather'].includes(toolName) })}>
-                          {toolName === 'getWeather' ? (
-                            <Weather />
-                          ) : toolName === 'createDocument' ? (
+                        <div key={toolCallId || key} className={cx({ skeleton: false })}>
+                          {toolName === 'createDocument' ? (
                             <DocumentToolCall
                               type="create"
                               args={{title: '', ...input}}

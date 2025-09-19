@@ -28,11 +28,7 @@ function PureSuggestedActions({ chatId, sendMessage }: SuggestedActionsProps) {
       label: `about silicon valley`,
       action: `Help me write an essay about silicon valley`,
     },
-    {
-      title: 'What is the weather',
-      label: 'in San Francisco?',
-      action: 'What is the weather in San Francisco?',
-    },
+    
   ];
 
   return (
